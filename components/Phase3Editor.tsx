@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Undo2, Redo2, Minus, Plus, Upload, Layers, ArrowLeft, ArrowRight, Trash2, Copy, ChevronUp, ChevronDown } from 'lucide-react'
+import { Undo2, Redo2, Minus, Plus, Upload, Layers, ArrowLeft, ArrowRight, Trash2, Copy, ChevronUp, ChevronDown, Save, Check, Loader2 } from 'lucide-react'
 import { AppState } from '@/app/page'
 
 interface Props {
@@ -29,8 +29,31 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
   const [dragging, setDragging] = useState<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null)
   const [past, setPast] = useState<LogoLayer[][]>([])
   const [future, setFuture] = useState<LogoLayer[][]>([])
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const hydrated = useRef(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const STORAGE_KEY = 'grace_design_layers'
 
   const selected = layers.find(l => l.id === selectedId) ?? null
+
+  const writeSave = (data: LogoLayer[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+      setLastSaved(new Date())
+      setSaveStatus('saved')
+    } catch (e) {
+      console.error('Save failed', e)
+    }
+  }
+
+  // Manual save — immediate, with brief "saving" feedback.
+  const saveDesign = () => {
+    setSaveStatus('saving')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    setTimeout(() => writeSave(layers), 150)
+  }
 
   // Snapshot current layers before a mutating action so it can be undone.
   const snapshot = () => {
@@ -58,22 +81,49 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
     })
   }
 
-  // Add the logo from Phase 1 automatically
+  // On mount: restore a previously saved design, otherwise seed the Phase 1
+  // logo. Runs once; remounting (e.g. navigating away and back) restores from
+  // localStorage since React state is lost but the save persists.
   useEffect(() => {
-    if (state.logo && layers.length === 0) {
+    let restored = false
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as LogoLayer[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setLayers(parsed)
+          setSelectedId(parsed[parsed.length - 1].id)
+          setLastSaved(new Date())
+          setSaveStatus('saved')
+          restored = true
+        }
+      }
+    } catch (e) {
+      console.error('Restore failed', e)
+    }
+
+    if (!restored && state.logo) {
       const id = crypto.randomUUID()
       setLayers([{
         id,
         dataUrl: state.logo.dataUrl,
-        x: 80,
-        y: 100,
-        width: 180,
-        height: 90,
-        rotation: 0,
+        x: 80, y: 100, width: 180, height: 90, rotation: 0,
       }])
       setSelectedId(id)
     }
-  }, [state.logo])
+    hydrated.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-save: debounce writes whenever the design changes after hydration.
+  useEffect(() => {
+    if (!hydrated.current) return
+    setSaveStatus('saving')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => writeSave(layers), 800)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers])
 
   const updateSelected = (updates: Partial<LogoLayer>) => {
     if (!selectedId) return
@@ -288,13 +338,28 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                 <Plus size={12}/>
               </button>
             </div>
-            <button
-              onClick={handleConfirm}
-              className="btn-primary flex items-center gap-1.5"
-            >
-              Confirm Design
-              <ArrowRight size={13}/>
-            </button>
+            <div className="flex items-center gap-2.5">
+              {/* Auto-save status */}
+              <span className="text-[11px] text-gray-500 flex items-center gap-1 min-w-[64px] justify-end">
+                {saveStatus === 'saving' && <><Loader2 size={11} className="animate-spin"/> Saving…</>}
+                {saveStatus === 'saved' && <><Check size={11} className="text-brand-green"/> Saved</>}
+              </span>
+              <button
+                onClick={saveDesign}
+                title="Save design"
+                className="btn-secondary flex items-center gap-1.5 py-2"
+              >
+                <Save size={13}/>
+                Save
+              </button>
+              <button
+                onClick={handleConfirm}
+                className="btn-primary flex items-center gap-1.5"
+              >
+                Confirm Design
+                <ArrowRight size={13}/>
+              </button>
+            </div>
           </div>
 
           {/* Canvas area */}
