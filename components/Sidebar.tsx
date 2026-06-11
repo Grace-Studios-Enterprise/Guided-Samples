@@ -10,6 +10,8 @@ interface Props {
   currentPhase: number
   onPhaseChange: (phase: number) => void
   state: AppState
+  section: string
+  onSectionChange: (section: string) => void
 }
 
 const phases = [
@@ -19,7 +21,7 @@ const phases = [
   { id: 4, label: 'Tech Pack', desc: 'Specs & measurements' },
 ]
 
-export default function Sidebar({ currentPhase, onPhaseChange, state }: Props) {
+export default function Sidebar({ currentPhase, onPhaseChange, state, section, onSectionChange }: Props) {
   const isPhaseUnlocked = (phase: number) => {
     if (phase === 1) return true
     if (phase === 2) return !!state.logo
@@ -50,13 +52,13 @@ export default function Sidebar({ currentPhase, onPhaseChange, state }: Props) {
 
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        <NavItem icon={<LayoutDashboard size={15}/>} label="Dashboard" active={false} />
-        <NavItem icon={<FolderOpen size={15}/>} label="Projects" active={false} />
-        <NavItem icon={<Palette size={15}/>} label="Logo & Design" active={true} />
-        <NavItem icon={<Package size={15}/>} label="Tech Packs" active={false} />
-        <NavItem icon={<ShoppingCart size={15}/>} label="Orders" active={false} />
-        <NavItem icon={<Library size={15}/>} label="Library" active={false} />
-        <NavItem icon={<Settings size={15}/>} label="Settings" active={false} />
+        <NavItem icon={<LayoutDashboard size={15}/>} label="Dashboard" active={section === 'dashboard'} onClick={() => onSectionChange('dashboard')} />
+        <NavItem icon={<FolderOpen size={15}/>} label="Projects" active={section === 'projects'} onClick={() => onSectionChange('projects')} />
+        <NavItem icon={<Palette size={15}/>} label="Logo & Design" active={section === 'design'} onClick={() => onSectionChange('design')} />
+        <NavItem icon={<Package size={15}/>} label="Tech Packs" active={section === 'techpacks'} onClick={() => onSectionChange('techpacks')} />
+        <NavItem icon={<ShoppingCart size={15}/>} label="Orders" active={section === 'orders'} onClick={() => onSectionChange('orders')} />
+        <NavItem icon={<Library size={15}/>} label="Library" active={section === 'library'} onClick={() => onSectionChange('library')} />
+        <NavItem icon={<Settings size={15}/>} label="Settings" active={section === 'settings'} onClick={() => onSectionChange('settings')} />
 
         {/* Phase progress */}
         <div className="pt-4 pb-1">
@@ -106,11 +108,14 @@ export default function Sidebar({ currentPhase, onPhaseChange, state }: Props) {
   )
 }
 
-function NavItem({ icon, label, active }: { icon: React.ReactNode; label: string; active: boolean }) {
+function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick?: () => void }) {
   return (
-    <button className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-colors ${
-      active ? 'bg-dark-600 text-white' : 'text-gray-500 hover:bg-dark-600 hover:text-gray-300'
-    }`}>
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-colors ${
+        active ? 'bg-dark-600 text-white' : 'text-gray-500 hover:bg-dark-600 hover:text-gray-300'
+      }`}
+    >
       {icon}
       <span>{label}</span>
     </button>
