@@ -24,6 +24,7 @@ interface LogoLayer {
 export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(100)
+  const [garmentScale, setGarmentScale] = useState(100)
   const [layers, setLayers] = useState<LogoLayer[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dragging, setDragging] = useState<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null)
@@ -275,6 +276,34 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
             </div>
           </div>
 
+          {state.garment && (
+            <div className="card">
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-xs font-medium text-gray-600">Garment Size</p>
+                <span className="text-xs text-gray-700">{garmentScale}%</span>
+              </div>
+              <input
+                type="range"
+                min={25}
+                max={200}
+                value={garmentScale}
+                onChange={e => setGarmentScale(parseInt(e.target.value))}
+                className="w-full accent-brand-green"
+              />
+              <div className="flex items-center justify-between mt-2 gap-1.5">
+                <button onClick={() => setGarmentScale(s => Math.max(25, s - 10))} className="btn-secondary flex-1 py-1 flex items-center justify-center">
+                  <Minus size={12}/>
+                </button>
+                <button onClick={() => setGarmentScale(100)} className="btn-secondary flex-1 py-1 text-xs">
+                  Reset
+                </button>
+                <button onClick={() => setGarmentScale(s => Math.min(200, s + 10))} className="btn-secondary flex-1 py-1 flex items-center justify-center">
+                  <Plus size={12}/>
+                </button>
+              </div>
+            </div>
+          )}
+
           {layers.length > 0 && (
             <div className="card">
               <p className="text-xs font-medium text-gray-600 mb-2">Layers</p>
@@ -367,18 +396,23 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
               }}
             >
               {state.garment ? (
-                state.garment.svg ? (
-                  <div
-                    dangerouslySetInnerHTML={{ __html: state.garment.svg }}
-                    className="absolute inset-0 flex items-center justify-center [&>svg]:w-full [&>svg]:h-full pointer-events-none"
-                  />
-                ) : (
-                  <img
-                    src={state.garment.dataUrl}
-                    alt="garment"
-                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                  />
-                )
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ transform: `scale(${garmentScale / 100})`, transformOrigin: 'center center' }}
+                >
+                  {state.garment.svg ? (
+                    <div
+                      dangerouslySetInnerHTML={{ __html: state.garment.svg }}
+                      className="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full"
+                    />
+                  ) : (
+                    <img
+                      src={state.garment.dataUrl}
+                      alt="garment"
+                      className="w-full h-full object-contain"
+                    />
+                  )}
+                </div>
               ) : (
                 <label className="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-400 hover:text-gray-600 transition-colors">
                   <Upload size={28}/>
