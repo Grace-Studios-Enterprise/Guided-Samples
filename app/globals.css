@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-green: #184D3E;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #0d0d0d;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* Checkerboard pattern for transparent backgrounds */
+.checkerboard {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+
+.phase-header {
+  @apply text-xs font-semibold tracking-widest text-gray-400 uppercase mb-4;
+}
+
+.card {
+  @apply bg-dark-700 border border-dark-500 rounded-xl p-4;
+}
+
+.btn-primary {
+  @apply bg-brand-green hover:bg-brand-green-light text-white font-medium py-2.5 px-4 rounded-lg transition-colors text-sm;
+}
+
+.btn-secondary {
+  @apply bg-dark-500 hover:bg-dark-400 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm border border-dark-300;
+}
+
+.input-field {
+  @apply bg-dark-600 border border-dark-400 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-green transition-colors w-full;
+}
+
+.textarea-field {
+  @apply bg-dark-600 border border-dark-400 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-green transition-colors w-full resize-none;
+}
