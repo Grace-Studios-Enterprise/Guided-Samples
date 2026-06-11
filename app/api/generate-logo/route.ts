@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// Image generation can take 10-40s; allow up to 60s (Vercel Hobby max).
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const { prompt } = await req.json()
+  const { prompt, referenceImage } = await req.json()
 
   if (!prompt) {
     return NextResponse.json({ error: 'Prompt required' }, { status: 400 })
@@ -14,10 +13,9 @@ export async function POST(req: NextRequest) {
   const style = detectStyle(prompt)
   const color = detectColor(prompt)
 
-  // Try OpenAI first; fall back to the built-in SVG generator on any failure.
   if (process.env.OPENAI_API_KEY) {
     try {
-      const images = await generateWithOpenAI(prompt)
+      const images = await generateWithOpenAI(prompt, referenceImage)
       return NextResponse.json({
         source: 'openai',
         images,
@@ -47,11 +45,44 @@ export async function POST(req: NextRequest) {
   })
 }
 
-async function generateWithOpenAI(userPrompt: string): Promise<string[]> {
-  const prompt = `A professional vector-style brand logo. ${userPrompt}.
+async function generateWithOpenAI(userPrompt: string, referenceImage?: string): Promise<string[]> {
+  const enhancedPrompt = `A professional vector-style brand logo. ${userPrompt}.
 Clean, minimal, high-contrast, centered composition, flat design, no mockup, no background scene.
 The logo must sit on a fully transparent background with no drop shadow.`
 
+  // Use the edits endpoint when a reference image is provided
+  if (referenceImage) {
+    const base64Data = referenceImage.split(',')[1]
+    const mimeMatch = referenceImage.match(/^data:(image\/\w+);base64,/)
+    const mime = mimeMatch ? mimeMatch[1] : 'image/png'
+
+    const buffer = Buffer.from(base64Data, 'base64')
+    const blob = new Blob([buffer], { type: mime })
+
+    const form = new FormData()
+    form.append('model', 'gpt-image-1')
+    form.append('image[]', blob, `reference.${mime.split('/')[1]}`)
+    form.append('prompt', `Use the uploaded image as a style reference. ${enhancedPrompt}`)
+    form.append('n', '2')
+    form.append('size', '1024x1024')
+    form.append('quality', 'medium')
+
+    const res = await fetch('https://api.openai.com/v1/images/edits', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: form,
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`OpenAI edits ${res.status}: ${text}`)
+    }
+
+    const data = await res.json()
+    return (data.data as { b64_json: string }[]).map(d => `data:image/png;base64,${d.b64_json}`)
+  }
+
+  // Standard generation without reference
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: {
@@ -60,7 +91,7 @@ The logo must sit on a fully transparent background with no drop shadow.`
     },
     body: JSON.stringify({
       model: 'gpt-image-1',
-      prompt,
+      prompt: enhancedPrompt,
       n: 2,
       size: '1024x1024',
       background: 'transparent',
@@ -75,9 +106,7 @@ The logo must sit on a fully transparent background with no drop shadow.`
   }
 
   const data = await res.json()
-  return (data.data as { b64_json: string }[]).map(
-    d => `data:image/png;base64,${d.b64_json}`
-  )
+  return (data.data as { b64_json: string }[]).map(d => `data:image/png;base64,${d.b64_json}`)
 }
 
 function svgToDataUrl(svg: string): string {
@@ -106,13 +135,13 @@ function detectStyle(prompt: string): string {
 }
 
 function extractBrandName(prompt: string): string {
-  const p = prompt.toLowerCase()
   const calledMatch = prompt.match(/called\s+([A-Z][A-Za-z]+)/i)
   if (calledMatch) return calledMatch[1].toUpperCase()
   const brandMatch = prompt.match(/brand\s+(?:called\s+)?([A-Z][A-Za-z]+)/i)
   if (brandMatch) return brandMatch[1].toUpperCase()
   const forMatch = prompt.match(/for\s+([A-Z][A-Za-z]+)/i)
   if (forMatch) return forMatch[1].toUpperCase()
+  const p = prompt.toLowerCase()
   if (p.includes('grace')) return 'GRACE'
   return 'BRAND'
 }

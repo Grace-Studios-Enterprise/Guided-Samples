@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, Cpu, Loader2, Download, ArrowRight, ArrowLeft, ImageIcon } from 'lucide-react'
+import { Upload, Cpu, Loader2, Download, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { exportAsset } from '@/lib/export'
 
@@ -41,6 +41,8 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
   const [selectedVariant, setSelectedVariant] = useState(0)
   const [uploadedImage, setUploadedImage] = useState<string | null>(null)
   const [exporting, setExporting] = useState<string | null>(null)
+  const [referenceImage, setReferenceImage] = useState<string | null>(null)
+  const referenceInputRef = useRef<HTMLInputElement>(null)
 
   const onDrop = useCallback((files: File[]) => {
     const file = files[0]
@@ -65,7 +67,7 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
       const res = await fetch('/api/generate-garment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: `${prompt} Color: ${color}` }),
+        body: JSON.stringify({ prompt: `${prompt} Color: ${color}`, referenceImage }),
       })
       if (!res.ok) throw new Error('Request failed')
       const data: GarmentResult = await res.json()
@@ -199,6 +201,41 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
                   ))}
                 </select>
               </div>
+              {/* Reference image */}
+              <div>
+                {referenceImage ? (
+                  <div className="relative rounded-lg overflow-hidden border border-slate-200" style={{ height: 80 }}>
+                    <img src={referenceImage} alt="Reference" className="w-full h-full object-cover"/>
+                    <button
+                      onClick={() => setReferenceImage(null)}
+                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 transition-colors shadow"
+                    >
+                      <X size={11}/>
+                    </button>
+                    <span className="absolute bottom-1 left-2 text-[10px] text-white bg-black/50 rounded px-1.5 py-0.5">Reference</span>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 hover:border-brand-green cursor-pointer transition-colors text-xs text-gray-400 hover:text-gray-700">
+                    <ImagePlus size={13}/>
+                    Add reference image
+                    <input
+                      ref={referenceInputRef}
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = ev => setReferenceImage(ev.target?.result as string)
+                        reader.readAsDataURL(file)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+
               <button
                 onClick={handleGenerate}
                 disabled={loading}

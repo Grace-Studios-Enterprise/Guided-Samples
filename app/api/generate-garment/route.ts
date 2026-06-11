@@ -4,7 +4,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const { prompt } = await req.json()
+  const { prompt, referenceImage } = await req.json()
 
   if (!prompt) {
     return NextResponse.json({ error: 'Prompt required' }, { status: 400 })
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
   if (process.env.OPENAI_API_KEY) {
     try {
-      const images = await generateWithOpenAI(prompt, garmentType)
+      const images = await generateWithOpenAI(prompt, garmentType, referenceImage)
       return NextResponse.json({
         source: 'openai',
         images,
@@ -45,10 +45,41 @@ export async function POST(req: NextRequest) {
   })
 }
 
-async function generateWithOpenAI(userPrompt: string, garmentType: string): Promise<string[]> {
-  const prompt = `A professional flat-lay product photo of a single blank ${garmentType}. ${userPrompt}.
+async function generateWithOpenAI(userPrompt: string, garmentType: string, referenceImage?: string): Promise<string[]> {
+  const enhancedPrompt = `A professional flat-lay product photo of a single blank ${garmentType}. ${userPrompt}.
 Front view, centered, no model, no text, no logo, no graphics on the garment.
 Studio product shot on a fully transparent background with soft realistic fabric folds and shadows on the garment only.`
+
+  if (referenceImage) {
+    const base64Data = referenceImage.split(',')[1]
+    const mimeMatch = referenceImage.match(/^data:(image\/\w+);base64,/)
+    const mime = mimeMatch ? mimeMatch[1] : 'image/png'
+
+    const buffer = Buffer.from(base64Data, 'base64')
+    const blob = new Blob([buffer], { type: mime })
+
+    const form = new FormData()
+    form.append('model', 'gpt-image-1')
+    form.append('image[]', blob, `reference.${mime.split('/')[1]}`)
+    form.append('prompt', `Use the uploaded image as a style and garment-type reference. ${enhancedPrompt}`)
+    form.append('n', '1')
+    form.append('size', '1024x1024')
+    form.append('quality', 'medium')
+
+    const res = await fetch('https://api.openai.com/v1/images/edits', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: form,
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`OpenAI edits ${res.status}: ${text}`)
+    }
+
+    const data = await res.json()
+    return (data.data as { b64_json: string }[]).map(d => `data:image/png;base64,${d.b64_json}`)
+  }
 
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
@@ -58,7 +89,7 @@ Studio product shot on a fully transparent background with soft realistic fabric
     },
     body: JSON.stringify({
       model: 'gpt-image-1',
-      prompt,
+      prompt: enhancedPrompt,
       n: 1,
       size: '1024x1024',
       background: 'transparent',
@@ -73,9 +104,7 @@ Studio product shot on a fully transparent background with soft realistic fabric
   }
 
   const data = await res.json()
-  return (data.data as { b64_json: string }[]).map(
-    d => `data:image/png;base64,${d.b64_json}`
-  )
+  return (data.data as { b64_json: string }[]).map(d => `data:image/png;base64,${d.b64_json}`)
 }
 
 function svgToDataUrl(svg: string): string {

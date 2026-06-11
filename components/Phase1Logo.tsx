@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, Upload } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, Upload, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { exportAsset } from '@/lib/export'
 
@@ -36,6 +36,8 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
   const [savedLogo, setSavedLogo] = useState<AppState['logo']>(state.logo)
   const [transparentBg, setTransparentBg] = useState(true)
   const [exporting, setExporting] = useState<string | null>(null)
+  const [referenceImage, setReferenceImage] = useState<string | null>(null)
+  const referenceInputRef = useRef<HTMLInputElement>(null)
 
   const currentImage = result ? result.images[selectedVariant] : null
   const currentSvg = result ? result.svgs[selectedVariant] : null
@@ -62,7 +64,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
       const res = await fetch('/api/generate-logo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, referenceImage }),
       })
       if (!res.ok) throw new Error('Request failed')
       const data: LogoResult = await res.json()
@@ -135,6 +137,41 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
               {loading ? 'Generating…' : 'Generate Logo'}
             </button>
             {error && <p className="text-[11px] text-red-500 mt-2">{error}</p>}
+
+            {/* Reference image */}
+            <div className="mt-3">
+              {referenceImage ? (
+                <div className="relative rounded-lg overflow-hidden border border-slate-200" style={{ height: 80 }}>
+                  <img src={referenceImage} alt="Reference" className="w-full h-full object-cover"/>
+                  <button
+                    onClick={() => setReferenceImage(null)}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 transition-colors shadow"
+                  >
+                    <X size={11}/>
+                  </button>
+                  <span className="absolute bottom-1 left-2 text-[10px] text-white bg-black/50 rounded px-1.5 py-0.5">Reference</span>
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 hover:border-brand-green cursor-pointer transition-colors text-xs text-gray-400 hover:text-gray-700">
+                  <ImagePlus size={13}/>
+                  Add reference image
+                  <input
+                    ref={referenceInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const reader = new FileReader()
+                      reader.onload = ev => setReferenceImage(ev.target?.result as string)
+                      reader.readAsDataURL(file)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 my-3">
               <div className="h-px bg-slate-200 flex-1"/>
