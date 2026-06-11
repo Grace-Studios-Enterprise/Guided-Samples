@@ -5,7 +5,8 @@ import Sidebar from '@/components/Sidebar'
 import Phase1Logo from '@/components/Phase1Logo'
 import Phase2Garment from '@/components/Phase2Garment'
 import Phase3Editor from '@/components/Phase3Editor'
-import Phase4TechPack from '@/components/Phase4TechPack'
+import Phase4Preview from '@/components/Phase4Preview'
+import Phase5TechPack from '@/components/Phase5TechPack'
 import SectionView from '@/components/SectionView'
 
 export type AppState = {
@@ -26,6 +27,9 @@ export type AppState = {
     confirmed: boolean
     previewDataUrl: string
   } | null
+  preview: {
+    images: string[]
+  } | null
 }
 
 export default function Home() {
@@ -34,8 +38,8 @@ export default function Home() {
     logo: null,
     garment: null,
     design: null,
+    preview: null,
   })
-  // Active sidebar section. 'design' shows the 4-phase workflow.
   const [section, setSection] = useState('design')
 
   const goToPhase = (phase: number) => {
@@ -59,35 +63,36 @@ export default function Home() {
         {section === 'design' && state.currentPhase === 1 && (
           <Phase1Logo
             state={state}
-            onComplete={(logo) => {
-              setState(s => ({ ...s, logo, currentPhase: 2 }))
-            }}
+            onComplete={(logo) => setState(s => ({ ...s, logo, currentPhase: 2 }))}
             onSkip={() => setState(s => ({ ...s, currentPhase: 2 }))}
           />
         )}
         {section === 'design' && state.currentPhase === 2 && (
           <Phase2Garment
             state={state}
-            onComplete={(garment) => {
-              setState(s => ({ ...s, garment, currentPhase: 3 }))
-            }}
+            onComplete={(garment) => setState(s => ({ ...s, garment, currentPhase: 3 }))}
             onBack={() => goToPhase(1)}
           />
         )}
         {section === 'design' && state.currentPhase === 3 && (
           <Phase3Editor
             state={state}
-            onComplete={(design) => {
-              setState(s => ({ ...s, design, currentPhase: 4 }))
-            }}
+            onComplete={(design) => setState(s => ({ ...s, design, currentPhase: 4 }))}
             onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
             onBack={() => goToPhase(2)}
           />
         )}
         {section === 'design' && state.currentPhase === 4 && (
-          <Phase4TechPack
+          <Phase4Preview
             state={state}
+            onComplete={(preview) => setState(s => ({ ...s, preview, currentPhase: 5 }))}
             onBack={() => goToPhase(3)}
+          />
+        )}
+        {section === 'design' && state.currentPhase === 5 && (
+          <Phase5TechPack
+            state={state}
+            onBack={() => goToPhase(4)}
           />
         )}
       </main>

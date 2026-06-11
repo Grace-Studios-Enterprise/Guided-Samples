@@ -40,7 +40,7 @@ function Dashboard({ state, onStartDesign }: { state: AppState; onStartDesign: (
     { label: 'Logos Created', value: state.logo ? 1 : 0 },
     { label: 'Garments', value: state.garment ? 1 : 0 },
     { label: 'Designs', value: state.design ? 1 : 0 },
-    { label: 'Tech Packs', value: state.design ? 1 : 0 },
+    { label: 'Previews', value: state.preview ? 1 : 0 },
   ]
   return (
     <div className="p-6 max-w-[1100px]">

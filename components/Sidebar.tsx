@@ -18,7 +18,8 @@ const phases = [
   { id: 1, label: 'Logo Generation', desc: 'AI-powered logo creation' },
   { id: 2, label: 'Garment', desc: 'Upload or generate blank' },
   { id: 3, label: 'Apply Design', desc: 'Position your logo' },
-  { id: 4, label: 'Tech Pack', desc: 'Specs & measurements' },
+  { id: 4, label: 'Preview in Reality', desc: 'Visualize finished product' },
+  { id: 5, label: 'Tech Pack', desc: 'Specs & measurements' },
 ]
 
 export default function Sidebar({ currentPhase, onPhaseChange, state, section, onSectionChange }: Props) {
@@ -28,6 +29,7 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
     if (phase === 1) return !!state.logo
     if (phase === 2) return !!state.garment
     if (phase === 3) return !!state.design
+    if (phase === 4) return !!state.preview
     return false
   }
 
