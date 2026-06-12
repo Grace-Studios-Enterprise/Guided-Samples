@@ -94,7 +94,6 @@ async function generateWithOpenAI(builtPrompt: string, referenceImage?: string, 
       prompt: builtPrompt,
       n: 1,
       size: '1024x1024',
-      response_format: 'b64_json',
       quality: apiQuality,
     }),
   })
