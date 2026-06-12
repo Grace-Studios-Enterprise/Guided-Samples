@@ -28,8 +28,6 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
     img.onerror = reject
-    // Force a fresh load from the data URL, bypassing any cached tainted version
-    img.src = ''
     img.src = src
   })
 }
