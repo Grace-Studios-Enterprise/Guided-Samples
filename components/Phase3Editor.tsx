@@ -7,19 +7,28 @@ import { streamGenerate } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 
 // Fire-and-forget: warm the Phase 4 preview cache as soon as design is confirmed.
-async function prefetchPreview(state: AppState) {
-  const gSnip = state.garment?.dataUrl?.slice(-40) ?? ''
-  const lSnip = state.logo?.dataUrl?.slice(-40) ?? ''
-  const key = cacheKey('preview', gSnip, lSnip)
+async function prefetchPreview(state: AppState, compositeImage: string) {
+  const designImage = compositeImage || state.garment?.dataUrl || ''
+  const key = cacheKey('preview', designImage.slice(-40))
   if (cacheGet(key)) return
   try {
     const data = await streamGenerate('/api/generate-preview', {
-      garmentImage: state.garment?.dataUrl ?? null,
-      logoImage: state.logo?.dataUrl ?? null,
+      garmentImage: designImage || null,
+      // Logo is already baked into the composite — only send it separately as a fallback.
+      logoImage: compositeImage ? null : (state.logo?.dataUrl ?? null),
       placement: 'center chest',
     }, () => {})
     cacheSet(key, data)
   } catch { /* silent — Phase 4 will generate on demand if this fails */ }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
 }
 
 interface Props {
@@ -193,9 +202,47 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
     reader.readAsDataURL(file)
   }
 
-  const handleConfirm = () => {
-    prefetchPreview(state) // warm Phase 4 cache in background
-    onComplete({ confirmed: true, previewDataUrl: '' })
+  // Render the editor canvas (garment + positioned logo layers) to a single image,
+  // mirroring the 380x460 coordinate space used for on-screen layout.
+  const compositeDesign = async (): Promise<string> => {
+    if (!state.garment?.dataUrl) return ''
+    const W = 380, H = 460, SCALE = 2
+    const canvas = document.createElement('canvas')
+    canvas.width = W * SCALE
+    canvas.height = H * SCALE
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return ''
+    ctx.scale(SCALE, SCALE)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, W, H)
+
+    const g = await loadImage(state.garment.dataUrl)
+    const fit = Math.min(W / g.width, H / g.height) * (garmentScale / 100)
+    const gw = g.width * fit
+    const gh = g.height * fit
+    ctx.drawImage(g, (W - gw) / 2, (H - gh) / 2, gw, gh)
+
+    for (const layer of layers) {
+      const img = await loadImage(layer.dataUrl)
+      ctx.save()
+      ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2)
+      ctx.rotate((layer.rotation * Math.PI) / 180)
+      const lf = Math.min(layer.width / img.width, layer.height / img.height)
+      ctx.drawImage(img, (-img.width * lf) / 2, (-img.height * lf) / 2, img.width * lf, img.height * lf)
+      ctx.restore()
+    }
+    return canvas.toDataURL('image/png')
+  }
+
+  const handleConfirm = async () => {
+    let composite = ''
+    try {
+      composite = await compositeDesign()
+    } catch (e) {
+      console.error('Composite failed, falling back to separate images', e)
+    }
+    prefetchPreview(state, composite) // warm Phase 4 cache in background
+    onComplete({ confirmed: true, previewDataUrl: composite })
   }
 
   const handleUploadGarment = (e: React.ChangeEvent<HTMLInputElement>) => {

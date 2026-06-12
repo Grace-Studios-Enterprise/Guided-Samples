@@ -12,11 +12,15 @@ interface Props {
   onBack: () => void
 }
 
+// The Phase 3 composite (garment with logo positioned on it) is the preferred
+// input — it preserves the user's exact placement. Fall back to the bare garment.
+function designImageOf(state: AppState): string {
+  return state.design?.previewDataUrl || state.garment?.dataUrl || ''
+}
+
 function previewCacheKey(state: AppState) {
   // Use a short slice of the actual image data so cache is tied to the real assets
-  const gSnip = state.garment?.dataUrl?.slice(-40) ?? ''
-  const lSnip = state.logo?.dataUrl?.slice(-40) ?? ''
-  return cacheKey('preview', gSnip, lSnip)
+  return cacheKey('preview', designImageOf(state).slice(-40))
 }
 
 export default function Phase4Preview({ state, onComplete, onBack }: Props) {
@@ -55,8 +59,9 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
       const data = await streamGenerate<{ images: string[] }>(
         '/api/generate-preview',
         {
-          garmentImage: state.garment?.dataUrl ?? null,
-          logoImage: state.logo?.dataUrl ?? null,
+          garmentImage: designImageOf(state) || null,
+          // Logo is already baked into the Phase 3 composite; only send separately as fallback
+          logoImage: state.design?.previewDataUrl ? null : (state.logo?.dataUrl ?? null),
           placement: 'center chest',
         },
         msg => setStatusMsg(msg),
@@ -108,8 +113,8 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
             <p className="text-xs font-medium text-gray-600 mb-3">Your Design</p>
 
             <div className="bg-white border border-slate-100 rounded-lg flex items-center justify-center mb-3" style={{ height: 140 }}>
-              {state.garment ? (
-                <img src={state.garment.dataUrl} alt="garment" className="w-full h-full object-contain p-2"/>
+              {designImageOf(state) ? (
+                <img src={designImageOf(state)} alt="garment" className="w-full h-full object-contain p-2"/>
               ) : (
                 <div className="text-xs text-gray-400 text-center px-4">No garment</div>
               )}
