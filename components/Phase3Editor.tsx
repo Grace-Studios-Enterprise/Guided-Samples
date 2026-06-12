@@ -8,14 +8,14 @@ import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 
 // Fire-and-forget: warm the Phase 4 preview cache as soon as design is confirmed.
 async function prefetchPreview(state: AppState) {
-  const key = cacheKey('preview', state.garment?.type, state.garment?.color, state.logo?.style, state.logo?.color)
+  const gSnip = state.garment?.dataUrl?.slice(-40) ?? ''
+  const lSnip = state.logo?.dataUrl?.slice(-40) ?? ''
+  const key = cacheKey('preview', gSnip, lSnip)
   if (cacheGet(key)) return
   try {
     const data = await streamGenerate('/api/generate-preview', {
-      garmentType: state.garment?.type ?? 'hoodie',
-      garmentColor: state.garment?.color ?? 'black',
-      logoStyle: state.logo?.style ?? 'minimal',
-      logoColor: state.logo?.color ?? '#184D3E',
+      garmentImage: state.garment?.dataUrl ?? null,
+      logoImage: state.logo?.dataUrl ?? null,
       placement: 'center chest',
     }, () => {})
     cacheSet(key, data)

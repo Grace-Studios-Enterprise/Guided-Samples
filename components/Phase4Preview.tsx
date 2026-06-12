@@ -13,7 +13,10 @@ interface Props {
 }
 
 function previewCacheKey(state: AppState) {
-  return cacheKey('preview', state.garment?.type, state.garment?.color, state.logo?.style, state.logo?.color)
+  // Use a short slice of the actual image data so cache is tied to the real assets
+  const gSnip = state.garment?.dataUrl?.slice(-40) ?? ''
+  const lSnip = state.logo?.dataUrl?.slice(-40) ?? ''
+  return cacheKey('preview', gSnip, lSnip)
 }
 
 export default function Phase4Preview({ state, onComplete, onBack }: Props) {
@@ -52,10 +55,8 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
       const data = await streamGenerate<{ images: string[] }>(
         '/api/generate-preview',
         {
-          garmentType: state.garment?.type ?? 'hoodie',
-          garmentColor: state.garment?.color ?? 'black',
-          logoStyle: state.logo?.style ?? 'minimal',
-          logoColor: state.logo?.color ?? '#184D3E',
+          garmentImage: state.garment?.dataUrl ?? null,
+          logoImage: state.logo?.dataUrl ?? null,
           placement: 'center chest',
         },
         msg => setStatusMsg(msg),
@@ -128,19 +129,10 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
                 </>
               )}
               {state.logo && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Logo style</span>
-                    <span className="text-gray-700">{state.logo.style}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500">Logo color</span>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 rounded-full border border-slate-200" style={{ background: state.logo.color }}/>
-                      <span className="text-gray-700 font-mono">{state.logo.color.toUpperCase()}</span>
-                    </div>
-                  </div>
-                </>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Logo</span>
+                  <span className="text-gray-700">Applied</span>
+                </div>
               )}
               <div className="flex justify-between">
                 <span className="text-gray-500">Placement</span>

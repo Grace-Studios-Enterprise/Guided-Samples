@@ -1,19 +1,10 @@
 import { NextRequest } from 'next/server'
-import { previewPrompt } from '@/lib/prompts'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const { garmentType, garmentColor, logoStyle, logoColor, placement } = await req.json()
-
-  const params = {
-    garmentType: garmentType || 'hoodie',
-    garmentColor: garmentColor || 'black',
-    logoStyle: logoStyle || 'minimal',
-    logoColor: logoColor || 'forest green',
-    placement: placement || 'center chest',
-  }
+  const { garmentImage, logoImage, placement } = await req.json()
 
   const { readable, writable } = new TransformStream()
   const writer = writable.getWriter()
@@ -29,22 +20,42 @@ export async function POST(req: NextRequest) {
         return
       }
 
-      await send({ type: 'status', message: 'Generating realistic preview...' })
-      const prompt = previewPrompt(params)
+      await send({ type: 'status', message: 'Compositing your design...' })
 
-      const res = await fetch('https://api.openai.com/v1/images/generations', {
+      const prompt = logoImage
+        ? `Professional apparel product photography. Take this garment and realistically apply the provided logo to the ${placement || 'center chest'}. The logo should look printed or embroidered on the fabric. Studio lighting, white background, photorealistic, no model, no mannequin. Show the full garment.`
+        : `Professional apparel product photography of this garment. Studio lighting, white background, photorealistic, no model, no mannequin. Show the full garment.`
+
+      const form = new FormData()
+      form.append('model', 'gpt-image-1')
+      form.append('prompt', prompt)
+      form.append('n', '2')
+      form.append('size', '1024x1024')
+      form.append('quality', 'medium')
+
+      // Always include the garment image as the primary input
+      if (garmentImage) {
+        const garmentBuffer = Buffer.from(garmentImage.split(',')[1], 'base64')
+        const garmentMime = garmentImage.match(/^data:(image\/\w+);/)?.[1] ?? 'image/png'
+        form.append('image[]', new Blob([garmentBuffer], { type: garmentMime }), `garment.${garmentMime.split('/')[1]}`)
+      }
+
+      // Include logo as a second reference image if available
+      if (logoImage) {
+        const logoBuffer = Buffer.from(logoImage.split(',')[1], 'base64')
+        const logoMime = logoImage.match(/^data:(image\/\w+);/)?.[1] ?? 'image/png'
+        form.append('image[]', new Blob([logoBuffer], { type: logoMime }), `logo.${logoMime.split('/')[1]}`)
+      }
+
+      const endpoint = (garmentImage || logoImage)
+        ? 'https://api.openai.com/v1/images/edits'
+        : 'https://api.openai.com/v1/images/generations'
+
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-image-1',
-          prompt,
-          n: 2,
-          size: '1024x1024',
-          output_format: 'png',
-          quality: 'medium',
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: (garmentImage || logoImage) ? form : JSON.stringify({
+          model: 'gpt-image-1', prompt, n: 2, size: '1024x1024', output_format: 'png', quality: 'medium',
         }),
       })
 
@@ -59,7 +70,7 @@ export async function POST(req: NextRequest) {
       await send({ type: 'complete', source: 'openai', images })
     } catch (err) {
       console.error('Preview generation failed:', err)
-      await send({ type: 'error', message: 'Generation failed. Please try again.' })
+      await send({ type: 'error', message: err instanceof Error ? err.message : 'Generation failed. Please try again.' })
     } finally {
       await writer.close()
     }
