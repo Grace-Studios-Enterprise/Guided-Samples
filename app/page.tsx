@@ -9,6 +9,8 @@ import Phase2Garment from '@/components/Phase2Garment'
 import Phase3Editor from '@/components/Phase3Editor'
 import Phase4Preview from '@/components/Phase4Preview'
 import Phase5TechPack from '@/components/Phase5TechPack'
+import Phase6Production from '@/components/Phase6Production'
+import type { TechPackData } from '@/components/Phase6Production'
 import SectionView from '@/components/SectionView'
 import { Menu } from 'lucide-react'
 
@@ -47,6 +49,7 @@ function App() {
   })
   const [section, setSection] = useState('design')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [techPack, setTechPack] = useState<TechPackData | null>(null)
 
   // Auth gate disabled — re-enable when sign-in/sign-up is ready
   // if (loading) {
@@ -141,6 +144,14 @@ function App() {
             <Phase5TechPack
               state={state}
               onBack={() => goToPhase(4)}
+              onSendToProduction={(tp) => { setTechPack(tp); setState(s => ({ ...s, currentPhase: 6 })) }}
+            />
+          )}
+          {section === 'design' && state.currentPhase === 6 && techPack && (
+            <Phase6Production
+              state={state}
+              techPack={techPack}
+              onBack={() => goToPhase(5)}
             />
           )}
         </main>

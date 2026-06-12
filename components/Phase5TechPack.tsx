@@ -1,12 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Upload, Download, Save, CheckCircle2, ArrowLeft, Trash2 } from 'lucide-react'
+import { Plus, Upload, Download, Save, CheckCircle2, ArrowLeft, Trash2, ArrowRight } from 'lucide-react'
 import { AppState } from '@/app/page'
+import type { TechPackData } from '@/components/Phase6Production'
 
 interface Props {
   state: AppState
   onBack: () => void
+  onSendToProduction: (tp: TechPackData) => void
 }
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
@@ -52,7 +54,7 @@ type StyleInfo = {
   sizeRange: string
 }
 
-export default function Phase5TechPack({ state, onBack }: Props) {
+export default function Phase5TechPack({ state, onBack, onSendToProduction }: Props) {
   const today = new Date().toISOString().split('T')[0]
 
   const [styleInfo, setStyleInfo] = useState<StyleInfo>({
@@ -398,7 +400,15 @@ export default function Phase5TechPack({ state, onBack }: Props) {
             </div>
           </div>
 
-          <button onClick={downloadTechPack} className="btn-primary w-full flex items-center justify-center gap-2">
+          <button
+            onClick={() => onSendToProduction({ styleInfo, measurements, pantones, placements })}
+            className="w-full flex items-center justify-center gap-2 bg-brand-green hover:bg-brand-green-light text-white font-medium py-3 px-4 rounded-xl transition-colors text-sm"
+          >
+            Send to Production
+            <ArrowRight size={15}/>
+          </button>
+
+          <button onClick={downloadTechPack} className="btn-secondary w-full flex items-center justify-center gap-2">
             <Save size={14}/> Save Tech Pack
           </button>
 
