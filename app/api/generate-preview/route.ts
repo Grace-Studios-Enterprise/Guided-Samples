@@ -32,7 +32,6 @@ export async function POST(req: NextRequest) {
       form.append('n', '2')
       form.append('size', '1024x1024')
       form.append('quality', 'medium')
-      form.append('response_format', 'b64_json')
 
       // Always include the garment image as the primary input
       if (garmentImage) {
