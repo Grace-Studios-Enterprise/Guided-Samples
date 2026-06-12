@@ -3,6 +3,24 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Undo2, Redo2, Minus, Plus, Upload, Layers, ArrowLeft, ArrowRight, Trash2, Copy, ChevronUp, ChevronDown, Save, Check, Loader2 } from 'lucide-react'
 import { AppState } from '@/app/page'
+import { streamGenerate } from '@/lib/streamGenerate'
+import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
+
+// Fire-and-forget: warm the Phase 4 preview cache as soon as design is confirmed.
+async function prefetchPreview(state: AppState) {
+  const key = cacheKey('preview', state.garment?.type, state.garment?.color, state.logo?.style, state.logo?.color)
+  if (cacheGet(key)) return
+  try {
+    const data = await streamGenerate('/api/generate-preview', {
+      garmentType: state.garment?.type ?? 'hoodie',
+      garmentColor: state.garment?.color ?? 'black',
+      logoStyle: state.logo?.style ?? 'minimal',
+      logoColor: state.logo?.color ?? '#184D3E',
+      placement: 'center chest',
+    }, () => {})
+    cacheSet(key, data)
+  } catch { /* silent — Phase 4 will generate on demand if this fails */ }
+}
 
 interface Props {
   state: AppState
@@ -176,6 +194,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
   }
 
   const handleConfirm = () => {
+    prefetchPreview(state) // warm Phase 4 cache in background
     onComplete({ confirmed: true, previewDataUrl: '' })
   }
 

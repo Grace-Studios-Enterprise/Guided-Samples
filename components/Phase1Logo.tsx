@@ -4,6 +4,8 @@ import { useState, useRef } from 'react'
 import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, Upload, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { exportAsset } from '@/lib/export'
+import { streamGenerate } from '@/lib/streamGenerate'
+import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 
 interface Props {
   state: AppState
@@ -30,6 +32,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
     state.logo ? '' : 'Create a vintage athletic logo for my brand called GRACE. Make it minimal with an arrow element. Use forest green.'
   )
   const [loading, setLoading] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
   const [result, setResult] = useState<LogoResult | null>(null)
   const [selectedVariant, setSelectedVariant] = useState(0)
@@ -60,14 +63,25 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
     if (!prompt.trim()) return
     setLoading(true)
     setError('')
+    setStatusMsg('Starting...')
+
+    const key = cacheKey('logo', prompt, referenceImage ?? '')
+    const cached = cacheGet<LogoResult>(key)
+    if (cached) {
+      setResult(cached)
+      setSelectedVariant(0)
+      setLoading(false)
+      setStatusMsg('')
+      return
+    }
+
     try {
-      const res = await fetch('/api/generate-logo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, referenceImage }),
-      })
-      if (!res.ok) throw new Error('Request failed')
-      const data: LogoResult = await res.json()
+      const data = await streamGenerate<LogoResult>(
+        '/api/generate-logo',
+        { prompt, referenceImage },
+        msg => setStatusMsg(msg),
+      )
+      cacheSet(key, data)
       setResult(data)
       setSelectedVariant(0)
     } catch (e) {
@@ -75,6 +89,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
       setError('Generation failed. Please try again.')
     } finally {
       setLoading(false)
+      setStatusMsg('')
     }
   }
 
@@ -134,7 +149,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
               className="btn-primary w-full mt-3 flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 size={15} className="animate-spin"/> : <Sparkles size={15}/>}
-              {loading ? 'Generating…' : 'Generate Logo'}
+              {loading ? (statusMsg || 'Generating…') : 'Generate Logo'}
             </button>
             {error && <p className="text-[11px] text-red-500 mt-2">{error}</p>}
 
@@ -221,8 +236,8 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
           <div className="checkerboard rounded-xl overflow-hidden mb-3 flex items-center justify-center" style={{ height: 280 }}>
             {loading && (
               <div className="flex flex-col items-center gap-3 text-gray-400">
-                <Loader2 size={32} className="animate-spin"/>
-                <span className="text-sm">Generating your logo…</span>
+                <Loader2 size={32} className="animate-spin text-brand-green"/>
+                <span className="text-sm text-gray-700">{statusMsg || 'Generating your logo…'}</span>
                 <span className="text-xs text-gray-400">This can take 10–30 seconds</span>
               </div>
             )}

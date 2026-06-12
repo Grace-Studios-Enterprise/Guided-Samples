@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { logoPrompt } from '@/lib/prompts'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -7,50 +8,57 @@ export async function POST(req: NextRequest) {
   const { prompt, referenceImage } = await req.json()
 
   if (!prompt) {
-    return NextResponse.json({ error: 'Prompt required' }, { status: 400 })
+    return new Response(`data: ${JSON.stringify({ type: 'error', message: 'Prompt required' })}\n\n`, {
+      status: 400, headers: { 'Content-Type': 'text/event-stream' },
+    })
   }
 
   const style = detectStyle(prompt)
   const color = detectColor(prompt)
+  const { readable, writable } = new TransformStream()
+  const writer = writable.getWriter()
+  const enc = new TextEncoder()
+  const send = (data: object) => writer.write(enc.encode(`data: ${JSON.stringify(data)}\n\n`))
 
-  if (process.env.OPENAI_API_KEY) {
+  ;(async () => {
     try {
-      const images = await generateWithOpenAI(prompt, referenceImage)
-      return NextResponse.json({
-        source: 'openai',
-        images,
-        svgs: images.map(() => null),
-        style,
-        color,
-      })
+      await send({ type: 'status', message: 'Connecting to AI...' })
+      if (process.env.OPENAI_API_KEY) {
+        await send({ type: 'status', message: 'Generating your logo...' })
+        const images = await generateWithOpenAI(
+          logoPrompt({ userPrompt: prompt, hasReference: !!referenceImage }),
+          referenceImage,
+        )
+        await send({ type: 'status', message: 'Processing result...' })
+        await send({ type: 'complete', source: 'openai', images, svgs: images.map(() => null), style, color })
+      } else {
+        await send({ type: 'status', message: 'Building logo...' })
+        const svgs = [
+          generateSVGLogo(prompt), generateSVGLogo(prompt, 'variant1'),
+          generateSVGLogo(prompt, 'variant2'), generateSVGLogo(prompt, 'variant3'),
+          generateSVGLogo(prompt, 'variant4'),
+        ]
+        await send({ type: 'complete', source: 'svg', images: svgs.map(svgToDataUrl), svgs, style, color })
+      }
     } catch (err) {
-      console.error('OpenAI logo generation failed, falling back to SVG:', err)
+      console.error('Logo generation failed:', err)
+      try {
+        const svgs = [generateSVGLogo(prompt), generateSVGLogo(prompt, 'variant1'), generateSVGLogo(prompt, 'variant2'), generateSVGLogo(prompt, 'variant3'), generateSVGLogo(prompt, 'variant4')]
+        await send({ type: 'complete', source: 'svg', images: svgs.map(svgToDataUrl), svgs, style, color })
+      } catch {
+        await send({ type: 'error', message: 'Generation failed. Please try again.' })
+      }
+    } finally {
+      await writer.close()
     }
-  }
+  })()
 
-  // SVG fallback
-  const svgs = [
-    generateSVGLogo(prompt),
-    generateSVGLogo(prompt, 'variant1'),
-    generateSVGLogo(prompt, 'variant2'),
-    generateSVGLogo(prompt, 'variant3'),
-    generateSVGLogo(prompt, 'variant4'),
-  ]
-  return NextResponse.json({
-    source: 'svg',
-    images: svgs.map(svgToDataUrl),
-    svgs,
-    style,
-    color,
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
   })
 }
 
-async function generateWithOpenAI(userPrompt: string, referenceImage?: string): Promise<string[]> {
-  const enhancedPrompt = `A professional vector-style brand logo. ${userPrompt}.
-Clean, minimal, high-contrast, centered composition, flat design, no mockup, no background scene.
-The logo must sit on a fully transparent background with no drop shadow.`
-
-  // Use the edits endpoint when a reference image is provided
+async function generateWithOpenAI(builtPrompt: string, referenceImage?: string): Promise<string[]> {
   if (referenceImage) {
     const base64Data = referenceImage.split(',')[1]
     const mimeMatch = referenceImage.match(/^data:(image\/\w+);base64,/)
@@ -62,7 +70,7 @@ The logo must sit on a fully transparent background with no drop shadow.`
     const form = new FormData()
     form.append('model', 'gpt-image-1')
     form.append('image[]', blob, `reference.${mime.split('/')[1]}`)
-    form.append('prompt', `Use the uploaded image as a style reference. ${enhancedPrompt}`)
+    form.append('prompt', builtPrompt)
     form.append('n', '2')
     form.append('size', '1024x1024')
     form.append('quality', 'medium')
@@ -91,7 +99,7 @@ The logo must sit on a fully transparent background with no drop shadow.`
     },
     body: JSON.stringify({
       model: 'gpt-image-1',
-      prompt: enhancedPrompt,
+      prompt: builtPrompt,
       n: 2,
       size: '1024x1024',
       background: 'transparent',

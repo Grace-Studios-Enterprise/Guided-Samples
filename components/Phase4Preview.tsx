@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, ArrowRight, Loader2, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react'
 import { AppState } from '@/app/page'
+import { streamGenerate } from '@/lib/streamGenerate'
+import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 
 interface Props {
   state: AppState
@@ -10,31 +12,55 @@ interface Props {
   onBack: () => void
 }
 
+function previewCacheKey(state: AppState) {
+  return cacheKey('preview', state.garment?.type, state.garment?.color, state.logo?.style, state.logo?.color)
+}
+
 export default function Phase4Preview({ state, onComplete, onBack }: Props) {
   const [images, setImages] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState(false)
+
+  // On mount: check if Phase 3 prefetched results into cache
+  useEffect(() => {
+    const cached = cacheGet<{ images: string[] }>(previewCacheKey(state))
+    if (cached?.images?.length) {
+      setImages(cached.images)
+      setGenerated(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleGenerate = async () => {
     setLoading(true)
     setError('')
+    setStatusMsg('Starting...')
+
+    const key = previewCacheKey(state)
+    const cached = cacheGet<{ images: string[] }>(key)
+    if (cached?.images?.length) {
+      setImages(cached.images)
+      setGenerated(true)
+      setLoading(false)
+      setStatusMsg('')
+      return
+    }
+
     try {
-      const garment = state.garment
-      const logo = state.logo
-      const res = await fetch('/api/generate-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          garmentType: garment?.type ?? 'hoodie',
-          garmentColor: garment?.color ?? 'black',
-          logoStyle: logo?.style ?? 'minimal',
-          logoColor: logo?.color ?? '#184D3E',
+      const data = await streamGenerate<{ images: string[] }>(
+        '/api/generate-preview',
+        {
+          garmentType: state.garment?.type ?? 'hoodie',
+          garmentColor: state.garment?.color ?? 'black',
+          logoStyle: state.logo?.style ?? 'minimal',
+          logoColor: state.logo?.color ?? '#184D3E',
           placement: 'center chest',
-        }),
-      })
-      if (!res.ok) throw new Error('Request failed')
-      const data = await res.json()
+        },
+        msg => setStatusMsg(msg),
+      )
+      cacheSet(key, data)
       setImages(data.images ?? [])
       setGenerated(true)
     } catch (e) {
@@ -42,7 +68,17 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
       setError('Preview generation failed. Please try again.')
     } finally {
       setLoading(false)
+      setStatusMsg('')
     }
+  }
+
+  const handleRegenerate = async () => {
+    // Clear cache entry so we get fresh results
+    const key = previewCacheKey(state)
+    cacheSet(key, null, 0) // expire immediately
+    setGenerated(false)
+    setImages([])
+    await handleGenerate()
   }
 
   const handleProceed = () => {
@@ -70,7 +106,6 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
           <div className="card">
             <p className="text-xs font-medium text-gray-600 mb-3">Your Design</p>
 
-            {/* Garment thumbnail */}
             <div className="bg-white border border-slate-100 rounded-lg flex items-center justify-center mb-3" style={{ height: 140 }}>
               {state.garment ? (
                 <img src={state.garment.dataUrl} alt="garment" className="w-full h-full object-contain p-2"/>
@@ -136,11 +171,11 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-medium text-gray-600">Realistic Visualization</span>
-            {generated && (
+            {generated && !loading && (
               <button
-                onClick={handleGenerate}
-                disabled={loading}
+                onClick={handleRegenerate}
                 className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors"
+                title="Regenerate"
               >
                 <RefreshCw size={14}/>
               </button>
@@ -156,10 +191,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
               <p className="text-xs text-gray-400 max-w-xs mb-6">
                 Generate a photorealistic preview of your product using your exact design specifications.
               </p>
-              <button
-                onClick={handleGenerate}
-                className="btn-primary flex items-center gap-2"
-              >
+              <button onClick={handleGenerate} className="btn-primary flex items-center gap-2">
                 <Sparkles size={14}/>
                 Generate Preview
               </button>
@@ -170,7 +202,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
             <div className="flex flex-col items-center justify-center text-center py-20 gap-4">
               <Loader2 size={36} className="animate-spin text-brand-green"/>
               <div>
-                <p className="text-sm font-medium text-gray-700">Creating your preview…</p>
+                <p className="text-sm font-medium text-gray-700">{statusMsg || 'Creating your preview…'}</p>
                 <p className="text-xs text-gray-400 mt-1">This can take 15–30 seconds</p>
               </div>
               <div className="flex gap-1 mt-2">
@@ -199,7 +231,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
             </div>
           )}
 
-          {error && (
+          {error && !loading && (
             <div className="flex flex-col items-center justify-center text-center py-12 gap-3">
               <p className="text-sm text-red-500">{error}</p>
               <button onClick={handleGenerate} className="btn-secondary flex items-center gap-2">
@@ -219,10 +251,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
                 { label: 'Preview generated', done: generated && images.length > 0 },
               ].map(({ label, done }) => (
                 <div key={label} className="flex items-center gap-2 text-xs">
-                  <CheckCircle2
-                    size={13}
-                    className={done ? 'text-brand-green' : 'text-gray-300'}
-                  />
+                  <CheckCircle2 size={13} className={done ? 'text-brand-green' : 'text-gray-300'}/>
                   <span className={done ? 'text-gray-700' : 'text-gray-400'}>{label}</span>
                 </div>
               ))}
@@ -236,18 +265,18 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
               className="btn-primary w-full flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
-              {loading ? 'Generating…' : 'Generate Preview'}
+              {loading ? (statusMsg || 'Generating…') : 'Generate Preview'}
             </button>
           )}
 
           <button
             onClick={handleProceed}
+            disabled={!generated}
             className={`w-full flex items-center justify-center gap-2 font-medium py-3 px-4 rounded-xl transition-colors text-sm ${
               generated
                 ? 'bg-brand-green hover:bg-brand-green-light text-white'
                 : 'bg-slate-100 text-gray-400 cursor-not-allowed'
             }`}
-            disabled={!generated}
           >
             Proceed to Tech Pack
             <ArrowRight size={15}/>

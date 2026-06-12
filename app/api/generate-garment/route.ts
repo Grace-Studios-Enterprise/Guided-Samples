@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { garmentPrompt } from '@/lib/prompts'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -7,49 +8,55 @@ export async function POST(req: NextRequest) {
   const { prompt, referenceImage } = await req.json()
 
   if (!prompt) {
-    return NextResponse.json({ error: 'Prompt required' }, { status: 400 })
+    return new Response(`data: ${JSON.stringify({ type: 'error', message: 'Prompt required' })}\n\n`, {
+      status: 400, headers: { 'Content-Type': 'text/event-stream' },
+    })
   }
 
   const garmentType = detectGarmentType(prompt)
   const color = detectColor(prompt)
+  const { readable, writable } = new TransformStream()
+  const writer = writable.getWriter()
+  const enc = new TextEncoder()
+  const send = (data: object) => writer.write(enc.encode(`data: ${JSON.stringify(data)}\n\n`))
 
-  if (process.env.OPENAI_API_KEY) {
+  ;(async () => {
     try {
-      const images = await generateWithOpenAI(prompt, garmentType, referenceImage)
-      return NextResponse.json({
-        source: 'openai',
-        images,
-        svgs: images.map(() => null),
-        garmentType,
-        color,
-      })
+      await send({ type: 'status', message: 'Connecting to AI...' })
+      if (process.env.OPENAI_API_KEY) {
+        await send({ type: 'status', message: 'Generating your garment...' })
+        const built = garmentPrompt({ userPrompt: prompt, garmentType, color, hasReference: !!referenceImage })
+        const images = await generateWithOpenAI(built, garmentType, referenceImage)
+        await send({ type: 'status', message: 'Processing result...' })
+        await send({ type: 'complete', source: 'openai', images, svgs: images.map(() => null), garmentType, color })
+      } else {
+        await send({ type: 'status', message: 'Building garment...' })
+        const svgs = [
+          generateGarmentSVG(garmentType, color), generateGarmentSVG(garmentType, color, 'front'),
+          generateGarmentSVG(garmentType, color, 'back'), generateGarmentSVG(garmentType, color, 'left'),
+          generateGarmentSVG(garmentType, color, 'right'),
+        ]
+        await send({ type: 'complete', source: 'svg', images: svgs.map(svgToDataUrl), svgs, garmentType, color })
+      }
     } catch (err) {
-      console.error('OpenAI garment generation failed, falling back to SVG:', err)
+      console.error('Garment generation failed:', err)
+      try {
+        const svgs = [generateGarmentSVG(garmentType, color), generateGarmentSVG(garmentType, color, 'front'), generateGarmentSVG(garmentType, color, 'back')]
+        await send({ type: 'complete', source: 'svg', images: svgs.map(svgToDataUrl), svgs, garmentType, color })
+      } catch {
+        await send({ type: 'error', message: 'Generation failed. Please try again.' })
+      }
+    } finally {
+      await writer.close()
     }
-  }
+  })()
 
-  const base = generateGarmentSVG(garmentType, color)
-  const svgs = [
-    base,
-    generateGarmentSVG(garmentType, color, 'front'),
-    generateGarmentSVG(garmentType, color, 'back'),
-    generateGarmentSVG(garmentType, color, 'left'),
-    generateGarmentSVG(garmentType, color, 'right'),
-  ]
-  return NextResponse.json({
-    source: 'svg',
-    images: svgs.map(svgToDataUrl),
-    svgs,
-    garmentType,
-    color,
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
   })
 }
 
-async function generateWithOpenAI(userPrompt: string, garmentType: string, referenceImage?: string): Promise<string[]> {
-  const enhancedPrompt = `A professional flat-lay product photo of a single blank ${garmentType}. ${userPrompt}.
-Front view, centered, no model, no text, no logo, no graphics on the garment.
-Studio product shot on a fully transparent background with soft realistic fabric folds and shadows on the garment only.`
-
+async function generateWithOpenAI(builtPrompt: string, garmentType: string, referenceImage?: string): Promise<string[]> {
   if (referenceImage) {
     const base64Data = referenceImage.split(',')[1]
     const mimeMatch = referenceImage.match(/^data:(image\/\w+);base64,/)
@@ -61,7 +68,7 @@ Studio product shot on a fully transparent background with soft realistic fabric
     const form = new FormData()
     form.append('model', 'gpt-image-1')
     form.append('image[]', blob, `reference.${mime.split('/')[1]}`)
-    form.append('prompt', `Use the uploaded image as a style and garment-type reference. ${enhancedPrompt}`)
+    form.append('prompt', builtPrompt)
     form.append('n', '1')
     form.append('size', '1024x1024')
     form.append('quality', 'medium')
@@ -89,7 +96,7 @@ Studio product shot on a fully transparent background with soft realistic fabric
     },
     body: JSON.stringify({
       model: 'gpt-image-1',
-      prompt: enhancedPrompt,
+      prompt: builtPrompt,
       n: 1,
       size: '1024x1024',
       background: 'transparent',

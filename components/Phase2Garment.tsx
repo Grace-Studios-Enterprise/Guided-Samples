@@ -5,6 +5,8 @@ import { useDropzone } from 'react-dropzone'
 import { Upload, Cpu, Loader2, Download, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { exportAsset } from '@/lib/export'
+import { streamGenerate } from '@/lib/streamGenerate'
+import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 
 interface GarmentResult {
   source: 'openai' | 'svg'
@@ -36,6 +38,7 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
   )
   const [color, setColor] = useState('Black')
   const [loading, setLoading] = useState(false)
+  const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
   const [result, setResult] = useState<GarmentResult | null>(null)
   const [selectedVariant, setSelectedVariant] = useState(0)
@@ -63,14 +66,25 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
   const handleGenerate = async () => {
     setLoading(true)
     setError('')
+    setStatusMsg('Starting...')
+
+    const key = cacheKey('garment', prompt, color, referenceImage ?? '')
+    const cached = cacheGet<GarmentResult>(key)
+    if (cached) {
+      setResult(cached)
+      setSelectedVariant(0)
+      setLoading(false)
+      setStatusMsg('')
+      return
+    }
+
     try {
-      const res = await fetch('/api/generate-garment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: `${prompt} Color: ${color}`, referenceImage }),
-      })
-      if (!res.ok) throw new Error('Request failed')
-      const data: GarmentResult = await res.json()
+      const data = await streamGenerate<GarmentResult>(
+        '/api/generate-garment',
+        { prompt: `${prompt} Color: ${color}`, referenceImage },
+        msg => setStatusMsg(msg),
+      )
+      cacheSet(key, data)
       setResult(data)
       setSelectedVariant(0)
     } catch (e) {
@@ -78,6 +92,7 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
       setError('Generation failed. Please try again.')
     } finally {
       setLoading(false)
+      setStatusMsg('')
     }
   }
 
@@ -293,8 +308,8 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
               <div className="bg-white rounded-xl overflow-hidden flex items-center justify-center mb-3 border border-slate-100" style={{ height: 280 }}>
                 {loading && (
                   <div className="flex flex-col items-center gap-3 text-gray-400">
-                    <Loader2 size={32} className="animate-spin"/>
-                    <span className="text-sm">Generating garment…</span>
+                    <Loader2 size={32} className="animate-spin text-brand-green"/>
+                    <span className="text-sm text-gray-700">{statusMsg || 'Generating garment…'}</span>
                     <span className="text-xs text-gray-400">This can take 10–30 seconds</span>
                   </div>
                 )}
