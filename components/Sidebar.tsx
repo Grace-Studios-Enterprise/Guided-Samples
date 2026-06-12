@@ -26,7 +26,8 @@ const phases = [
 ]
 
 export default function Sidebar({ currentPhase, onPhaseChange, state, section, onSectionChange, mobileOpen, onMobileClose }: Props) {
-  const { user, signOut } = useAuth()
+  // Auth disabled — useAuth may return null user while sign-in is commented out
+  const { user, signOut } = useAuth() ?? {}
 
   const isPhaseComplete = (phase: number) => {
     if (phase === 1) return !!state.logo

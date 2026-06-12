@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import Sidebar from '@/components/Sidebar'
-import SignIn from '@/components/SignIn'
+// import SignIn from '@/components/SignIn'
 import Phase1Logo from '@/components/Phase1Logo'
 import Phase2Garment from '@/components/Phase2Garment'
 import Phase3Editor from '@/components/Phase3Editor'
@@ -47,15 +47,15 @@ function App() {
   const [section, setSection] = useState('design')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-brand-green border-t-transparent rounded-full animate-spin"/>
-      </div>
-    )
-  }
-
-  if (!user) return <SignIn />
+  // Auth gate disabled — re-enable when sign-in/sign-up is ready
+  // if (loading) {
+  //   return (
+  //     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+  //       <div className="w-8 h-8 border-2 border-brand-green border-t-transparent rounded-full animate-spin"/>
+  //     </div>
+  //   )
+  // }
+  // if (!user) return <SignIn />
 
   const goToPhase = (phase: number) => {
     setSection('design')
