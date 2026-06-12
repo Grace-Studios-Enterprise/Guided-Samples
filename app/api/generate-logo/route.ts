@@ -70,6 +70,7 @@ async function generateWithOpenAI(builtPrompt: string, referenceImage?: string):
     form.append('n', '2')
     form.append('size', '1024x1024')
     form.append('quality', 'medium')
+    form.append('response_format', 'b64_json')
 
     const res = await fetch('https://api.openai.com/v1/images/edits', {
       method: 'POST',
@@ -98,7 +99,7 @@ async function generateWithOpenAI(builtPrompt: string, referenceImage?: string):
       prompt: builtPrompt,
       n: 2,
       size: '1024x1024',
-      output_format: 'png',
+      response_format: 'b64_json',
       quality: 'medium',
     }),
   })

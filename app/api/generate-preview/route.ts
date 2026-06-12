@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       form.append('n', '2')
       form.append('size', '1024x1024')
       form.append('quality', 'medium')
+      form.append('response_format', 'b64_json')
 
       // Always include the garment image as the primary input
       if (garmentImage) {
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
         body: (garmentImage || logoImage) ? form : JSON.stringify({
-          model: 'gpt-image-2', prompt, n: 2, size: '1024x1024', quality: 'medium',
+          model: 'gpt-image-2', prompt, n: 2, size: '1024x1024', response_format: 'b64_json', quality: 'medium',
         }),
       })
 
