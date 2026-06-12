@@ -23,6 +23,7 @@ export type AppState = {
   garment: {
     svg: string
     dataUrl: string
+    views: { front?: string; back?: string; side?: string }
     type: string
     color: string
   } | null

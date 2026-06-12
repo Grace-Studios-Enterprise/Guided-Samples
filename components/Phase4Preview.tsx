@@ -215,9 +215,8 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
                 <div
                   key={i}
                   className="bg-white border border-slate-100 rounded-xl overflow-hidden"
-                  style={{ height: 320 }}
                 >
-                  <img src={img} alt={`Preview ${i + 1}`} className="w-full h-full object-contain p-3"/>
+                  <img src={img} alt={`Preview ${i + 1}`} className="w-full object-contain p-3"/>
                 </div>
               ))}
             </div>
