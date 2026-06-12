@@ -112,24 +112,31 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
     setActiveView(orderedViews[0])
   }
 
-  // Upload dropzone per view
-  const makeDropzone = (view: View) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const onDrop = useCallback((files: File[]) => {
-      const file = files[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = e => setUploadedViews(prev => ({ ...prev, [view]: e.target?.result as string }))
-      reader.readAsDataURL(file)
-    }, [view])
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    return useDropzone({ onDrop, accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] }, multiple: false })
-  }
+  // Upload dropzones — must be declared at component level (Rules of Hooks)
+  const onDropFront = useCallback((files: File[]) => {
+    const file = files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = e => setUploadedViews(prev => ({ ...prev, front: e.target?.result as string }))
+    reader.readAsDataURL(file)
+  }, [])
+  const onDropBack = useCallback((files: File[]) => {
+    const file = files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = e => setUploadedViews(prev => ({ ...prev, back: e.target?.result as string }))
+    reader.readAsDataURL(file)
+  }, [])
+  const onDropSide = useCallback((files: File[]) => {
+    const file = files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = e => setUploadedViews(prev => ({ ...prev, side: e.target?.result as string }))
+    reader.readAsDataURL(file)
+  }, [])
 
-  const frontDrop = makeDropzone('front')
-  const backDrop  = makeDropzone('back')
-  const sideDrop  = makeDropzone('side')
-  const dropzones: Record<View, ReturnType<typeof makeDropzone>> = { front: frontDrop, back: backDrop, side: sideDrop }
+  const accept = { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] }
+  const frontDrop = useDropzone({ onDrop: onDropFront, accept, multiple: false })
+  const backDrop  = useDropzone({ onDrop: onDropBack,  accept, multiple: false })
+  const sideDrop  = useDropzone({ onDrop: onDropSide,  accept, multiple: false })
+  const dropzones: Record<View, typeof frontDrop> = { front: frontDrop, back: backDrop, side: sideDrop }
 
   const currentResults = mode === 'generate' ? viewResults : uploadedViews
   const activeImage = currentResults[activeView] ?? null
