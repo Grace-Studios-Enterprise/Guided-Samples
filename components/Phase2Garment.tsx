@@ -372,35 +372,52 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
               )}
             </div>
           ) : (
-            /* Upload mode */
-            <div className="space-y-4">
-              {selectedViews.map(v => {
-                const dz = dropzones[v]
-                return (
-                  <div key={v}>
-                    <p className="text-xs font-medium text-gray-600 mb-2 capitalize">{v} view</p>
-                    {uploadedViews[v] ? (
-                      <div className="relative rounded-xl bg-white border border-slate-100" style={{ height: 400 }}>
-                        <img src={uploadedViews[v]} alt={`${v} view`} className="w-full h-full object-contain p-4"/>
-                        <button onClick={() => setUploadedViews(prev => { const n = {...prev}; delete n[v]; return n })}
-                          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow">
-                          <X size={12}/>
-                        </button>
-                      </div>
-                    ) : (
-                      <div {...dz.getRootProps()}
-                        className={`rounded-xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-colors ${
-                          dz.isDragActive ? 'border-brand-green bg-brand-green/5' : 'border-slate-200 hover:border-brand-green'
-                        }`} style={{ height: 120 }}>
-                        <input {...dz.getInputProps()}/>
-                        <ImageIcon size={22} className="text-gray-300 mb-2"/>
-                        <p className="text-xs text-gray-500">Drop {v} view here</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">or click to browse</p>
-                      </div>
-                    )}
+            /* Upload mode — same large canvas as generate mode */
+            <div>
+              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center relative" style={{ minHeight: 480 }}>
+                {uploadedViews[activeView] ? (
+                  <>
+                    <img src={uploadedViews[activeView]} alt={`${activeView} view`} className="w-full object-contain p-4"/>
+                    <button
+                      onClick={() => setUploadedViews(prev => { const n = {...prev}; delete n[activeView]; return n })}
+                      className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow"
+                    >
+                      <X size={13}/>
+                    </button>
+                  </>
+                ) : (
+                  <div {...dropzones[activeView].getRootProps()}
+                    className={`absolute inset-0 rounded-xl flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                      dropzones[activeView].isDragActive ? 'border-2 border-brand-green bg-brand-green/5' : 'border-2 border-dashed border-slate-200 hover:border-brand-green'
+                    }`}>
+                    <input {...dropzones[activeView].getInputProps()}/>
+                    <ImageIcon size={36} className="text-gray-300 mb-3"/>
+                    <p className="text-sm text-gray-500 font-medium">Drop your {activeView} view here</p>
+                    <p className="text-xs text-gray-400 mt-1">or click to browse</p>
                   </div>
-                )
-              })}
+                )}
+              </div>
+
+              {/* Multi-view thumbnails when multiple views selected */}
+              {selectedViews.length > 1 && (
+                <div className="grid gap-2 mt-3" style={{ gridTemplateColumns: `repeat(${selectedViews.length}, 1fr)` }}>
+                  {selectedViews.map(v => (
+                    <button key={v} onClick={() => setActiveView(v)}
+                      className={`bg-white border rounded-lg overflow-hidden transition-all flex flex-col items-center pb-1 ${
+                        activeView === v ? 'border-brand-green ring-1 ring-brand-green' : 'border-slate-100 hover:border-slate-300'
+                      }`} style={{ minHeight: 72 }}>
+                      {uploadedViews[v] ? (
+                        <img src={uploadedViews[v]} alt={v} className="w-full h-16 object-contain p-1"/>
+                      ) : (
+                        <div className="w-full h-16 flex items-center justify-center">
+                          <ImageIcon size={18} className="text-gray-200"/>
+                        </div>
+                      )}
+                      <span className={`text-[10px] font-medium capitalize mt-0.5 ${activeView === v ? 'text-brand-green' : 'text-gray-400'}`}>{v}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
