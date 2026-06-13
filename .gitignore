@@ -13,3 +13,4 @@ node_modules/
 .DS_Store
 *.pem
 node_modules/
+tsconfig.tsbuildinfo
