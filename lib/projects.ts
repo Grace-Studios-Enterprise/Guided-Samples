@@ -54,6 +54,7 @@ export async function saveProject(
   projectName?: string,
 ): Promise<string | null> {
   const supabase = createClient()
+  if (!supabase) return null
 
   // Upsert project row
   const id = projectId ?? crypto.randomUUID()
@@ -96,6 +97,7 @@ export async function saveTechPack(
   techPack: ProjectDetail['tech_pack'],
 ): Promise<void> {
   const supabase = createClient()
+  if (!supabase) return
   await supabase.from('tech_packs').upsert({
     project_id: projectId,
     ...techPack,
@@ -105,6 +107,7 @@ export async function saveTechPack(
 
 export async function listProjects(userId: string): Promise<Project[]> {
   const supabase = createClient()
+  if (!supabase) return []
   const { data, error } = await supabase
     .from('projects')
     .select('id, user_id, name, phase_reached, created_at, updated_at, thumbnail_url')
@@ -116,6 +119,7 @@ export async function listProjects(userId: string): Promise<Project[]> {
 
 export async function loadProject(projectId: string): Promise<ProjectDetail | null> {
   const supabase = createClient()
+  if (!supabase) return null
   const { data, error } = await supabase
     .from('projects')
     .select('*, tech_packs(*)')
@@ -136,5 +140,6 @@ export async function loadProject(projectId: string): Promise<ProjectDetail | nu
 
 export async function deleteProject(projectId: string): Promise<void> {
   const supabase = createClient()
+  if (!supabase) return
   await supabase.from('projects').delete().eq('id', projectId)
 }

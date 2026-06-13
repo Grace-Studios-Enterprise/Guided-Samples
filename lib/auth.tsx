@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { createClient } from './supabase'
-import type { User as SupabaseUser, Session } from '@supabase/supabase-js'
+import type { Session } from '@supabase/supabase-js'
 
 export type User = {
   id: string
@@ -22,40 +22,48 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-function toUser(su: SupabaseUser): User {
+function sessionToUser(session: Session | null): User | null {
+  const su = session?.user
+  if (!su) return null
   return {
     id: su.id,
     email: su.email ?? '',
-    name: su.user_metadata?.name ?? su.email?.split('@')[0] ?? 'User',
-    brandName: su.user_metadata?.brand_name ?? 'GRACE',
+    name: (su.user_metadata?.name as string) ?? su.email?.split('@')[0] ?? 'User',
+    brandName: (su.user_metadata?.brand_name as string) ?? 'GRACE',
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ? toUser(session.user) : null)
+    const sb = createClient()
+    if (!sb) { setLoading(false); return }
+
+    sb.auth.getSession().then((res: { data: { session: Session | null } }) => {
+      setUser(sessionToUser(res.data.session))
       setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ? toUser(session.user) : null)
+    const { data: listener } = sb.auth.onAuthStateChange((_evt: string, session: Session | null) => {
+      setUser(sessionToUser(session))
     })
 
-    return () => subscription.unsubscribe()
+    return () => listener.subscription.unsubscribe()
   }, [])
 
   const signIn = async (email: string, password: string): Promise<string | null> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const sb = createClient()
+    if (!sb) return 'Supabase not configured.'
+    const { error } = await sb.auth.signInWithPassword({ email, password })
     return error?.message ?? null
   }
 
   const signUp = async (name: string, email: string, password: string): Promise<string | null> => {
-    const { error } = await supabase.auth.signUp({
+    const sb = createClient()
+    if (!sb) return 'Supabase not configured.'
+    const { error } = await sb.auth.signUp({
       email,
       password,
       options: { data: { name, brand_name: 'GRACE' } },
@@ -63,13 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error?.message ?? null
   }
 
-  const signOut = () => supabase.auth.signOut()
+  const signOut = () => {
+    const sb = createClient()
+    sb?.auth.signOut()
+    setUser(null)
+  }
 
   const updateUser = async (updates: Partial<User>) => {
-    const meta: Record<string, string> = {}
-    if (updates.name) meta.name = updates.name
-    if (updates.brandName) meta.brand_name = updates.brandName
-    await supabase.auth.updateUser({ data: meta })
+    const sb = createClient()
+    if (sb) {
+      const meta: Record<string, string> = {}
+      if (updates.name) meta.name = updates.name
+      if (updates.brandName) meta.brand_name = updates.brandName
+      await sb.auth.updateUser({ data: meta })
+    }
     setUser(u => u ? { ...u, ...updates } : u)
   }
 
