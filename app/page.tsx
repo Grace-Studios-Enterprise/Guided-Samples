@@ -101,22 +101,14 @@ function App() {
     )
   }
 
-  // Landing page (unauthenticated or not yet entered)
+  // Landing page
   if (view === 'landing') {
     return (
       <LandingPage
-        onEnter={() => {
-          if (user) setView('projects')
-          else setView('studio') // guest mode — no save
-        }}
-        onSignIn={() => setView('studio')} // triggers sign-in gate below
+        onEnter={() => setView('studio')}
+        onSignIn={() => setView('studio')}
       />
     )
-  }
-
-  // Auth gate
-  if (!user) {
-    return <SignIn onSuccess={() => setView('projects')} />
   }
 
   // Projects dashboard

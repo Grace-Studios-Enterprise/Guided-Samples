@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ArrowLeft, ArrowRight, Loader2, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Loader2, RefreshCw, Sparkles, CheckCircle2, Download } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { streamGenerate } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
@@ -18,9 +18,8 @@ function designImageOf(state: AppState): string {
   return state.design?.previewDataUrl || state.garment?.dataUrl || ''
 }
 
-function previewCacheKey(state: AppState) {
-  // Use a short slice of the actual image data so cache is tied to the real assets
-  return cacheKey('preview', designImageOf(state).slice(-40))
+function previewCacheKey(state: AppState, prompt = '') {
+  return cacheKey('preview', designImageOf(state).slice(-40) + prompt.slice(0, 60))
 }
 
 export default function Phase4Preview({ state, onComplete, onBack }: Props) {
@@ -46,7 +45,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
     setError('')
     setStatusMsg('Starting...')
 
-    const key = previewCacheKey(state)
+    const key = previewCacheKey(state, prompt)
     const cached = cacheGet<{ images: string[] }>(key)
     if (cached?.images?.length) {
       setImages(cached.images)
@@ -68,7 +67,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
         },
         msg => setStatusMsg(msg),
       )
-      cacheSet(key, data)
+      cacheSet(previewCacheKey(state, prompt), data)
       setImages(data.images ?? [])
       setGenerated(true)
     } catch (e) {
@@ -82,7 +81,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
 
   const handleRegenerate = async () => {
     // Clear cache entry so we get fresh results
-    const key = previewCacheKey(state)
+    const key = previewCacheKey(state, prompt)
     cacheSet(key, null, 0) // expire immediately
     setGenerated(false)
     setImages([])
@@ -275,6 +274,20 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
             >
               {loading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
               {loading ? (statusMsg || 'Generating…') : 'Generate Preview'}
+            </button>
+          )}
+
+          {generated && images.length > 0 && (
+            <button
+              onClick={() => images.forEach((img, i) => {
+                const a = document.createElement('a')
+                a.href = img
+                a.download = `preview_${i + 1}.png`
+                a.click()
+              })}
+              className="btn-secondary w-full flex items-center justify-center gap-2"
+            >
+              <Download size={13}/> Download Previews
             </button>
           )}
 

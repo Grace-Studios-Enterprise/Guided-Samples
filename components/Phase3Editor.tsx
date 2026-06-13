@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Undo2, Redo2, Minus, Plus, Upload, Layers, ArrowLeft, ArrowRight, Trash2, Copy, ChevronUp, ChevronDown, Save, Check, Loader2 } from 'lucide-react'
+import { Undo2, Redo2, Minus, Plus, Upload, Layers, ArrowLeft, ArrowRight, Trash2, Copy, ChevronUp, ChevronDown, Save, Check, Loader2, Download } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { streamGenerate } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
@@ -671,6 +671,21 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                 <p className="text-xs text-gray-400">Select a layer to edit</p>
               </div>
             </div>
+          )}
+
+          {state.garment?.dataUrl && (
+            <button
+              onClick={async () => {
+                const composite = await compositeDesign()
+                const a = document.createElement('a')
+                a.href = composite || state.garment!.dataUrl
+                a.download = 'design_composite.png'
+                a.click()
+              }}
+              className="btn-secondary w-full flex items-center justify-center gap-2"
+            >
+              <Download size={13}/> Download Design
+            </button>
           )}
 
           <button

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, Cpu, Loader2, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X, CheckSquare, Square, Sparkles, Camera } from 'lucide-react'
+import { Upload, Cpu, Loader2, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X, CheckSquare, Square, Sparkles, Camera, Download } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { streamGenerate } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
@@ -461,6 +461,20 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
                 <img src={activeImage} alt="preview" className="max-h-full max-w-full object-contain p-2"/>
               </div>
             </div>
+          )}
+
+          {activeImage && (
+            <button
+              onClick={() => {
+                const a = document.createElement('a')
+                a.href = activeImage
+                a.download = `garment_${activeView}.png`
+                a.click()
+              }}
+              className="btn-secondary w-full flex items-center justify-center gap-2"
+            >
+              <Download size={13}/> Download Garment
+            </button>
           )}
 
           <button onClick={handleProceed} disabled={!anyDone}
