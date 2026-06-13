@@ -4,6 +4,7 @@ import { ArrowRight, Sparkles, Layers, Eye, FileText, Send, CheckCircle2 } from 
 
 interface Props {
   onEnter: () => void
+  onSignIn?: () => void
 }
 
 const PHASES = [
@@ -64,7 +65,7 @@ const FEATURES = [
   'One-click supplier email with attachments',
 ]
 
-export default function LandingPage({ onEnter }: Props) {
+export default function LandingPage({ onEnter, onSignIn }: Props) {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 overflow-y-auto">
 
@@ -77,9 +78,16 @@ export default function LandingPage({ onEnter }: Props) {
             </div>
             <span className="font-semibold text-gray-900 text-sm tracking-tight">GRACE Enterprise</span>
           </div>
-          <button onClick={onEnter} className="btn-primary flex items-center gap-2 py-2 text-xs">
-            Open Studio <ArrowRight size={13}/>
-          </button>
+          <div className="flex items-center gap-2">
+            {onSignIn && (
+              <button onClick={onSignIn} className="btn-secondary py-2 text-xs">
+                Sign In
+              </button>
+            )}
+            <button onClick={onEnter} className="btn-primary flex items-center gap-2 py-2 text-xs">
+              Open Studio <ArrowRight size={13}/>
+            </button>
+          </div>
         </div>
       </header>
 

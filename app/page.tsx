@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { saveProject, saveTechPack } from '@/lib/projects'
 import Sidebar from '@/components/Sidebar'
-// import SignIn from '@/components/SignIn'
+import SignIn from '@/components/SignIn'
+import ProjectsDashboard from '@/components/ProjectsDashboard'
 import Phase1Logo from '@/components/Phase1Logo'
 import Phase2Garment from '@/components/Phase2Garment'
 import Phase3Editor from '@/components/Phase3Editor'
@@ -39,29 +41,37 @@ export type AppState = {
   } | null
 }
 
+const EMPTY_STATE: AppState = {
+  currentPhase: 1,
+  logo: null,
+  garment: null,
+  design: null,
+  preview: null,
+}
+
 function App() {
   const { user, loading } = useAuth()
-  const [showLanding, setShowLanding] = useState(true)
-  const [state, setState] = useState<AppState>({
-    currentPhase: 1,
-    logo: null,
-    garment: null,
-    design: null,
-    preview: null,
-  })
+  const [view, setView] = useState<'landing' | 'projects' | 'studio'>('landing')
+  const [state, setState] = useState<AppState>(EMPTY_STATE)
   const [section, setSection] = useState('design')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [techPack, setTechPack] = useState<TechPackData | null>(null)
+  const projectIdRef = useRef<string | undefined>(undefined)
 
-  // Auth gate disabled — re-enable when sign-in/sign-up is ready
-  // if (loading) {
-  //   return (
-  //     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-  //       <div className="w-8 h-8 border-2 border-brand-green border-t-transparent rounded-full animate-spin"/>
-  //     </div>
-  //   )
-  // }
-  // if (!user) return <SignIn />
+  // Auto-save to Supabase whenever phase advances
+  const autoSave = async (newState: AppState) => {
+    if (!user) return
+    const id = await saveProject(user.id, newState, projectIdRef.current)
+    if (id) projectIdRef.current = id
+  }
+
+  const advancePhase = (updates: Partial<AppState>) => {
+    setState(s => {
+      const next = { ...s, ...updates }
+      autoSave(next)
+      return next
+    })
+  }
 
   const goToPhase = (phase: number) => {
     setSection('design')
@@ -74,16 +84,61 @@ function App() {
     setSidebarOpen(false)
   }
 
-  if (showLanding) return <LandingPage onEnter={() => setShowLanding(false)} />
+  const startNewProject = () => {
+    projectIdRef.current = undefined
+    setState(EMPTY_STATE)
+    setTechPack(null)
+    setSection('design')
+    setView('studio')
+  }
 
+  // Loading spinner while Supabase session resolves
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-brand-green border-t-transparent rounded-full animate-spin"/>
+      </div>
+    )
+  }
+
+  // Landing page (unauthenticated or not yet entered)
+  if (view === 'landing') {
+    return (
+      <LandingPage
+        onEnter={() => {
+          if (user) setView('projects')
+          else setView('studio') // guest mode — no save
+        }}
+        onSignIn={() => setView('studio')} // triggers sign-in gate below
+      />
+    )
+  }
+
+  // Auth gate
+  if (!user) {
+    return <SignIn onSuccess={() => setView('projects')} />
+  }
+
+  // Projects dashboard
+  if (view === 'projects') {
+    return (
+      <ProjectsDashboard
+        onNewProject={startNewProject}
+        onOpenProject={(_id) => {
+          // TODO: restore project state from Supabase
+          projectIdRef.current = _id
+          setState(EMPTY_STATE)
+          setView('studio')
+        }}
+      />
+    )
+  }
+
+  // Studio
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Mobile overlay backdrop */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/30 z-20 lg:hidden" onClick={() => setSidebarOpen(false)}/>
       )}
 
       <Sidebar
@@ -97,18 +152,19 @@ function App() {
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile top bar */}
         <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-slate-200 shrink-0">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg hover:bg-slate-100 text-gray-600"
-          >
+          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-slate-100 text-gray-600">
             <Menu size={20}/>
           </button>
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 bg-brand-green rounded-md flex items-center justify-center text-xs font-bold text-white">G</div>
             <span className="text-sm font-bold text-gray-900">GRACE</span>
           </div>
+          {user && (
+            <button onClick={() => setView('projects')} className="ml-auto text-xs text-gray-400 hover:text-brand-green transition-colors">
+              My Projects
+            </button>
+          )}
         </header>
 
         <main className="flex-1 overflow-y-auto">
@@ -118,21 +174,21 @@ function App() {
           {section === 'design' && state.currentPhase === 1 && (
             <Phase1Logo
               state={state}
-              onComplete={(logo) => setState(s => ({ ...s, logo, currentPhase: 2 }))}
-              onSkip={() => setState(s => ({ ...s, currentPhase: 2 }))}
+              onComplete={(logo) => advancePhase({ logo, currentPhase: 2 })}
+              onSkip={() => advancePhase({ currentPhase: 2 })}
             />
           )}
           {section === 'design' && state.currentPhase === 2 && (
             <Phase2Garment
               state={state}
-              onComplete={(garment) => setState(s => ({ ...s, garment, currentPhase: 3 }))}
+              onComplete={(garment) => advancePhase({ garment, currentPhase: 3 })}
               onBack={() => goToPhase(1)}
             />
           )}
           {section === 'design' && state.currentPhase === 3 && (
             <Phase3Editor
               state={state}
-              onComplete={(design) => setState(s => ({ ...s, design, currentPhase: 4 }))}
+              onComplete={(design) => advancePhase({ design, currentPhase: 4 })}
               onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
               onBack={() => goToPhase(2)}
             />
@@ -140,7 +196,7 @@ function App() {
           {section === 'design' && state.currentPhase === 4 && (
             <Phase4Preview
               state={state}
-              onComplete={(preview) => setState(s => ({ ...s, preview, currentPhase: 5 }))}
+              onComplete={(preview) => advancePhase({ preview, currentPhase: 5 })}
               onBack={() => goToPhase(3)}
             />
           )}
@@ -148,7 +204,18 @@ function App() {
             <Phase5TechPack
               state={state}
               onBack={() => goToPhase(4)}
-              onSendToProduction={(tp) => { setTechPack(tp); setState(s => ({ ...s, currentPhase: 6 })) }}
+              onSendToProduction={async (tp) => {
+                setTechPack(tp)
+                advancePhase({ currentPhase: 6 })
+                if (user && projectIdRef.current) {
+                  await saveTechPack(projectIdRef.current, {
+                    style_info: tp.styleInfo,
+                    measurements: tp.measurements,
+                    pantones: tp.pantones,
+                    placements: tp.placements,
+                  })
+                }
+              }}
             />
           )}
           {section === 'design' && state.currentPhase === 6 && techPack && (

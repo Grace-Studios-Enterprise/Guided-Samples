@@ -155,46 +155,17 @@ function LibraryView({ state }: { state: AppState }) {
 }
 
 function SettingsView() {
-  const { user, updateUser, changePassword, signOut } = useAuth()
+  const { user, updateUser, signOut } = useAuth()
   const [profile, setProfile] = useState({
     name: user?.name ?? '',
-    email: user?.email ?? '',
-    phone: user?.phone ?? '',
     brandName: user?.brandName ?? '',
-    address: user?.address ?? '',
-    city: user?.city ?? '',
-    state: user?.state ?? '',
-    zip: user?.zip ?? '',
-    country: user?.country ?? '',
   })
   const [profileSaved, setProfileSaved] = useState(false)
-
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [passwordMsg, setPasswordMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   const handleProfileSave = () => {
     updateUser(profile)
     setProfileSaved(true)
     setTimeout(() => setProfileSaved(false), 2500)
-  }
-
-  const handlePasswordChange = () => {
-    setPasswordMsg(null)
-    if (newPassword !== confirmPassword) {
-      setPasswordMsg({ text: 'New passwords do not match.', ok: false })
-      return
-    }
-    const err = changePassword(currentPassword, newPassword)
-    if (err) {
-      setPasswordMsg({ text: err, ok: false })
-    } else {
-      setPasswordMsg({ text: 'Password updated successfully.', ok: true })
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
-    }
   }
 
   return (
@@ -215,56 +186,22 @@ function SettingsView() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <Field label="Full Name" value={profile.name} onChange={v => setProfile(p => ({ ...p, name: v }))} />
-          <Field label="Email" type="email" value={profile.email} onChange={v => setProfile(p => ({ ...p, email: v }))} />
-          <Field label="Phone" type="tel" value={profile.phone} onChange={v => setProfile(p => ({ ...p, phone: v }))} placeholder="+1 (555) 000-0000" />
           <Field label="Brand Name" value={profile.brandName} onChange={v => setProfile(p => ({ ...p, brandName: v }))} />
         </div>
 
-        <p className="text-xs font-medium text-gray-700 mb-3">Shipping Address</p>
-        <div className="grid grid-cols-1 gap-3 mb-4">
-          <Field label="Street Address" value={profile.address} onChange={v => setProfile(p => ({ ...p, address: v }))} placeholder="123 Main St" />
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="City" value={profile.city} onChange={v => setProfile(p => ({ ...p, city: v }))} />
-            <Field label="State / Province" value={profile.state} onChange={v => setProfile(p => ({ ...p, state: v }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="ZIP / Postal Code" value={profile.zip} onChange={v => setProfile(p => ({ ...p, zip: v }))} />
-            <Field label="Country" value={profile.country} onChange={v => setProfile(p => ({ ...p, country: v }))} placeholder="United States" />
-          </div>
-        </div>
-
-        <button
-          onClick={handleProfileSave}
-          className="btn-primary flex items-center gap-2"
-        >
+        <button onClick={handleProfileSave} className="btn-primary flex items-center gap-2">
           <Save size={14}/>
           {profileSaved ? 'Saved!' : 'Save Changes'}
         </button>
       </div>
 
-      {/* Change Password */}
+      {/* Password reset via email */}
       <div className="card mb-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-2">
           <KeyRound size={15} className="text-gray-500"/>
-          <p className="text-sm font-semibold text-gray-900">Change Password</p>
+          <p className="text-sm font-semibold text-gray-900">Password</p>
         </div>
-        <div className="space-y-3 mb-4">
-          <Field label="Current Password" type="password" value={currentPassword} onChange={setCurrentPassword} />
-          <Field label="New Password" type="password" value={newPassword} onChange={setNewPassword} placeholder="At least 6 characters" />
-          <Field label="Confirm New Password" type="password" value={confirmPassword} onChange={setConfirmPassword} />
-        </div>
-        {passwordMsg && (
-          <p className={`text-xs mb-3 px-3 py-2 rounded-lg border ${
-            passwordMsg.ok
-              ? 'text-brand-green bg-brand-green/5 border-brand-green/20'
-              : 'text-red-500 bg-red-50 border-red-100'
-          }`}>
-            {passwordMsg.text}
-          </p>
-        )}
-        <button onClick={handlePasswordChange} className="btn-secondary flex items-center gap-2">
-          <KeyRound size={14}/> Update Password
-        </button>
+        <p className="text-xs text-gray-500 mb-3">To change your password, use the "Forgot password" flow on the sign-in page.</p>
       </div>
 
       {/* Sign out */}
