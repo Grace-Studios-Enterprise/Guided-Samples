@@ -29,6 +29,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
   const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
   const [generated, setGenerated] = useState(false)
+  const [prompt, setPrompt] = useState('')
 
   // On mount: check if Phase 3 prefetched results into cache
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
           // Logo is already baked into the Phase 3 composite; only send separately as fallback
           logoImage: state.design?.previewDataUrl ? null : (state.logo?.dataUrl ?? null),
           placement: 'center chest',
+          extraPrompt: prompt.trim() || undefined,
         },
         msg => setStatusMsg(msg),
       )
@@ -147,6 +149,17 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
           </div>
 
           <div className="card">
+            <p className="text-xs font-medium text-gray-600 mb-2">Preview prompt</p>
+            <textarea
+              className="w-full text-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-gray-700 focus:outline-none focus:border-brand-green resize-none"
+              rows={4}
+              placeholder="Describe the scene, background, lighting, model, or styling… e.g. 'flat-lay on white marble', 'worn by a male model outdoors', 'dark moody studio lighting'"
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+            />
+          </div>
+
+          <div className="card">
             <p className="text-xs font-medium text-gray-600 mb-2">What to expect</p>
             <ul className="space-y-2">
               {[
@@ -221,7 +234,7 @@ export default function Phase4Preview({ state, onComplete, onBack }: Props) {
                   key={i}
                   className="bg-white border border-slate-100 rounded-xl overflow-hidden"
                 >
-                  <img src={img} alt={`Preview ${i + 1}`} className="w-full object-contain p-3"/>
+                  <img src={img} alt={`Preview ${i + 1}`} className="w-full object-contain p-3" style={{ minHeight: 320 }}/>
                 </div>
               ))}
             </div>
