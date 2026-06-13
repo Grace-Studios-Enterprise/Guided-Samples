@@ -458,7 +458,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
           <div
             ref={canvasRef}
             className="relative bg-white overflow-hidden flex items-center justify-center"
-            style={{ height: 'clamp(320px, 50vw, 500px)' }}
+            style={{ minHeight: 480 }}
             onClick={e => { if (e.target === e.currentTarget) setSelectedId(null) }}
           >
             <div
