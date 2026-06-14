@@ -12,6 +12,7 @@ import type { OrderMedia } from '@/types/supplier'
 import type { StageTransitionEvent } from '@/types/productionStages'
 import ClientTimeline from './ClientTimeline'
 import ClientDecisionPanel from './ClientDecisionPanel'
+import SampleEvaluationPanel, { isSampleEvaluationStage } from './SampleEvaluationPanel'
 import MediaGallery from './MediaGallery'
 
 interface Props {
@@ -229,11 +230,20 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
         {/* Right column */}
         <div className="space-y-4">
           <ClientTimeline currentStage={order.production_stage} history={history} />
-          <ClientDecisionPanel
-            orderId={orderId}
-            currentStage={order.production_stage}
-            onTransition={load}
-          />
+          {isSampleEvaluationStage(order.production_stage) ? (
+            <SampleEvaluationPanel
+              orderId={orderId}
+              stage={order.production_stage!}
+              media={media}
+              onTransition={load}
+            />
+          ) : (
+            <ClientDecisionPanel
+              orderId={orderId}
+              currentStage={order.production_stage}
+              onTransition={load}
+            />
+          )}
         </div>
       </div>
     </div>

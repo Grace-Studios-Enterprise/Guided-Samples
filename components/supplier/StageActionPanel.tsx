@@ -16,6 +16,7 @@ interface Props {
   orderId:       string
   currentStage:  ProductionStage | null
   supplierEmail: string
+  revisionNotes?: string | null
   onTransition:  () => void   // callback to refresh parent after success
 }
 
@@ -223,7 +224,7 @@ function ActionForm({
 
 // ─── Action panel ─────────────────────────────────────────────────────────────
 
-export default function StageActionPanel({ orderId, currentStage, supplierEmail, onTransition }: Props) {
+export default function StageActionPanel({ orderId, currentStage, supplierEmail, revisionNotes, onTransition }: Props) {
   const [isTransitioning, setIsTransitioning] = useState(false)
   const actions = getSupplierActions(currentStage)
   const isWaiting = supplierIsWaiting(currentStage)
@@ -276,6 +277,25 @@ export default function StageActionPanel({ orderId, currentStage, supplierEmail,
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
         Your Actions
       </p>
+
+      {/* Revision notes from client — shown prominently when revision is required */}
+      {currentStage === 'REVISION_REQUIRED' && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle size={12} className="text-amber-500 shrink-0" />
+            <p className="text-[11px] font-semibold text-amber-800">Client Revision Notes</p>
+          </div>
+          {revisionNotes ? (
+            <p className="text-xs text-amber-800 leading-relaxed">{revisionNotes}</p>
+          ) : (
+            <p className="text-xs text-amber-600 italic">No revision notes provided.</p>
+          )}
+          <p className="text-[10px] text-amber-600 pt-1 border-t border-amber-100">
+            Address these points before restarting the sample workflow.
+          </p>
+        </div>
+      )}
+
       {isTransitioning && (
         <div className="flex items-center gap-2 p-3 bg-brand-green/5 rounded-lg mb-2">
           <Loader2 size={12} className="animate-spin text-brand-green" />

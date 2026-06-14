@@ -372,6 +372,7 @@ export default function SupplierOrderDetail({ orderId, supplierEmail, onBack }: 
             orderId={orderId}
             currentStage={order.production_stage}
             supplierEmail={supplierEmail}
+            revisionNotes={order.revision_notes}
             onTransition={load}
           />
         </div>
