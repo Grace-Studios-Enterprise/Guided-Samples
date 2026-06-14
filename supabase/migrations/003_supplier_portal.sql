@@ -11,20 +11,23 @@
 -- Suppliers sign in with the same Supabase auth as brand owners.
 -- They can see any production_order where supplier_email = their login email.
 
-create policy if not exists "Suppliers can view their assigned orders"
-  on public.production_orders for select
-  using (supplier_email = auth.email());
+do $$ begin
+  create policy "Suppliers can view their assigned orders"
+    on public.production_orders for select
+    using (supplier_email = auth.email());
+exception when duplicate_object then null; end $$;
 
--- Suppliers can read events for orders they are assigned to
-create policy if not exists "Suppliers can read events for their assigned orders"
-  on public.production_order_events for select
-  using (
-    exists (
-      select 1 from public.production_orders po
-      where po.id = production_order_events.production_order_id
-        and po.supplier_email = auth.email()
-    )
-  );
+do $$ begin
+  create policy "Suppliers can read events for their assigned orders"
+    on public.production_order_events for select
+    using (
+      exists (
+        select 1 from public.production_orders po
+        where po.id = production_order_events.production_order_id
+          and po.supplier_email = auth.email()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ─── 2. Supplier media tracking ───────────────────────────────────────────────
 -- Media uploads (first piece photos, revised sample photos) are stored in
@@ -53,38 +56,42 @@ comment on table public.production_order_media is
 
 alter table public.production_order_media enable row level security;
 
--- Brand owners can see media for their orders
-create policy if not exists "Brand owners can view their order media"
-  on public.production_order_media for select
-  using (
-    exists (
-      select 1 from public.production_orders po
-      where po.id = production_order_media.production_order_id
-        and po.user_id = auth.uid()
-    )
-  );
+do $$ begin
+  create policy "Brand owners can view their order media"
+    on public.production_order_media for select
+    using (
+      exists (
+        select 1 from public.production_orders po
+        where po.id = production_order_media.production_order_id
+          and po.user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
--- Suppliers can view and insert media for their assigned orders
-create policy if not exists "Suppliers can view their order media"
-  on public.production_order_media for select
-  using (
-    exists (
-      select 1 from public.production_orders po
-      where po.id = production_order_media.production_order_id
-        and po.supplier_email = auth.email()
-    )
-  );
+do $$ begin
+  create policy "Suppliers can view their order media"
+    on public.production_order_media for select
+    using (
+      exists (
+        select 1 from public.production_orders po
+        where po.id = production_order_media.production_order_id
+          and po.supplier_email = auth.email()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Suppliers can upload media for their assigned orders"
-  on public.production_order_media for insert
-  with check (
-    uploaded_by_email = auth.email()
-    and exists (
-      select 1 from public.production_orders po
-      where po.id = production_order_media.production_order_id
-        and po.supplier_email = auth.email()
-    )
-  );
+do $$ begin
+  create policy "Suppliers can upload media for their assigned orders"
+    on public.production_order_media for insert
+    with check (
+      uploaded_by_email = auth.email()
+      and exists (
+        select 1 from public.production_orders po
+        where po.id = production_order_media.production_order_id
+          and po.supplier_email = auth.email()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ─── 3. Storage policy for production media ───────────────────────────────────
 -- Media stored at: production-media/{orderId}/{stage}/{filename}
@@ -93,27 +100,31 @@ insert into storage.buckets (id, name, public)
   values ('production-media', 'production-media', false)
   on conflict (id) do nothing;
 
-create policy if not exists "Suppliers can upload production media"
-  on storage.objects for insert
-  with check (
-    bucket_id = 'production-media'
-    and exists (
-      select 1 from public.production_orders po
-      where po.id::text = (storage.foldername(name))[1]
-        and po.supplier_email = auth.email()
-    )
-  );
+do $$ begin
+  create policy "Suppliers can upload production media"
+    on storage.objects for insert
+    with check (
+      bucket_id = 'production-media'
+      and exists (
+        select 1 from public.production_orders po
+        where po.id::text = (storage.foldername(name))[1]
+          and po.supplier_email = auth.email()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Suppliers can read their own production media"
-  on storage.objects for select
-  using (
-    bucket_id = 'production-media'
-    and exists (
-      select 1 from public.production_orders po
-      where po.id::text = (storage.foldername(name))[1]
-        and (po.supplier_email = auth.email() or po.user_id = auth.uid())
-    )
-  );
+do $$ begin
+  create policy "Suppliers can read their own production media"
+    on storage.objects for select
+    using (
+      bucket_id = 'production-media'
+      and exists (
+        select 1 from public.production_orders po
+        where po.id::text = (storage.foldername(name))[1]
+          and (po.supplier_email = auth.email() or po.user_id = auth.uid())
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ─── 4. Indexes ───────────────────────────────────────────────────────────────
 

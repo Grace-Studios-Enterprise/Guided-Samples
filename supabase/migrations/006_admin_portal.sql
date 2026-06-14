@@ -22,46 +22,53 @@ $$;
 
 -- ─── production_orders: admin sees all ───────────────────────────────────────
 
-create policy if not exists "Admins can view all production orders"
-  on public.production_orders for select
-  using (public.is_admin());
+do $$ begin
+  create policy "Admins can view all production orders"
+    on public.production_orders for select
+    using (public.is_admin());
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Admins can update all production orders"
-  on public.production_orders for update
-  using (public.is_admin());
+do $$ begin
+  create policy "Admins can update all production orders"
+    on public.production_orders for update
+    using (public.is_admin());
+exception when duplicate_object then null; end $$;
 
 -- ─── production_order_events: admin sees all ─────────────────────────────────
 
-create policy if not exists "Admins can view all production order events"
-  on public.production_order_events for select
-  using (public.is_admin());
+do $$ begin
+  create policy "Admins can view all production order events"
+    on public.production_order_events for select
+    using (public.is_admin());
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Admins can insert production order events"
-  on public.production_order_events for insert
-  with check (public.is_admin());
+do $$ begin
+  create policy "Admins can insert production order events"
+    on public.production_order_events for insert
+    with check (public.is_admin());
+exception when duplicate_object then null; end $$;
 
 -- ─── production_order_media: admin sees all ───────────────────────────────────
 
-create policy if not exists "Admins can view all order media"
-  on public.production_order_media for select
-  using (public.is_admin());
-
--- ─── notifications: admin can insert for any recipient ────────────────────────
--- (insert policy already exists as "Service role can insert notifications")
--- No additional policy needed — existing policy allows all inserts.
+do $$ begin
+  create policy "Admins can view all order media"
+    on public.production_order_media for select
+    using (public.is_admin());
+exception when duplicate_object then null; end $$;
 
 -- ─── Storage: admin can read all production media ─────────────────────────────
 
-create policy if not exists "Admins can read all production media"
-  on storage.objects for select
-  using (
-    bucket_id = 'production-media'
-    and public.is_admin()
-  );
+do $$ begin
+  create policy "Admins can read all production media"
+    on storage.objects for select
+    using (
+      bucket_id = 'production-media'
+      and public.is_admin()
+    );
+exception when duplicate_object then null; end $$;
 
 -- ─── Admin notes: store in production_order_events with event_type = 'admin_note'
 -- No new table needed — events table already supports arbitrary metadata.
--- event_type column accepts any text value; 'admin_note' is the convention.
 
 -- ─── Rollback ─────────────────────────────────────────────────────────────────
 -- drop policy if exists "Admins can view all production orders" on public.production_orders;

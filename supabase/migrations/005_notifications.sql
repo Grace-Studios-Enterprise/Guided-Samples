@@ -39,22 +39,24 @@ comment on table public.notifications is
 
 alter table public.notifications enable row level security;
 
--- Each user sees only their own notifications (matched by login email)
-create policy if not exists "Users can view their own notifications"
-  on public.notifications for select
-  using (recipient_email = auth.email());
+do $$ begin
+  create policy "Users can view their own notifications"
+    on public.notifications for select
+    using (recipient_email = auth.email());
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Users can mark their own notifications as read"
-  on public.notifications for update
-  using (recipient_email = auth.email())
-  with check (recipient_email = auth.email());
+do $$ begin
+  create policy "Users can mark their own notifications as read"
+    on public.notifications for update
+    using (recipient_email = auth.email())
+    with check (recipient_email = auth.email());
+exception when duplicate_object then null; end $$;
 
--- Server-side API routes (anon key, service role) insert notifications
--- The transition API runs as authenticated user; notifications are inserted
--- via service-role calls from the API route layer.
-create policy if not exists "Service role can insert notifications"
-  on public.notifications for insert
-  with check (true);
+do $$ begin
+  create policy "Service role can insert notifications"
+    on public.notifications for insert
+    with check (true);
+exception when duplicate_object then null; end $$;
 
 -- ─── 3. Notification preferences ─────────────────────────────────────────────
 
@@ -72,14 +74,18 @@ comment on table public.notification_preferences is
 
 alter table public.notification_preferences enable row level security;
 
-create policy if not exists "Users can manage their own preferences"
-  on public.notification_preferences for all
-  using (user_email = auth.email())
-  with check (user_email = auth.email());
+do $$ begin
+  create policy "Users can manage their own preferences"
+    on public.notification_preferences for all
+    using (user_email = auth.email())
+    with check (user_email = auth.email());
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Service role can upsert preferences"
-  on public.notification_preferences for insert
-  with check (true);
+do $$ begin
+  create policy "Service role can upsert preferences"
+    on public.notification_preferences for insert
+    with check (true);
+exception when duplicate_object then null; end $$;
 
 -- ─── 4. Indexes ───────────────────────────────────────────────────────────────
 

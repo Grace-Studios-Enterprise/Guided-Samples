@@ -158,32 +158,36 @@ end $$;
 alter table public.production_orders       enable row level security;
 alter table public.production_order_events enable row level security;
 
--- Users can read and create their own production orders
-create policy if not exists "Users can manage their own production orders"
-  on public.production_orders for all
-  using  (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+do $$ begin
+  create policy "Users can manage their own production orders"
+    on public.production_orders for all
+    using  (auth.uid() = user_id)
+    with check (auth.uid() = user_id);
+exception when duplicate_object then null; end $$;
 
--- Users can read events for their own orders; events are insert-only from service
-create policy if not exists "Users can read their own production order events"
-  on public.production_order_events for select
-  using (
-    exists (
-      select 1 from public.production_orders po
-      where po.id = production_order_events.production_order_id
-        and po.user_id = auth.uid()
-    )
-  );
+do $$ begin
+  create policy "Users can read their own production order events"
+    on public.production_order_events for select
+    using (
+      exists (
+        select 1 from public.production_orders po
+        where po.id = production_order_events.production_order_id
+          and po.user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
-create policy if not exists "Users can insert events for their own orders"
-  on public.production_order_events for insert
-  with check (
-    exists (
-      select 1 from public.production_orders po
-      where po.id = production_order_events.production_order_id
-        and po.user_id = auth.uid()
-    )
-  );
+do $$ begin
+  create policy "Users can insert events for their own orders"
+    on public.production_order_events for insert
+    with check (
+      exists (
+        select 1 from public.production_orders po
+        where po.id = production_order_events.production_order_id
+          and po.user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ─── 8. Rollback instructions (manual) ───────────────────────────────────────
 -- To undo this migration:
