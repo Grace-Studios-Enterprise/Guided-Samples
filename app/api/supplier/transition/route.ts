@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase-server'
+import { getRouteUser } from '@/lib/supabase-server'
 import { transitionStage } from '@/lib/workflowEngine'
 import { isSupplierControlledTransition } from '@/types/supplier'
 import { isValidStage } from '@/lib/workflowEngine'
@@ -22,17 +22,15 @@ import type { ProductionStage } from '@/types/productionStages'
 
 export async function POST(req: NextRequest) {
   // ── 1. Auth ─────────────────────────────────────────────────────────────────
-  const supabase = createRouteClient()
+  const { sb: supabase, user: session } = await getRouteUser(req)
   if (!supabase) {
     return NextResponse.json({ error: 'Service unavailable' }, { status: 503 })
   }
-
-  const { data: { session } } = await supabase.auth.getSession()
   if (!session) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
   }
 
-  const supplierEmail = session.user.email
+  const supplierEmail = session.email
   if (!supplierEmail) {
     return NextResponse.json({ error: 'Supplier email not found in session' }, { status: 401 })
   }
@@ -96,7 +94,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 6. Delegate to workflow engine ──────────────────────────────────────────
-  const result = await transitionStage(order_id, toStage, metadata, session.user.id)
+  const result = await transitionStage(order_id, toStage, metadata, session.id)
 
   if (!result.ok) {
     const messages = result.errors.map(e => e.message)

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ArrowLeft, Download, CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, CreditCard, ShieldCheck, Clock, Zap } from 'lucide-react'
 import { AppState } from '@/app/page'
+import { createClient } from '@/lib/supabase'
 
 const LOGO_FEE = 4
 const SAMPLE_FEE = 50
@@ -66,13 +67,22 @@ export default function Phase6Production({ state, techPack, onBack, projectId }:
     { label: 'Tech Pack', image: null, present: !!techPack.styleInfo.styleName },
   ]
 
+  async function getAuthHeader(): Promise<Record<string, string>> {
+    const sb = createClient()
+    if (!sb) return {}
+    const { data: { session } } = await sb.auth.getSession()
+    if (!session?.access_token) return {}
+    return { 'Authorization': `Bearer ${session.access_token}` }
+  }
+
   const handleSampleCheckout = async () => {
     setSampleLoading(true)
     setErrorMsg('')
     try {
+      const auth = await getAuthHeader()
       const res = await fetch('/api/checkout/sample', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({
           design_order_id: projectId,
           garment_type: garmentType,
@@ -95,9 +105,10 @@ export default function Phase6Production({ state, techPack, onBack, projectId }:
     setDirectLoading(true)
     setErrorMsg('')
     try {
+      const auth = await getAuthHeader()
       const res = await fetch('/api/checkout/direct', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({
           design_order_id: projectId,
           garment_type: garmentType,

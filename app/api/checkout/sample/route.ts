@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createRouteClient } from '@/lib/supabase-server'
+import { getRouteUser } from '@/lib/supabase-server'
 
 const ACTIVATION_FEE_CENTS = 10000
 const SAMPLE_FEE_CENTS = 5000
@@ -12,15 +12,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
-  const sb = createRouteClient()
-  if (!sb) {
-    return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
-  }
-
-  const { data: { session: authSession } } = await sb.auth.getSession()
-  if (!authSession) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const { sb, user } = await getRouteUser(req)
+  if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { design_order_id, garment_type, style_name, extra_logos, notes } = await req.json()
 
@@ -28,7 +22,7 @@ export async function POST(req: NextRequest) {
     .from('projects')
     .select('id, user_id, phase_reached')
     .eq('id', design_order_id)
-    .eq('user_id', authSession.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (projectError || !project) {
@@ -88,7 +82,7 @@ export async function POST(req: NextRequest) {
     metadata: {
       payment_type: 'sample',
       design_order_id,
-      user_id: authSession.user.id,
+      user_id: user.id,
       garment_type,
       style_name: style_name ?? '',
       extra_logos: String(extraLogosCount),

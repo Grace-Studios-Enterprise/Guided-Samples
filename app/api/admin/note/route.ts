@@ -7,18 +7,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase-server'
+import { getRouteUser } from '@/lib/supabase-server'
 
-function isAdmin(session: { user: { app_metadata?: Record<string, unknown> } }): boolean {
-  return session.user.app_metadata?.role === 'admin'
+function isAdmin(session: { app_metadata?: Record<string, unknown> }): boolean {
+  return session.app_metadata?.role === 'admin'
 }
 
 export async function POST(req: NextRequest) {
-  const sb = createRouteClient()
+  const { sb, user: session } = await getRouteUser(req)
   if (!sb) return NextResponse.json({ ok: false, error: 'Service unavailable' }, { status: 503 })
-
-  const { data: { session } } = await sb.auth.getSession()
-  if (!session)          return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  if (!session) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
   if (!isAdmin(session)) return NextResponse.json({ ok: false, error: 'Admin access required' }, { status: 403 })
 
   const { order_id, note } = await req.json() as { order_id: string; note: string }
@@ -32,8 +30,8 @@ export async function POST(req: NextRequest) {
     event_type:          'admin_note',
     metadata: {
       note:           note.trim(),
-      admin_id:       session.user.id,
-      admin_email:    session.user.email,
+      admin_id:       session.id,
+      admin_email:    session.email,
       transitioned_at: new Date().toISOString(),
     },
   })

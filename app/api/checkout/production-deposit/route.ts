@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createRouteClient } from '@/lib/supabase-server'
+import { getRouteUser } from '@/lib/supabase-server'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -8,15 +8,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }
 
-  const sb = createRouteClient()
-  if (!sb) {
-    return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
-  }
-
-  const { data: { session: authSession } } = await sb.auth.getSession()
-  if (!authSession) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const { sb, user } = await getRouteUser(req)
+  if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { order_id } = await req.json()
 
@@ -24,7 +18,7 @@ export async function POST(req: NextRequest) {
     .from('production_orders')
     .select('id, user_id, production_stage, garment_price_cents, extra_logo_fee_cents')
     .eq('id', order_id)
-    .eq('user_id', authSession.user.id)
+    .eq('user_id', user.id)
     .single()
 
   if (orderError || !order) {
@@ -60,7 +54,7 @@ export async function POST(req: NextRequest) {
     metadata: {
       payment_type: 'production_deposit',
       order_id,
-      user_id: authSession.user.id,
+      user_id: user.id,
     },
     success_url: `${origin}/track?payment=deposit_success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/track`,

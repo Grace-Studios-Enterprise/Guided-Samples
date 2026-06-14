@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createRouteClient } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
 import { transitionStage } from '@/lib/workflowEngine'
+
+function createWebhookClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+  if (!url || !key) return null
+  return createClient(url, key, { auth: { persistSession: false } })
+}
 
 const GARMENT_PRICES: Record<string, number> = {
   'T-Shirt': 2500, 'Hoodie': 4500, 'Sweatshirt': 3500,
@@ -51,7 +58,7 @@ async function handleSamplePayment(
   session: Stripe.Checkout.Session,
   meta: Record<string, string>,
 ) {
-  const sb = createRouteClient()
+  const sb = createWebhookClient()
   if (!sb) return
 
   const { design_order_id, user_id, garment_type, style_name, extra_logos } = meta
@@ -92,7 +99,7 @@ async function handleProductionDeposit(
   session: Stripe.Checkout.Session,
   meta: Record<string, string>,
 ) {
-  const sb = createRouteClient()
+  const sb = createWebhookClient()
   if (!sb) return
 
   const { order_id } = meta
@@ -113,7 +120,7 @@ async function handleFinalPayment(
   session: Stripe.Checkout.Session,
   meta: Record<string, string>,
 ) {
-  const sb = createRouteClient()
+  const sb = createWebhookClient()
   if (!sb) return
 
   const { order_id } = meta

@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase-server'
+import { getRouteUser } from '@/lib/supabase-server'
 import { transitionStage } from '@/lib/workflowEngine'
 import { isClientControlledTransition } from '@/types/client'
 import type { ProductionStage } from '@/types/productionStages'
 
 export async function POST(req: NextRequest) {
-  const supabase = createRouteClient()
+  const { sb: supabase, user: session } = await getRouteUser(req)
   if (!supabase) {
     return NextResponse.json({ ok: false, errors: ['Service unavailable'] }, { status: 503 })
   }
-
-  const { data: { session } } = await supabase.auth.getSession()
   if (!session) {
     return NextResponse.json({ ok: false, errors: ['Unauthorized'] }, { status: 401 })
   }
@@ -32,7 +30,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, errors: ['Order not found'] }, { status: 404 })
   }
 
-  if (order.user_id !== session.user.id) {
+  if (order.user_id !== session.id) {
     return NextResponse.json({ ok: false, errors: ['Forbidden'] }, { status: 403 })
   }
 
@@ -41,7 +39,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, errors: ['Transition not permitted'] }, { status: 403 })
   }
 
-  const result = await transitionStage(order_id, to_stage, metadata, session.user.id)
+  const result = await transitionStage(order_id, to_stage, metadata, session.id)
   if (!result.ok) {
     const messages = result.errors.map(e => e.message)
     return NextResponse.json({ ok: false, errors: messages }, { status: 422 })
