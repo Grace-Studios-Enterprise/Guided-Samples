@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase'
+import SignIn from '@/components/SignIn'
 import AdminDashboard from '@/components/admin/AdminDashboard'
 import AdminOrderDetail from '@/components/admin/AdminOrderDetail'
 
-type View = 'loading' | 'denied' | 'dashboard' | 'detail'
+type View = 'loading' | 'signedout' | 'denied' | 'dashboard' | 'detail'
 
 export default function AdminPage() {
   const [view,            setView]            = useState<View>('loading')
@@ -17,7 +18,8 @@ export default function AdminPage() {
     if (!sb) { setView('denied'); return }
 
     function applySession(session: Session | null) {
-      const role = session?.user?.app_metadata?.role
+      if (!session?.user) { setView('signedout'); return }
+      const role = session.user.app_metadata?.role
       setView(role === 'admin' ? 'dashboard' : 'denied')
     }
 
@@ -57,16 +59,22 @@ export default function AdminPage() {
           </div>
         )}
 
+        {view === 'signedout' && (
+          <div className="max-w-sm mx-auto py-16">
+            <div className="text-center mb-8">
+              <p className="text-lg font-semibold text-gray-700">GRACE Admin</p>
+              <p className="text-sm text-gray-400 mt-1">Sign in with your admin account to continue.</p>
+            </div>
+            <SignIn />
+          </div>
+        )}
+
         {view === 'denied' && (
           <div className="text-center py-24 space-y-3">
             <p className="text-lg font-semibold text-gray-700">Access Denied</p>
-            <p className="text-sm text-gray-400">You must be signed in as an admin to view this page.</p>
-            <a
-              href="/sign-in"
-              className="inline-block btn-primary text-sm mt-2"
-            >
-              Sign In
-            </a>
+            <p className="text-sm text-gray-400">
+              This account doesn’t have admin access. Ask an administrator to grant your account the admin role.
+            </p>
           </div>
         )}
 
