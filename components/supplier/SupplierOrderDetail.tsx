@@ -7,6 +7,8 @@ import { getSupplierOrder, getOrderMedia, getStageHistory } from '@/lib/supplier
 import type { ProductionOrder } from '@/types/production'
 import type { OrderMedia } from '@/types/supplier'
 import type { StageTransitionEvent } from '@/types/productionStages'
+import { useRealtimeOrder } from '@/lib/useRealtimeOrder'
+import { useStageToasts, StageToastContainer } from '@/components/StageToast'
 import StageTimeline from './StageTimeline'
 import StageActionPanel from './StageActionPanel'
 
@@ -51,6 +53,8 @@ export default function SupplierOrderDetail({ orderId, supplierEmail, onBack }: 
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
+  const { toasts, notify, dismiss } = useStageToasts()
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -70,6 +74,13 @@ export default function SupplierOrderDetail({ orderId, supplierEmail, onBack }: 
   }, [orderId])
 
   useEffect(() => { load() }, [load])
+
+  // Real-time sync: reloads when client acts and shows a notification
+  useRealtimeOrder({
+    orderId,
+    onOrderChange: load,
+    onNewEvent:    (event) => notify(event, supplierEmail),
+  })
 
   if (loading) {
     return (
@@ -103,6 +114,8 @@ export default function SupplierOrderDetail({ orderId, supplierEmail, onBack }: 
 
   return (
     <div className="p-6 w-full">
+      <StageToastContainer toasts={toasts} onDismiss={dismiss} />
+
       {/* Header */}
       <div className="mb-5 flex items-start justify-between">
         <div>

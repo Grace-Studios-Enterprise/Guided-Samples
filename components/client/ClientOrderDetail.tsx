@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { ArrowLeft, Package, RefreshCw, Loader2 } from 'lucide-react'
+import { useAuth } from '@/lib/auth'
 import { STAGE_LABELS, STAGE_DESCRIPTIONS, type ProductionStage } from '@/types/productionStages'
 import { getClientOrder, getOrderMediaForClient, getStageHistory } from '@/lib/clientPortal'
-import { createClient } from '@/lib/supabase'
+import { useRealtimeOrder } from '@/lib/useRealtimeOrder'
+import { useStageToasts, StageToastContainer } from '@/components/StageToast'
 import type { ProductionOrder } from '@/types/production'
 import type { OrderMedia } from '@/types/supplier'
 import type { StageTransitionEvent } from '@/types/productionStages'
@@ -49,11 +51,14 @@ function formatDate(iso: string | null) {
 }
 
 export default function ClientOrderDetail({ orderId, onBack }: Props) {
+  const { user }                        = useAuth()
   const [order,   setOrder]   = useState<ProductionOrder | null>(null)
   const [media,   setMedia]   = useState<OrderMedia[]>([])
   const [history, setHistory] = useState<StageTransitionEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+
+  const { toasts, notify, dismiss } = useStageToasts()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,20 +80,12 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  // Real-time subscription
-  useEffect(() => {
-    const sb = createClient()
-    if (!sb) return
-    const channel = sb
-      .channel(`order-${orderId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'production_orders', filter: `id=eq.${orderId}` },
-        () => { load() },
-      )
-      .subscribe()
-    return () => { sb.removeChannel(channel) }
-  }, [orderId, load])
+  // Real-time sync: reloads when supplier acts and shows a notification
+  useRealtimeOrder({
+    orderId,
+    onOrderChange: load,
+    onNewEvent:    (event) => notify(event, user?.id),
+  })
 
   if (loading) {
     return (
@@ -116,6 +113,8 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
 
   return (
     <div className="p-6 w-full">
+      <StageToastContainer toasts={toasts} onDismiss={dismiss} />
+
       <div className="mb-5 flex items-start justify-between">
         <div>
           <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mb-2">

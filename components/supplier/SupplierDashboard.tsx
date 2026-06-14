@@ -5,6 +5,7 @@ import { Package, ChevronRight, Clock, Loader2, AlertCircle, LogOut, RefreshCw }
 import { STAGE_LABELS, stageProgress, type ProductionStage } from '@/types/productionStages'
 import { supplierCanAct, supplierIsWaiting } from '@/types/supplier'
 import { listSupplierOrders } from '@/lib/supplierPortal'
+import { useRealtimeOrderList } from '@/lib/useRealtimeOrder'
 import type { SupplierOrderSummary } from '@/types/supplier'
 
 interface Props {
@@ -126,6 +127,9 @@ export default function SupplierDashboard({ supplierEmail, supplierName, onSelec
   }
 
   useEffect(() => { load() }, [])
+
+  // Refresh list whenever any assigned order changes (client actions, etc.)
+  useRealtimeOrderList(load)
 
   const actionNeeded = orders.filter(o => supplierCanAct(o.production_stage))
   const waiting      = orders.filter(o => supplierIsWaiting(o.production_stage))

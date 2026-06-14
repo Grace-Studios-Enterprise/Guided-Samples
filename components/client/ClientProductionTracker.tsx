@@ -5,6 +5,7 @@ import { Package, ChevronRight, Clock, Loader2, AlertCircle, RefreshCw, LogOut }
 import { STAGE_LABELS, stageProgress, type ProductionStage } from '@/types/productionStages'
 import { clientCanAct } from '@/types/client'
 import { listClientOrders } from '@/lib/clientPortal'
+import { useRealtimeOrderList } from '@/lib/useRealtimeOrder'
 import type { ProductionOrder } from '@/types/production'
 
 interface Props {
@@ -115,6 +116,9 @@ export default function ClientProductionTracker({ onSelectOrder, onSignOut }: Pr
   }
 
   useEffect(() => { load() }, [])
+
+  // Refresh list whenever any order changes (supplier actions, etc.)
+  useRealtimeOrderList(load)
 
   const actionNeeded = orders.filter(o => clientCanAct(o.production_stage))
   const inProgress   = orders.filter(o => !clientCanAct(o.production_stage) && o.production_stage !== 'DELIVERED' && o.production_stage !== 'CANCELLED')

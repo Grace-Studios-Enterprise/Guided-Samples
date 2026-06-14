@@ -35,11 +35,13 @@ function ActionForm({
   orderId,
   supplierEmail,
   onSuccess,
+  onTransitionStart,
 }: {
-  action:        SupplierAction
-  orderId:       string
-  supplierEmail: string
-  onSuccess:     () => void
+  action:             SupplierAction
+  orderId:            string
+  supplierEmail:      string
+  onSuccess:          () => void
+  onTransitionStart?: () => void
 }) {
   const [fields, setFields]         = useState<Record<string, string>>({})
   const [mediaFiles, setMediaFiles] = useState<File[]>([])
@@ -71,6 +73,7 @@ function ActionForm({
     }
 
     setUploading(true)
+    onTransitionStart?.()
 
     try {
       // Upload media first
@@ -221,6 +224,7 @@ function ActionForm({
 // ─── Action panel ─────────────────────────────────────────────────────────────
 
 export default function StageActionPanel({ orderId, currentStage, supplierEmail, onTransition }: Props) {
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const actions = getSupplierActions(currentStage)
   const isWaiting = supplierIsWaiting(currentStage)
 
@@ -272,13 +276,20 @@ export default function StageActionPanel({ orderId, currentStage, supplierEmail,
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
         Your Actions
       </p>
+      {isTransitioning && (
+        <div className="flex items-center gap-2 p-3 bg-brand-green/5 rounded-lg mb-2">
+          <Loader2 size={12} className="animate-spin text-brand-green" />
+          <p className="text-xs text-brand-green font-medium">Updating stage…</p>
+        </div>
+      )}
       {actions.map(action => (
         <ActionForm
           key={action.id}
           action={action}
           orderId={orderId}
           supplierEmail={supplierEmail}
-          onSuccess={onTransition}
+          onSuccess={() => { setIsTransitioning(false); onTransition() }}
+          onTransitionStart={() => setIsTransitioning(true)}
         />
       ))}
     </div>
