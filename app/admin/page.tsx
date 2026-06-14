@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase'
 import AdminDashboard from '@/components/admin/AdminDashboard'
 import AdminOrderDetail from '@/components/admin/AdminOrderDetail'
@@ -15,15 +16,14 @@ export default function AdminPage() {
     const sb = createClient()
     if (!sb) { setView('denied'); return }
 
-    sb.auth.getSession().then(({ data: { session } }) => {
+    function applySession(session: Session | null) {
       const role = session?.user?.app_metadata?.role
       setView(role === 'admin' ? 'dashboard' : 'denied')
-    })
+    }
 
-    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
-      const role = session?.user?.app_metadata?.role
-      setView(role === 'admin' ? 'dashboard' : 'denied')
-    })
+    sb.auth.getSession().then((res: { data: { session: Session | null } }) => applySession(res.data.session))
+
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event: unknown, session: Session | null) => applySession(session))
 
     return () => subscription.unsubscribe()
   }, [])

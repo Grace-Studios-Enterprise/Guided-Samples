@@ -52,7 +52,7 @@ export function useRealtimeOrder({ orderId, onOrderChange, onNewEvent }: Options
           table:  'production_order_events',
           filter: `production_order_id=eq.${orderId}`,
         },
-        (payload) => {
+        (payload: { new: Record<string, unknown> }) => {
           const row = payload.new as {
             from_stage:       string | null
             to_stage:         string

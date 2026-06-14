@@ -196,9 +196,9 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
                   return (
                     <div key={i} className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-gray-600">
                       <p className="text-[10px] text-gray-400 mb-1">
-                        {meta.admin_email as string ?? 'admin'} · {new Date(e.transitioned_at).toLocaleString()}
+                        {String(meta.admin_email ?? 'admin')} · {new Date(e.transitioned_at).toLocaleString()}
                       </p>
-                      {meta.note as string}
+                      {String(meta.note ?? '')}
                     </div>
                   )
                 })}
@@ -298,7 +298,7 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-[10px] text-gray-400">
                       {new Date(e.transitioned_at).toLocaleString()}
-                      {meta.admin_email && <> · {meta.admin_email as string}</>}
+                      {!!meta.admin_email && <> · {String(meta.admin_email)}</>}
                     </p>
                     {isNote ? (
                       <p className="text-xs text-gray-700 mt-0.5">{meta.note as string}</p>

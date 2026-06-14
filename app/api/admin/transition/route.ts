@@ -48,7 +48,9 @@ export async function POST(req: NextRequest) {
   )
 
   if (!result.ok) {
-    const msg = 'errors' in result ? result.errors.map(e => e.message).join(' | ') : result.systemError
+    const msg = result.errors.length > 0
+      ? result.errors.map(e => e.message).join(' | ')
+      : result.systemError
     return NextResponse.json({ ok: false, error: msg }, { status: 422 })
   }
 

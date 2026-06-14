@@ -76,7 +76,7 @@ export async function getAdminOrderHistory(orderId: string): Promise<StageTransi
     .eq('production_order_id', orderId)
     .order('created_at', { ascending: true })
   if (!data) return []
-  return data.map(row => ({
+  return data.map((row: { metadata: unknown; created_at: string; event_type: string }) => ({
     ...(row.metadata as StageTransitionEvent),
     // For admin_note events, synthesise a display event
     _event_type: row.event_type,
