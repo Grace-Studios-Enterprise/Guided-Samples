@@ -6,6 +6,13 @@
 -- brand owners (clients) and suppliers can query with the same RLS policy.
 -- =============================================================================
 
+-- ─── 0. Teardown stale versions ──────────────────────────────────────────────
+-- If a previous partial run left these tables with wrong schema, drop them.
+
+drop table if exists public.notification_preferences cascade;
+drop table if exists public.notifications cascade;
+drop type  if exists public.notification_type;
+
 -- ─── 1. Notification type enum ────────────────────────────────────────────────
 
 create type public.notification_type as enum (
