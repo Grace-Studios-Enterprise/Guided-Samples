@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 
 function isAdmin(session: { user: { app_metadata?: Record<string, unknown> } }): boolean {
   return session.user.app_metadata?.role === 'admin'

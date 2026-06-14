@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 
 const ACTIVATION_FEE_CENTS = 10000
 const SAMPLE_FEE_CENTS = 5000

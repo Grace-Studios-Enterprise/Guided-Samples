@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 import { transitionStage, isValidStage } from '@/lib/workflowEngine'
 import type { ProductionStage } from '@/types/productionStages'
 

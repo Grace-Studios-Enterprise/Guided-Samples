@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 
 // GET  /api/notifications        — list unread notifications
 // PATCH /api/notifications       — mark all as read

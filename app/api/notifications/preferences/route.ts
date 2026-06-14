@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 import type { NotificationPreferences } from '@/lib/notifications'
 
 // GET /api/notifications/preferences

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 import { transitionStage } from '@/lib/workflowEngine'
 
 const GARMENT_PRICES: Record<string, number> = {

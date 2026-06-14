@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createRouteClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-server'
 import { transitionStage } from '@/lib/workflowEngine'
 import { isSupplierControlledTransition } from '@/types/supplier'
 import { isValidStage } from '@/lib/workflowEngine'
