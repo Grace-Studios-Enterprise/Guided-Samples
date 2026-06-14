@@ -12,14 +12,14 @@ import type { ProductionStage } from '@/types/productionStages'
 
 // ─── Who is responsible right now ─────────────────────────────────────────────
 
-export type Responsible = 'factory' | 'you' | 'transit' | 'done' | 'cancelled'
+export type Responsible = 'factory' | 'you' | 'transit' | 'grace' | 'done' | 'cancelled'
 
 export const STAGE_RESPONSIBLE: Record<ProductionStage, Responsible> = {
   PRODUCTION_FILES_RECEIVED:  'factory',
   FIRST_PIECE_IN_PRODUCTION:  'factory',
   FIRST_PIECE_REVIEW:         'factory',
   SAMPLE_SHIPPED:             'transit',
-  SAMPLE_DELIVERED:           'you',
+  SAMPLE_DELIVERED:           'grace',   // GRACE confirms delivery, not client
   CLIENT_SAMPLE_EVALUATION:   'you',
   REVISION_REQUIRED:          'factory',
   BULK_PRODUCTION:            'factory',
@@ -60,9 +60,9 @@ export const CLIENT_STAGE_MESSAGES: Record<ProductionStage, string> = {
   SAMPLE_SHIPPED:
     'Your sample is on its way to you. You\'ll be able to hold it soon.',
   SAMPLE_DELIVERED:
-    'Your sample has arrived. Take your time reviewing it, then let us know what you think.',
+    'Your sample has arrived and is being confirmed by GRACE. You\'ll be notified when it\'s ready for your review.',
   CLIENT_SAMPLE_EVALUATION:
-    'You\'re evaluating your sample. Approve it to start your full order, or request changes.',
+    'Your sample is ready. Review it and let us know — approve to start full production, or request changes.',
   REVISION_REQUIRED:
     'Your feedback has been sent to the factory. They\'re making the changes you requested.',
   BULK_PRODUCTION:
@@ -83,8 +83,9 @@ export const CLIENT_STAGE_MESSAGES: Record<ProductionStage, string> = {
 
 export const RESPONSIBLE_LABELS: Record<Responsible, { label: string; color: string; dot: string }> = {
   factory:   { label: 'Factory is working on this',  color: 'text-brand-green',  dot: 'bg-brand-green animate-pulse' },
-  you:       { label: 'Your action needed',           color: 'text-amber-600',    dot: 'bg-amber-500 animate-pulse' },
+  you:       { label: 'Your decision needed',         color: 'text-amber-600',    dot: 'bg-amber-500 animate-pulse' },
   transit:   { label: 'In transit',                  color: 'text-blue-500',     dot: 'bg-blue-400' },
+  grace:     { label: 'GRACE is confirming delivery', color: 'text-brand-green',  dot: 'bg-brand-green' },
   done:      { label: 'Complete',                    color: 'text-green-600',    dot: 'bg-green-500' },
   cancelled: { label: 'Cancelled',                   color: 'text-red-500',      dot: 'bg-red-400' },
 }

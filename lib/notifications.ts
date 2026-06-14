@@ -56,8 +56,8 @@ const TRANSITION_NOTIFICATIONS: Partial<Record<ProductionStage, NotificationSpec
   FIRST_PIECE_REVIEW: {
     recipient: 'client',
     type:      'first_piece_ready',
-    title:     'First Piece Ready for Review',
-    body:      () => 'Your factory has completed the first physical sample. Photos have been uploaded for your review.',
+    title:     'Sample Being Prepared',
+    body:      () => 'Your factory has completed the first sample and is preparing to ship it to you for evaluation.',
   },
   REVISION_REQUIRED: {
     recipient: 'supplier',
@@ -79,7 +79,13 @@ const TRANSITION_NOTIFICATIONS: Partial<Record<ProductionStage, NotificationSpec
     recipient: 'client',
     type:      'sample_delivered',
     title:     'Sample Delivered',
-    body:      () => 'Your sample has been marked as delivered. Begin your evaluation when ready.',
+    body:      () => 'Your sample has arrived. GRACE is confirming delivery and will open it for your evaluation shortly.',
+  },
+  CLIENT_SAMPLE_EVALUATION: {
+    recipient: 'client',
+    type:      'sample_delivered',
+    title:     'Your Sample is Ready to Evaluate',
+    body:      () => 'Your sample delivery has been confirmed. Log in to review it and make your decision.',
   },
   BULK_PRODUCTION: {
     recipient: 'supplier',
