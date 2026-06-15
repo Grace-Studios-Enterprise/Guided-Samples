@@ -8,7 +8,6 @@ import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
 import SizeGuide from '@/components/SizeGuide'
 import TechnicalDrawing from '@/components/TechnicalDrawing'
-import TechPackExport from '@/components/TechPackExport'
 import type { SizeGuideOverrides } from '@/lib/fitBlocks/sizeGuide'
 import { resolveGarmentType } from '@/lib/fitBlocks'
 import type { GarmentType } from '@/lib/fitBlocks/types'
@@ -22,7 +21,6 @@ interface Props {
 export default function SectionView({ section, state, onStartDesign }: Props) {
   if (section === 'dashboard') return <Dashboard state={state} onStartDesign={onStartDesign} />
   if (section === 'projects') return <Projects state={state} onStartDesign={onStartDesign} />
-  if (section === 'techpacks') return <TechPacksSection state={state} />
   if (section === 'sizeguide') return <SizeGuideSection state={state} />
   if (section === 'techdrawing') return <TechnicalDrawingSection state={state} />
   if (section === 'orders') return <Orders />
@@ -141,18 +139,6 @@ function Projects({ state, onStartDesign }: { state: AppState; onStartDesign: ()
 
 // Tech Pack Export section. Sources measurements, callouts, and placements from
 // getTechnicalDrawingData() (via buildTechPackDocument) — no sizing logic here and
-// no reads from the consumer size guide. Defaults to the garment being designed
-// and seeds style metadata from it.
-function TechPacksSection({ state }: { state: AppState }) {
-  const designed: GarmentType | undefined =
-    (state.garment?.type ? resolveGarmentType(state.garment.type) ?? undefined : undefined)
-  const meta = {
-    brand: 'GRACE',
-    season: 'FW25',
-    revision: 'A',
-  }
-  return <TechPackExport garmentType={designed} meta={meta} />
-}
 
 function Orders() {
   return (
