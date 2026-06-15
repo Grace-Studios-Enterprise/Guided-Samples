@@ -157,18 +157,38 @@ export interface SupplierExportMapping {
 
 // ── Benchmark metadata ─────────────────────────────────────────────────────────
 
-export type DataSourceType = 'stussy_published' | 'derived' | 'estimated'
+/**
+ * How a benchmark's measurements were obtained.
+ * - published_measurements: manually verified from a brand's published size guide.
+ * - training_data_estimated: recalled from model training data; consistent with the
+ *   product family but NOT verified against the live published guide.
+ * - derived: calculated from another garment's benchmark (e.g. windbreaker from track jacket).
+ * - extrapolated: grade-extended beyond the published size range (e.g. XL–3XL from XS–L).
+ */
+export type DataSourceType =
+  | 'published_measurements'
+  | 'training_data_estimated'
+  | 'derived'
+  | 'extrapolated'
+
+export type ConfidenceLevel = 'high' | 'medium' | 'low'
 
 export interface BenchmarkSource {
   brand: string
-  productName: string
+  /** Product identifier / SKU. */
   sku: string
+  productName: string
+  /** Canonical source URL for the published size guide. */
   url: string
   /** How the data was obtained. */
   dataSource: DataSourceType
+  /** Confidence in the accuracy of the stored measurements. */
+  confidence: ConfidenceLevel
   /** Verbatim or paraphrased fit description from the product page. */
   fitDescription: string
   modelInfo?: string
+  /** Traceability notes: what was verified, what was derived, what was extrapolated. */
+  verificationNotes: string
   notes: string
 }
 

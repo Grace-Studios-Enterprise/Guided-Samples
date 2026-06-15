@@ -2,6 +2,17 @@
 // Documents every rule used when generating a fit variant from a benchmark.
 // Each rule set is applied additively to the benchmark measurements at size M,
 // then re-graded across all sizes using the standard grade tables.
+//
+// DECISION LOG
+// ------------
+// 2026-06-15 — TOP_GRADE.frontLength changed 0.75" → 1.0" per size step.
+//   Reason: aligns runtime grading with Stüssy's published front-length grade
+//   (benchmarks.ts publishedGrade.frontLength = 1.0 across the tee/sweat families,
+//   and the verified Beach Roots Zip Hoodie guide grades front length at +1.0"/step:
+//   XS 26 → S 27 → M 28 → L 29). The prior 0.75" under-graded body length by 1"
+//   at 3XL. This restores accurate body-length progression through 3XL.
+// 2026-06-15 — Added optional per-garment consumer-grade override (see below) so a
+//   fit block can match a brand's published grade where it differs from the default.
 
 import type {
   TopConsumerMeasurements,
@@ -21,10 +32,18 @@ import type {
 
 export const TOP_GRADE: Record<keyof TopConsumerMeasurements, number> & { [k: string]: number } = {
   chest:         1.0,   // half-chest grades +1" per step
-  frontLength:   0.75,  // body length
+  frontLength:   1.0,   // body length — aligned to Stüssy published grade (was 0.75); see CHANGELOG note in this file
   shoulderWidth: 0.5,
   sleeveLength:  0.5,
 }
+
+// Per-garment consumer-grade override.
+// Some published garments grade certain points faster than the GRACE default table.
+// The verified Beach Roots Zip Hoodie guide, for example, grades shoulder width and
+// sleeve length at +1.0"/step (vs the default +0.5"). A fit block may pass an override
+// to buildTopSizeChart so its size chart matches the brand's published grade exactly.
+// This is additive and backward-compatible — callers that omit it get the default table.
+export type TopConsumerGradeOverride = Partial<Record<keyof TopConsumerMeasurements, number>>
 
 export const TOP_TECHNICAL_GRADE: Record<keyof TopTechnicalMeasurements, number> = {
   armhole:       0.5,
@@ -69,13 +88,14 @@ export const SIZE_STEPS: Record<SizeKey, number> = {
 
 // ── Grade application helpers ──────────────────────────────────────────────────
 
-function gradeTop(base: TopMeasurementSet, steps: number): TopMeasurementSet {
+function gradeTop(base: TopMeasurementSet, steps: number, gradeOverride?: TopConsumerGradeOverride): TopMeasurementSet {
+  const g = { ...TOP_GRADE, ...gradeOverride }
   return {
     consumer: {
-      chest:         round(base.consumer.chest         + steps * TOP_GRADE.chest),
-      frontLength:   round(base.consumer.frontLength   + steps * TOP_GRADE.frontLength),
-      shoulderWidth: round(base.consumer.shoulderWidth + steps * TOP_GRADE.shoulderWidth),
-      sleeveLength:  round(base.consumer.sleeveLength  + steps * TOP_GRADE.sleeveLength),
+      chest:         round(base.consumer.chest         + steps * g.chest),
+      frontLength:   round(base.consumer.frontLength   + steps * g.frontLength),
+      shoulderWidth: round(base.consumer.shoulderWidth + steps * g.shoulderWidth),
+      sleeveLength:  round(base.consumer.sleeveLength  + steps * g.sleeveLength),
     },
     technical: {
       armhole:        round(base.technical.armhole        + steps * TOP_TECHNICAL_GRADE.armhole),
@@ -116,11 +136,15 @@ function round(n: number): number {
   return Math.round(n * 8) / 8 // nearest 1/8"
 }
 
-/** Build a full 7-size chart from a single base measurement set at size M. */
-export function buildTopSizeChart(baseAtM: TopMeasurementSet): TopSizeChart {
+/**
+ * Build a full 7-size chart from a single base measurement set at size M.
+ * Optionally accepts a per-garment consumer-grade override to match a brand's
+ * published grade where it differs from the GRACE default table.
+ */
+export function buildTopSizeChart(baseAtM: TopMeasurementSet, gradeOverride?: TopConsumerGradeOverride): TopSizeChart {
   const chart = {} as TopSizeChart
   for (const [size, steps] of Object.entries(SIZE_STEPS)) {
-    chart[size as SizeKey] = gradeTop(baseAtM, steps)
+    chart[size as SizeKey] = gradeTop(baseAtM, steps, gradeOverride)
   }
   return chart
 }

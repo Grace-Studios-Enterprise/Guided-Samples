@@ -4,22 +4,29 @@ import { BENCHMARKS } from '../../benchmarks'
 
 const b = BENCHMARKS.zip_hoodie
 
+// VERIFIED published consumer measurements at size M (Beach Roots Zip Hoodie 1975198).
+// Published guide (XS–L) grades chest, front length, sleeve, and shoulder at +1.0"/step.
+// The grade override below makes buildTopSizeChart reproduce the published guide exactly
+// (shoulder & sleeve grade at 1.0 here vs the default 0.5), and extrapolates XL–3XL.
+const ZIP_HOODIE_GRADE_OVERRIDE = { shoulderWidth: 1.0, sleeveLength: 1.0 }
+
 const relaxedBaseM: TopMeasurementSet = {
   consumer: {
-    chest:         b.publishedMeasurementsAtM.chest,        // 21.5 — extra 0.5" for zip placket
-    frontLength:   b.publishedMeasurementsAtM.frontLength,  // 27.5
-    shoulderWidth: 19.0,
-    sleeveLength:  b.publishedMeasurementsAtM.sleeveLength, // 25.5
+    chest:         b.publishedMeasurementsAtM.chest,         // 23.5 (verified, half-chest)
+    frontLength:   b.publishedMeasurementsAtM.frontLength,   // 28   (verified)
+    shoulderWidth: b.publishedMeasurementsAtM.shoulderWidth, // 22   (verified, point-to-point)
+    sleeveLength:  b.publishedMeasurementsAtM.sleeveLength,  // 25.3 (verified)
   },
   technical: {
-    armhole:       10.5,
-    bottomOpening: 21.5,
-    neckOpening:   8.25,
+    // Technical (supplier-facing) values derived from the verified consumer block.
+    armhole:       11.0,  // wider verified chest → larger armhole
+    bottomOpening: 23.0,  // ribbed hem pulls in slightly under chest
+    neckOpening:   8.5,
     sleeveOpening: 5.25,
     cuffLength:    2.0,
     cuffOpening:   5.25,
-    backLength:    28.0,
-    hoodHeight:    b.publishedMeasurementsAtM.hoodHeight,   // 13
+    backLength:    28.5,  // front length 28 + 0.5 back curve
+    hoodHeight:    b.publishedMeasurementsAtM.hoodHeight,   // 13 (derived)
     hoodOpening:   9.5,
     hoodDepth:     7.0,
   },
@@ -108,7 +115,7 @@ function buildVariant(fitVariant: keyof typeof TOP_FIT_TRANSFORMS, isBenchmark =
     isBenchmark,
     benchmark:   isBenchmark ? b.source : undefined,
     transformationRules: isBenchmark ? undefined : t._rules,
-    sizeChart:   buildTopSizeChart(adjustedBaseM),
+    sizeChart:   buildTopSizeChart(adjustedBaseM, ZIP_HOODIE_GRADE_OVERRIDE),
     graphicPlacements: PLACEMENTS,
     supplierExportMappings: EXPORT_MAPPINGS,
     internalNotes: isBenchmark
