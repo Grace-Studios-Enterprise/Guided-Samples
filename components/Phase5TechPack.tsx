@@ -13,10 +13,11 @@ import {
   formatInches,
   type SizeGuideOverrides,
 } from '@/lib/fitBlocks/sizeGuide'
-import { getTechnicalDrawingData, type DrawingPlacement } from '@/lib/fitBlocks/technicalDrawing'
+import { getTechnicalDrawingData } from '@/lib/fitBlocks/technicalDrawing'
 import { getFitLibrary, resolveGarmentType } from '@/lib/fitBlocks'
 import { ALL_SIZES } from '@/lib/fitBlocks/types'
 import type { GarmentType, FitVariant, SizeKey } from '@/lib/fitBlocks/types'
+import { TechFlat, FLAT_FOR_GARMENT } from '@/components/TechFlats'
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -47,179 +48,6 @@ const GARMENT_LABEL: Record<GarmentType, string> = Object.fromEntries(
 const SEASONS = ['SS24', 'FW24', 'SS25', 'FW25', 'SS26', 'FW26', 'Year Round']
 const GENDERS = ['Unisex', "Men's", "Women's", 'Kids']
 
-// ─── Garment / Bottom icons ───────────────────────────────────────────────────
-
-function TopIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 48 52" fill="none" className={className} aria-hidden>
-      <path
-        d="M18 4h12M18 4 7 11l5 6 6-3v30h12V14l6 3 5-6-12-7"
-        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function BottomIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 52 52" fill="none" className={className} aria-hidden>
-      <path
-        d="M8 4h36v8L32 44h-4L16 12V4"
-        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      />
-      <path d="M16 12 8 44h8l10-20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
-}
-
-// ─── Parametric geometry (mirrors TechnicalDrawing, not re-exported) ──────────
-
-type Pt  = { x: number; y: number }
-type Dim = { x1: number; y1: number; x2: number; y2: number; label: string; orient: 'h' | 'v' }
-type Box = { x: number; y: number; w: number; h: number; label: string }
-
-function topGeometry(m: Record<string, number>, placements: DrawingPlacement[]) {
-  const chest = m.chest, shoulder = m.shoulderWidth, bodyLen = m.frontLength
-  const neck = m.neckOpening ?? 7.5, hem = m.bottomOpening ?? chest
-  const sleeveLen = m.sleeveLength, sleeveOpen = m.sleeveOpening ?? 5.5
-  const armhole = m.armhole ?? 9.5
-  const cx = 0, slope = 1.2, neckDrop = 2.2
-  const nH = neck / 2, sH = shoulder / 2, cH = chest / 2, hH = hem / 2
-
-  const body: Pt[] = [
-    { x: cx - nH, y: 0 },
-    { x: cx - sH, y: slope },
-    { x: cx - cH, y: armhole },
-    { x: cx - hH, y: bodyLen },
-    { x: cx + hH, y: bodyLen },
-    { x: cx + cH, y: armhole },
-    { x: cx + sH, y: slope },
-    { x: cx + nH, y: 0 },
-    { x: cx, y: neckDrop },
-  ]
-  const ang = (22 * Math.PI) / 180
-  function sleeve(sign: number): Pt[] {
-    const a = { x: cx + sign * sH, y: slope }
-    const b = { x: cx + sign * cH, y: armhole }
-    const cuffTop = { x: a.x + sign * sleeveLen * Math.cos(ang), y: a.y + sleeveLen * Math.sin(ang) }
-    const av = { x: b.x - a.x, y: b.y - a.y }, al = Math.hypot(av.x, av.y) || 1
-    const cuffBot = { x: cuffTop.x + (av.x / al) * sleeveOpen, y: cuffTop.y + (av.y / al) * sleeveOpen }
-    return [a, cuffTop, cuffBot, b]
-  }
-  const polylines = [body, sleeve(-1), sleeve(1)]
-  const dims: Dim[] = [
-    { x1: cx - cH, y1: armhole, x2: cx + cH, y2: armhole, label: `Chest ${formatInches(chest)}"`, orient: 'h' },
-    { x1: cx - sH, y1: slope, x2: cx + sH, y2: slope, label: `Shoulder ${formatInches(shoulder)}"`, orient: 'h' },
-    { x1: cx - hH, y1: bodyLen, x2: cx + hH, y2: bodyLen, label: `Hem ${formatInches(hem)}"`, orient: 'h' },
-    { x1: cx + cH + 1.5, y1: 0, x2: cx + cH + 1.5, y2: bodyLen, label: `Length ${formatInches(bodyLen)}"`, orient: 'v' },
-  ]
-  const boxes: Box[] = placements
-    .filter(p => ['center_chest', 'left_chest'].includes(p.location))
-    .map(p => ({ x: cx + p.xOffsetInches - p.widthInches / 2, y: p.yOffsetInches, w: p.widthInches, h: p.heightInches, label: p.label }))
-  return { polylines, dims, boxes }
-}
-
-function bottomGeometry(m: Record<string, number>, placements: DrawingPlacement[]) {
-  const waist = m.waist, thigh = m.thigh, rise = m.frontRise, inseam = m.inseam, legOpen = m.legOpening
-  const cx = 0, wH = waist / 2, hipH = Math.max(wH + 1.5, thigh)
-  const yCrotch = rise, yHem = rise + inseam
-  const outline: Pt[] = [
-    { x: cx - wH, y: 0 },
-    { x: cx + wH, y: 0 },
-    { x: cx + hipH, y: yCrotch },
-    { x: cx + hipH, y: yHem },
-    { x: cx + hipH - legOpen, y: yHem },
-    { x: cx, y: yCrotch },
-    { x: cx - hipH + legOpen, y: yHem },
-    { x: cx - hipH, y: yHem },
-    { x: cx - hipH, y: yCrotch },
-  ]
-  const dims: Dim[] = [
-    { x1: cx - wH, y1: 0, x2: cx + wH, y2: 0, label: `Waist ${formatInches(waist)}"`, orient: 'h' },
-    { x1: cx - hipH, y1: yCrotch, x2: cx + hipH, y2: yCrotch, label: `Thigh ${formatInches(thigh)}"`, orient: 'h' },
-    { x1: cx + hipH - legOpen, y1: yHem, x2: cx + hipH, y2: yHem, label: `Leg ${formatInches(legOpen)}"`, orient: 'h' },
-    { x1: cx + hipH + 1.5, y1: 0, x2: cx + hipH + 1.5, y2: yCrotch, label: `Rise ${formatInches(rise)}"`, orient: 'v' },
-    { x1: cx + hipH + 1.5, y1: yCrotch, x2: cx + hipH + 1.5, y2: yHem, label: `Inseam ${formatInches(inseam)}"`, orient: 'v' },
-  ]
-  return { polylines: [outline], dims, boxes: [] as Box[] }
-}
-
-// ─── Flat SVG renderer ────────────────────────────────────────────────────────
-
-function FlatSvg({
-  data, artworkUrl, showCallouts = true, showArtwork = true,
-}: {
-  data: ReturnType<typeof getTechnicalDrawingData>
-  artworkUrl?: string | null
-  showCallouts?: boolean
-  showArtwork?: boolean
-}) {
-  if (!data) return null
-  const m = data.measurements
-  const { polylines, dims, boxes } =
-    data.category === 'top' ? topGeometry(m, data.placements) : bottomGeometry(m, data.placements)
-
-  const allPts: Pt[] = [
-    ...polylines.flat(),
-    ...dims.flatMap(d => [{ x: d.x1, y: d.y1 }, { x: d.x2, y: d.y2 }]),
-    ...boxes.flatMap(b => [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h }]),
-  ]
-  const minX = Math.min(...allPts.map(p => p.x)), maxX = Math.max(...allPts.map(p => p.x))
-  const minY = Math.min(...allPts.map(p => p.y)), maxY = Math.max(...allPts.map(p => p.y))
-  const PAD = showCallouts ? 56 : 20
-  const wIn = maxX - minX, hIn = maxY - minY
-  const scale = Math.min((380 - PAD * 2) / wIn, 440 / hIn)
-  const W = wIn * scale + PAD * 2, H = hIn * scale + PAD * 2
-  const tx = (x: number) => (x - minX) * scale + PAD
-  const ty = (y: number) => (y - minY) * scale + PAD
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: 380 }} fontFamily="Inter, sans-serif">
-      {polylines.map((poly, i) => (
-        <polygon key={i}
-          points={poly.map(p => `${tx(p.x)},${ty(p.y)}`).join(' ')}
-          fill="#FFFFFF" stroke="#0A0A0A" strokeWidth={1.6} strokeLinejoin="round" />
-      ))}
-      {showArtwork && boxes.map((b, i) => (
-        <g key={i}>
-          {artworkUrl && (
-            <image href={artworkUrl} x={tx(b.x)} y={ty(b.y)} width={b.w * scale} height={b.h * scale}
-              preserveAspectRatio="xMidYMid meet" opacity={0.92} />
-          )}
-          <rect x={tx(b.x)} y={ty(b.y)} width={b.w * scale} height={b.h * scale}
-            fill={artworkUrl ? 'none' : '#C8372D0A'} stroke="#C8372D" strokeWidth={0.8} strokeDasharray="3 2" />
-        </g>
-      ))}
-      {showCallouts && dims.map((d, i) => {
-        const x1 = tx(d.x1), y1 = ty(d.y1), x2 = tx(d.x2), y2 = ty(d.y2)
-        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2
-        const tick = 4
-        return (
-          <g key={i} stroke="#6B6B6B" strokeWidth={0.8}>
-            <line x1={x1} y1={y1} x2={x2} y2={y2} />
-            {d.orient === 'h' ? (
-              <>
-                <line x1={x1} y1={y1 - tick} x2={x1} y2={y1 + tick} />
-                <line x1={x2} y1={y2 - tick} x2={x2} y2={y2 + tick} />
-                <text x={mx} y={my - 5} textAnchor="middle" fontSize={8} fontWeight={600} fill="#0A0A0A" stroke="none">
-                  {d.label.toUpperCase()}
-                </text>
-              </>
-            ) : (
-              <>
-                <line x1={x1 - tick} y1={y1} x2={x1 + tick} y2={y1} />
-                <line x1={x2 - tick} y1={y2} x2={x2 + tick} y2={y2} />
-                <text x={mx + 5} y={my} textAnchor="start" fontSize={8} fontWeight={600} fill="#0A0A0A" stroke="none" dominantBaseline="middle">
-                  {d.label.toUpperCase()}
-                </text>
-              </>
-            )}
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
 
 // ─── Editable placement type ──────────────────────────────────────────────────
 
@@ -398,12 +226,12 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
     setTimeout(() => setSaved(false), 2500)
   }
 
-  const isTop = drawingM?.category === 'top'
   const artworkUrl = state.logo?.dataUrl ?? null
+  const flatKind = FLAT_FOR_GARMENT[garmentType]
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 md:p-6 max-w-[860px]">
+    <div className="p-4 md:p-6 w-full">
 
       {/* Back link */}
       <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-grace-stone hover:text-grace-ink transition-colors mb-5">
@@ -512,7 +340,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
 
       {/* ── Section 2: Fit selector ───────────────────────────────────────── */}
       <div className="mb-6 card">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-4 flex-wrap">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-3">
               <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
@@ -525,33 +353,21 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
                   <button
                     key={f}
                     onClick={() => setFit(f)}
-                    className={`flex flex-col items-center p-3 rounded-xl border transition-all w-[100px] ${
+                    className={`px-4 py-2 rounded-full text-[12px] font-semibold tracking-wide transition-all ${
                       selected
-                        ? 'border-[#184D3E] bg-white shadow-sm'
-                        : 'border-grace-border bg-white hover:border-grace-ink'
+                        ? 'bg-[#184D3E] text-white shadow-sm'
+                        : 'bg-white text-grace-stone hover:text-grace-ink border border-grace-border hover:border-grace-ink'
                     }`}
                   >
-                    <div className={`mb-2 ${selected ? 'text-[#184D3E]' : 'text-grace-stone'}`}>
-                      {isTop ? <TopIcon className="w-10 h-10" /> : <BottomIcon className="w-10 h-10" />}
-                    </div>
-                    <span className={`text-[11px] font-semibold text-center leading-tight ${selected ? 'text-grace-ink' : 'text-grace-stone'}`}>
-                      {fitLabel(f)}
-                    </span>
-                    <span className={`mt-1.5 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
-                      selected ? 'border-[#184D3E]' : 'border-grace-border'
-                    }`}>
-                      {selected && <span className="w-2 h-2 rounded-full bg-[#184D3E]" />}
-                    </span>
+                    {fitLabel(f)}
                   </button>
                 )
               })}
             </div>
           </div>
-          <div className="hidden md:block w-44 bg-grace-mist rounded-xl p-3 shrink-0">
-            <p className="text-[10px] text-grace-stone leading-relaxed">
-              Measurements are generated based on your selected fit. You can edit any size below.
-            </p>
-          </div>
+          <p className="text-[10px] text-grace-stone max-w-[180px] leading-relaxed self-end pb-0.5">
+            Measurements are generated based on your selected fit. You can edit any size below.
+          </p>
         </div>
       </div>
 
@@ -631,17 +447,17 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-6">
           <div>
-            <p className="text-[9px] font-bold tracking-[0.2em] uppercase text-grace-stone mb-2 text-center">Front</p>
-            <div className="bg-grace-mist/30 rounded-xl p-2">
-              <FlatSvg data={drawingM} artworkUrl={artworkUrl} showCallouts showArtwork />
+            <p className="text-[9px] font-bold tracking-[0.2em] uppercase text-grace-stone mb-3 text-center">Front</p>
+            <div className="flex items-center justify-center">
+              <TechFlat kind={flatKind} view="front" />
             </div>
           </div>
           <div>
-            <p className="text-[9px] font-bold tracking-[0.2em] uppercase text-grace-stone mb-2 text-center">Back</p>
-            <div className="bg-grace-mist/30 rounded-xl p-2">
-              <FlatSvg data={drawingM} artworkUrl={null} showCallouts={false} showArtwork={false} />
+            <p className="text-[9px] font-bold tracking-[0.2em] uppercase text-grace-stone mb-3 text-center">Back</p>
+            <div className="flex items-center justify-center">
+              <TechFlat kind={flatKind} view="back" />
             </div>
           </div>
         </div>
