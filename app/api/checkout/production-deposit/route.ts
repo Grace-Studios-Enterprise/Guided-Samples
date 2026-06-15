@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
-import { clampQuantity, bulkSubtotalCents, depositCents } from '@/lib/pricing'
+import { MIN_PRODUCTION_QUANTITY, clampQuantity, bulkSubtotalCents, depositCents } from '@/lib/pricing'
+import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -13,11 +14,11 @@ export async function POST(req: NextRequest) {
   if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { order_id, quantity } = await req.json()
+  const { order_id, quantity, size_breakdown } = await req.json()
 
   const { data: order, error: orderError } = await sb
     .from('production_orders')
-    .select('id, user_id, production_stage, garment_price_cents, extra_logo_fee_cents, production_quantity')
+    .select('id, user_id, production_stage, garment_price_cents, extra_logo_fee_cents, production_quantity, size_breakdown')
     .eq('id', order_id)
     .eq('user_id', user.id)
     .single()
@@ -30,15 +31,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Order is not awaiting a production deposit' }, { status: 422 })
   }
 
-  // The client may set/adjust the bulk quantity at deposit time. Persist it so
-  // the webhook and final-payment step compute the same totals.
-  const qty = clampQuantity(quantity ?? order.production_quantity ?? 1)
-  if (qty !== order.production_quantity) {
-    await sb
-      .from('production_orders')
-      .update({ production_quantity: qty })
-      .eq('id', order_id)
+  // The client chooses the per-size breakdown at deposit time. Quantity is its
+  // sum; the bulk run must meet the MOQ. Persist both so the webhook and
+  // final-payment step compute the same totals.
+  const breakdown = normalizeBreakdown(size_breakdown ?? order.size_breakdown)
+  const breakdownTotal = sumBreakdown(breakdown)
+  const qty = clampQuantity(breakdownTotal > 0 ? breakdownTotal : (quantity ?? order.production_quantity ?? MIN_PRODUCTION_QUANTITY))
+  if (qty < MIN_PRODUCTION_QUANTITY) {
+    return NextResponse.json(
+      { error: `Minimum order quantity is ${MIN_PRODUCTION_QUANTITY} pieces` },
+      { status: 422 },
+    )
   }
+  await sb
+    .from('production_orders')
+    .update({ production_quantity: qty, size_breakdown: breakdown })
+    .eq('id', order_id)
 
   const subtotal = bulkSubtotalCents(
     order.garment_price_cents ?? 0,

@@ -103,6 +103,7 @@ export async function getSupplierOrder(orderId: string): Promise<ProductionOrder
       total_cents:          0,
     },
     production_quantity:   (row.production_quantity as number | null) ?? 1,
+    size_breakdown:        (row.size_breakdown as Record<string, number> | null) ?? {},
     tech_pack_snapshot:    row.tech_pack_snapshot    as ProductionOrder['tech_pack_snapshot'],
     stripe_session_id:     null,  // never exposed to suppliers
     stripe_payment_intent: null,

@@ -426,6 +426,7 @@ function rowToProductionOrder(row: Record<string, unknown>): ProductionOrder { /
     },
     tech_pack_snapshot:    row.tech_pack_snapshot    as TechPackSnapshot,
     production_quantity:   (row.production_quantity   as number | null) ?? 1,
+    size_breakdown:        (row.size_breakdown        as Record<string, number> | null) ?? {},
     stripe_session_id:     row.stripe_session_id     as string | null,
     stripe_payment_intent: row.stripe_payment_intent as string | null,
     supplier_name:         row.supplier_name         as string | null,

@@ -85,6 +85,9 @@ export type ProductionOrder = {
   // Bulk run quantity (client-chosen; defaults to 1)
   production_quantity:         number
 
+  // Per-size quantity map, e.g. { S: 3, M: 4 }; sums to production_quantity
+  size_breakdown:             Record<string, number>
+
   // Dual production path fields
   production_path:              'SAMPLE' | 'DIRECT' | null
   sample_fee_cents:             number | null

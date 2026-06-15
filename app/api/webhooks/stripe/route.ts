@@ -9,6 +9,7 @@ import {
   productionPriceCents,
   clampQuantity,
 } from '@/lib/pricing'
+import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
 
 // The webhook runs as trusted server code with no user session. It MUST use the
 // service-role key to bypass row-level security — the anon key would be blocked
@@ -80,9 +81,11 @@ async function handleSamplePayment(
   const sb = createWebhookClient()
   if (!sb) return
 
-  const { design_order_id, user_id, garment_type, extra_logos } = meta
+  const { design_order_id, user_id, garment_type, extra_logos, size_breakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
   const garmentPrice = productionPriceCents(garment_type)
+  const breakdown = normalizeBreakdown(size_breakdown ? JSON.parse(size_breakdown) : null)
+  const sampleQty = Math.max(1, sumBreakdown(breakdown))
 
   const { data: techPack } = await sb
     .from('tech_packs')
@@ -105,6 +108,8 @@ async function handleSamplePayment(
     sample_paid_at: new Date().toISOString(),
     activation_fee_cents: ACTIVATION_FEE_CENTS,
     garment_price_cents: garmentPrice,
+    production_quantity: sampleQty,
+    size_breakdown: breakdown,
     extra_logo_count: extraLogosCount,
     extra_logo_fee_cents: extraLogosCount * EXTRA_LOGO_FEE_CENTS,
     tech_pack_snapshot: techPack ?? {},
@@ -130,10 +135,12 @@ async function handleDirectDeposit(
   const sb = createWebhookClient()
   if (!sb) return
 
-  const { design_order_id, user_id, garment_type, extra_logos, quantity } = meta
+  const { design_order_id, user_id, garment_type, extra_logos, quantity, size_breakdown: rawBreakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
   const garmentPrice = productionPriceCents(garment_type)
-  const qty = clampQuantity(quantity ?? '1')
+  const breakdown = normalizeBreakdown(rawBreakdown ? JSON.parse(rawBreakdown) : null)
+  const breakdownTotal = sumBreakdown(breakdown)
+  const qty = clampQuantity(breakdownTotal > 0 ? breakdownTotal : (quantity ?? '1'))
 
   const { data: techPack } = await sb
     .from('tech_packs')
@@ -157,6 +164,7 @@ async function handleDirectDeposit(
     activation_fee_cents: 0,
     garment_price_cents: garmentPrice,
     production_quantity: qty,
+    size_breakdown: breakdown,
     extra_logo_count: extraLogosCount,
     extra_logo_fee_cents: extraLogosCount * EXTRA_LOGO_FEE_CENTS,
     tech_pack_snapshot: techPack ?? {},
