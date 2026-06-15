@@ -87,7 +87,7 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
 
         {/* Expert help — visible in nav, not buried at bottom */}
         {onExpertHelp && (
-          <div className="my-3 p-3 rounded-xl border border-grace-border bg-grace-mist">
+          <div className="mt-5 p-3 rounded-xl border border-grace-border bg-grace-mist">
             <p className="text-[9px] font-bold tracking-[0.18em] uppercase text-grace-stone mb-0.5">Need help?</p>
             <p className="text-[11px] font-bold text-grace-ink leading-tight mb-2">Work with GRACE Studios</p>
             <button

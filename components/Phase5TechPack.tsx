@@ -414,7 +414,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
 
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Technical flat */}
-          <div className="flex items-start justify-center lg:justify-start shrink-0">
+          <div className="flex items-center justify-center shrink-0">
             <TechFlat kind={flatKind} />
           </div>
 
@@ -650,9 +650,14 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         </button>
       </div>
 
-      <p className="text-[10px] text-grace-stone text-center leading-relaxed">
-        Your tech pack includes all measurements, construction details, and placements ready for production.
-      </p>
+      <div className="flex justify-center">
+        <div className="relative group/tip">
+          <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors">i</button>
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20 text-center">
+            Your tech pack includes all measurements, construction details, and placements ready for production.
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
