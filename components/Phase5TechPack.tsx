@@ -366,7 +366,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
             </div>
           </div>
           <div className="relative self-end pb-0.5 group/tip">
-            <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors" aria-label="About measurements">
+            <button className="w-5 h-5 rounded-full border border-grace-ink text-grace-ink flex items-center justify-center text-[10px] font-bold transition-colors hover:bg-grace-ink hover:text-white" aria-label="About measurements">
               i
             </button>
             <div className="absolute bottom-full right-0 mb-2 w-52 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20">
@@ -401,7 +401,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
           <div className="ml-auto flex items-center gap-1.5">
             <span className="text-[10px] text-grace-stone">{GARMENT_LABEL[garmentType]}</span>
             <div className="relative group/tip">
-              <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors" aria-label="About measurements">
+              <button className="w-5 h-5 rounded-full border border-grace-ink text-grace-ink flex items-center justify-center text-[10px] font-bold transition-colors hover:bg-grace-ink hover:text-white" aria-label="About measurements">
                 i
               </button>
               <div className="absolute bottom-full right-0 mb-2 w-60 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20">
@@ -573,7 +573,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
             <span className="w-6 h-6 rounded-full bg-[#0A0A0A] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
             <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Graphic Placement</p>
             <div className="relative group/tip inline-block ml-1">
-              <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors" aria-label="About graphic placement">
+              <button className="w-5 h-5 rounded-full border border-grace-ink text-grace-ink flex items-center justify-center text-[10px] font-bold transition-colors hover:bg-grace-ink hover:text-white" aria-label="About graphic placement">
                 i
               </button>
               <div className="absolute bottom-full left-0 mb-2 w-52 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20">
@@ -651,7 +651,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
 
       <div className="flex justify-center">
         <div className="relative group/tip">
-          <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors">i</button>
+          <button className="w-5 h-5 rounded-full border border-grace-ink text-grace-ink flex items-center justify-center text-[10px] font-bold transition-colors hover:bg-grace-ink hover:text-white">i</button>
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20 text-center">
             Your tech pack includes all measurements, construction details, and placements ready for production.
           </div>

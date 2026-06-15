@@ -104,7 +104,7 @@ export default function SizeGuide({
 
       {/* Garment selector */}
       {allowGarmentSwitch && (
-        <div className="mb-8 flex flex-wrap gap-1.5">
+        <div className="mb-8 flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
           {getAllGarmentTypes().map(g => (
             <button
               key={g}
@@ -161,7 +161,7 @@ export default function SizeGuide({
           </p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <div className="relative group/tip">
-              <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors" aria-label="About measurements">
+              <button className="w-5 h-5 rounded-full border border-grace-ink text-grace-ink flex items-center justify-center text-[10px] font-bold transition-colors hover:bg-grace-ink hover:text-white" aria-label="About measurements">
                 i
               </button>
               <div className="absolute top-full left-0 mt-2 w-60 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20">
