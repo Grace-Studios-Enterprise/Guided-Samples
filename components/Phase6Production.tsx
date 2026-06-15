@@ -7,19 +7,19 @@ import { createClient } from '@/lib/supabase'
 import AuthModal from '@/components/AuthModal'
 
 const LOGO_FEE = 4
-const SAMPLE_FEE = 50
-const ACTIVATION_FEE = 100
+const ACTIVATION_FEE = 25
+// Per-piece production (bulk) pricing in dollars. Mirrors lib/pricing.ts.
 const GARMENT_PRICES: Record<string, number> = {
   'T-Shirt': 25,
   'Hoodie': 45,
-  'Crewneck': 40,
   'Zip Hoodie': 50,
+  'Crewneck': 35,
   'Track Jacket': 35,
-  'Windbreaker': 40,
-  'Basketball Jersey': 40,
-  'Sweatpants': 35,
   'Track Pants': 35,
+  'Windbreaker': 40,
+  'Basketball Jersey': 20,
   'Basketball Shorts': 25,
+  'Sweatpants': 35,
 }
 
 interface Props {
@@ -58,10 +58,14 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
   const extraLogos = Math.max(0, logoCount - 1)
   const logoFeeTotal = extraLogos * LOGO_FEE
 
-  const sampleTotal = ACTIVATION_FEE + SAMPLE_FEE + logoFeeTotal
+  // Sample fee is double the per-piece production price (one sample piece).
+  const sampleFee = garmentPrice * 2
+  const sampleTotal = ACTIVATION_FEE + sampleFee + logoFeeTotal
 
-  // 50% deposit = half of (garment_price + logo fees)
-  const productionTotal = garmentPrice + logoFeeTotal
+  // DIRECT path: client chooses bulk quantity; deposit is 50% of the full run.
+  const [quantity, setQuantity] = useState(1)
+  const clampQty = (q: number) => Math.max(1, Math.min(100000, Math.floor(q) || 1))
+  const productionTotal = (garmentPrice + logoFeeTotal) * quantity
   const depositAmount = Math.round(productionTotal / 2 * 100) / 100
 
   const assets = [
@@ -106,6 +110,7 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
           garment_type: garmentType,
           style_name: styleName,
           extra_logos: extraLogos,
+          quantity: path === 'direct' ? quantity : 1,
           notes,
         }),
       })
@@ -299,7 +304,7 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
                   </div>
                   <div className="flex justify-between text-gray-600">
                     <span>Sample Fee</span>
-                    <span>${SAMPLE_FEE}.00</span>
+                    <span>${sampleFee}.00</span>
                   </div>
                   {extraLogos > 0 && (
                     <div className="flex justify-between text-gray-600">
@@ -340,7 +345,39 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
                 </div>
 
                 <div className="border-t border-slate-100 pt-3 mb-4 space-y-1.5 text-xs">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">What you pay today</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Quantity</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(q => clampQty(q - 1))}
+                        disabled={quantity <= 1}
+                        className="w-6 h-6 rounded-md border border-slate-200 flex items-center justify-center text-gray-600 hover:bg-slate-50 disabled:opacity-40"
+                        aria-label="Decrease quantity"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        value={quantity}
+                        onChange={e => setQuantity(clampQty(Number(e.target.value)))}
+                        className="w-14 text-center text-xs font-semibold text-gray-900 border border-slate-200 rounded-md py-0.5 focus:outline-none focus:border-brand-green"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(q => clampQty(q + 1))}
+                        className="w-6 h-6 rounded-md border border-slate-200 flex items-center justify-center text-gray-600 hover:bg-slate-50"
+                        aria-label="Increase quantity"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Production Subtotal ({quantity} pc{quantity > 1 ? 's' : ''})</span>
+                    <span>${productionTotal.toFixed(2)}</span>
+                  </div>
                   <div className="flex justify-between text-gray-600">
                     <span>50% Production Deposit</span>
                     <span>${depositAmount.toFixed(2)}</span>

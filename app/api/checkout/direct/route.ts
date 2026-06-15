@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
-
-const GARMENT_PRICES: Record<string, number> = {
-  'T-Shirt': 2500,
-  'Hoodie': 4500,
-  'Sweatshirt': 3500,
-  'Polo': 3000,
-  'Tank Top': 2000,
-  'Jacket': 6000,
-  'Crewneck': 4000,
-  'Zip Hoodie': 5000,
-  'Track Jacket': 3500,
-  'Windbreaker': 4000,
-  'Basketball Jersey': 4000,
-  'Sweatpants': 3500,
-  'Track Pants': 3500,
-  'Basketball Shorts': 2500,
-}
+import {
+  EXTRA_LOGO_FEE_CENTS,
+  productionPriceCents,
+  clampQuantity,
+  bulkSubtotalCents,
+  depositCents,
+} from '@/lib/pricing'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -29,16 +19,18 @@ export async function POST(req: NextRequest) {
   if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { design_order_id, garment_type, style_name, extra_logos, notes } = await req.json()
+  const { design_order_id, garment_type, style_name, extra_logos, quantity, notes } = await req.json()
 
   if (!garment_type) {
     return NextResponse.json({ error: 'garment_type is required' }, { status: 400 })
   }
 
-  const garmentPrice = GARMENT_PRICES[garment_type] ?? 3500
+  const garmentPrice = productionPriceCents(garment_type)
   const extraLogoCount = Number(extra_logos ?? 0)
-  const extraLogoFee = extraLogoCount * 400
-  const depositAmount = Math.round((garmentPrice + extraLogoFee) / 2)
+  const extraLogoFee = extraLogoCount * EXTRA_LOGO_FEE_CENTS
+  const qty = clampQuantity(quantity ?? 1)
+  const subtotal = bulkSubtotalCents(garmentPrice, extraLogoFee, qty)
+  const depositAmount = depositCents(subtotal)
 
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
@@ -50,10 +42,10 @@ export async function POST(req: NextRequest) {
         price_data: {
           currency: 'usd',
           product_data: {
-            name: `Production Deposit — 50% of $${((garmentPrice + extraLogoFee) / 100).toFixed(2)}`,
+            name: `Production Deposit — 50% of $${(subtotal / 100).toFixed(2)}`,
             description: style_name
-              ? `${garment_type} · Style: ${style_name}`
-              : garment_type,
+              ? `${garment_type} · ${qty} pcs · Style: ${style_name}`
+              : `${garment_type} · ${qty} pcs`,
           },
           unit_amount: depositAmount,
         },
@@ -67,6 +59,7 @@ export async function POST(req: NextRequest) {
       garment_type,
       style_name: style_name ?? '',
       extra_logos: String(extraLogoCount),
+      quantity: String(qty),
       notes: notes ?? '',
     },
     success_url: `${origin}/track?payment=direct_success&session_id={CHECKOUT_SESSION_ID}`,

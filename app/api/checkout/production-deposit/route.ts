@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
+import { clampQuantity, bulkSubtotalCents, depositCents } from '@/lib/pricing'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -12,11 +13,11 @@ export async function POST(req: NextRequest) {
   if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { order_id } = await req.json()
+  const { order_id, quantity } = await req.json()
 
   const { data: order, error: orderError } = await sb
     .from('production_orders')
-    .select('id, user_id, production_stage, garment_price_cents, extra_logo_fee_cents')
+    .select('id, user_id, production_stage, garment_price_cents, extra_logo_fee_cents, production_quantity')
     .eq('id', order_id)
     .eq('user_id', user.id)
     .single()
@@ -29,9 +30,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Order is not awaiting a production deposit' }, { status: 422 })
   }
 
-  const depositAmount = Math.round(
-    ((order.garment_price_cents ?? 0) + (order.extra_logo_fee_cents ?? 0)) / 2
+  // The client may set/adjust the bulk quantity at deposit time. Persist it so
+  // the webhook and final-payment step compute the same totals.
+  const qty = clampQuantity(quantity ?? order.production_quantity ?? 1)
+  if (qty !== order.production_quantity) {
+    await sb
+      .from('production_orders')
+      .update({ production_quantity: qty })
+      .eq('id', order_id)
+  }
+
+  const subtotal = bulkSubtotalCents(
+    order.garment_price_cents ?? 0,
+    order.extra_logo_fee_cents ?? 0,
+    qty,
   )
+  const depositAmount = depositCents(subtotal)
 
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'

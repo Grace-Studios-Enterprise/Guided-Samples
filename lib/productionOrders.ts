@@ -11,6 +11,11 @@
  */
 
 import { createClient } from './supabase'
+import {
+  ACTIVATION_FEE_CENTS,
+  EXTRA_LOGO_FEE_CENTS,
+  productionPriceCents,
+} from './pricing'
 import type {
   ProductionOrder,
   ProductionOrderStatus,
@@ -22,26 +27,9 @@ import type {
   CreateProductionOrderResult,
 } from '@/types/production'
 
-// ─── Pricing table (cents) ────────────────────────────────────────────────────
-// Kept here as the authoritative source; mirrors the values in Phase6Production
-// and the Stripe checkout route.  Update all three if prices change.
-
-const ACTIVATION_FEE_CENTS = 10_000 // $100.00
-
-const GARMENT_PRICE_CENTS: Record<string, number> = {
-  'T-Shirt':            2_500,
-  'Hoodie':             4_500,
-  'Crewneck':           4_000,
-  'Zip Hoodie':         5_000,
-  'Track Jacket':       3_500,
-  'Windbreaker':        4_000,
-  'Basketball Jersey':  4_000,
-  'Sweatpants':         3_500,
-  'Track Pants':        3_500,
-  'Basketball Shorts':  2_500,
-}
-
-const EXTRA_LOGO_FEE_CENTS = 400 // $4.00 per additional placement
+// ─── Pricing ──────────────────────────────────────────────────────────────────
+// All pricing lives in lib/pricing.ts — the single source of truth shared by the
+// checkout routes, the Stripe webhook, and this service layer.
 
 /** The minimum phase_reached value that indicates a tech pack has been approved */
 const TECH_PACK_APPROVED_PHASE = 6
@@ -49,7 +37,7 @@ const TECH_PACK_APPROVED_PHASE = 6
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function buildPricing(garmentType: string, extraLogoCount: number): ProductionOrderPricing {
-  const garment_price_cents = GARMENT_PRICE_CENTS[garmentType] ?? 3_500
+  const garment_price_cents = productionPriceCents(garmentType)
   const extra_logo_fee_cents = extraLogoCount * EXTRA_LOGO_FEE_CENTS
   return {
     activation_fee_cents: ACTIVATION_FEE_CENTS,
@@ -75,6 +63,7 @@ function rowToProductionOrder(row: Record<string, unknown>): ProductionOrder {
       total_cents:          row.total_cents          as number,
     },
     tech_pack_snapshot:    row.tech_pack_snapshot    as TechPackSnapshot,
+    production_quantity:   (row.production_quantity   as number | null) ?? 1,
     stripe_session_id:     row.stripe_session_id     as string | null,
     stripe_payment_intent: row.stripe_payment_intent as string | null,
     supplier_name:         row.supplier_name         as string | null,

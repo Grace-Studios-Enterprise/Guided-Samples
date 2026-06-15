@@ -82,6 +82,9 @@ export type ProductionOrder = {
 
   revision_notes:        string | null
 
+  // Bulk run quantity (client-chosen; defaults to 1)
+  production_quantity:         number
+
   // Dual production path fields
   production_path:              'SAMPLE' | 'DIRECT' | null
   sample_fee_cents:             number | null

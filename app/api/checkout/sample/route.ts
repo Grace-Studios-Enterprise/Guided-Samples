@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
-
-const ACTIVATION_FEE_CENTS = 10000
-const SAMPLE_FEE_CENTS = 5000
-const EXTRA_LOGO_FEE_CENTS = 400
+import { ACTIVATION_FEE_CENTS, EXTRA_LOGO_FEE_CENTS, samplePriceCents } from '@/lib/pricing'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -36,6 +33,7 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
   const extraLogosCount = Number(extra_logos) || 0
+  const sampleFeeCents = samplePriceCents(garment_type)
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
     {
@@ -56,7 +54,7 @@ export async function POST(req: NextRequest) {
           name: `${garment_type} Sample`,
           description: style_name ? `Style: ${style_name}` : 'Single sample production',
         },
-        unit_amount: SAMPLE_FEE_CENTS,
+        unit_amount: sampleFeeCents,
       },
       quantity: 1,
     },

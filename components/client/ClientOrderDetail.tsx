@@ -13,6 +13,7 @@ import {
   STAGE_RESPONSIBLE,
   RESPONSIBLE_LABELS,
 } from '@/lib/clientStagePresentation'
+import { bulkSubtotalCents, finalBalanceCents } from '@/lib/pricing'
 import type { ProductionOrder } from '@/types/production'
 import type { OrderMedia } from '@/types/supplier'
 import type { StageTransitionEvent } from '@/types/productionStages'
@@ -313,7 +314,9 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
             {stage === 'AWAITING_PRODUCTION_DEPOSIT' && (
               <DepositPaymentPanel
                 orderId={orderId}
-                depositAmount={Math.round(((order.pricing?.garment_price_cents ?? 0) + (order.pricing?.extra_logo_fee_cents ?? 0)) / 2)}
+                unitPriceCents={order.pricing?.garment_price_cents ?? 0}
+                extraLogoFeeCents={order.pricing?.extra_logo_fee_cents ?? 0}
+                initialQuantity={order.production_quantity ?? 1}
                 onSuccess={load}
               />
             )}
@@ -322,7 +325,12 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
             {stage === 'AWAITING_FINAL_PAYMENT' && (
               <AwaitingFinalPaymentPanel
                 orderId={orderId}
-                finalAmount={order.deposit_amount_cents ?? Math.round(((order.pricing?.garment_price_cents ?? 0) + (order.pricing?.extra_logo_fee_cents ?? 0)) / 2)}
+                finalAmount={finalBalanceCents(bulkSubtotalCents(
+                  order.pricing?.garment_price_cents ?? 0,
+                  order.pricing?.extra_logo_fee_cents ?? 0,
+                  order.production_quantity ?? 1,
+                ))}
+                quantity={order.production_quantity ?? 1}
                 onSuccess={load}
               />
             )}
