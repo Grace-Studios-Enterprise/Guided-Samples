@@ -6,6 +6,10 @@ import {
 } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
+import SizeGuide from '@/components/SizeGuide'
+import type { SizeGuideOverrides } from '@/lib/fitBlocks/sizeGuide'
+import { resolveGarmentType } from '@/lib/fitBlocks'
+import type { GarmentType } from '@/lib/fitBlocks/types'
 
 interface Props {
   section: string
@@ -17,10 +21,27 @@ export default function SectionView({ section, state, onStartDesign }: Props) {
   if (section === 'dashboard') return <Dashboard state={state} onStartDesign={onStartDesign} />
   if (section === 'projects') return <Projects state={state} onStartDesign={onStartDesign} />
   if (section === 'techpacks') return <TechPacks state={state} />
+  if (section === 'sizeguide') return <SizeGuideSection state={state} />
   if (section === 'orders') return <Orders />
   if (section === 'library') return <LibraryView state={state} />
   if (section === 'settings') return <SettingsView />
   return null
+}
+
+// Size Guide section. Defaults to the garment the user is designing (if any).
+// Consumer overrides persist for the session; technical specs stay hidden,
+// surfacing only through tech pack generation.
+function SizeGuideSection({ state }: { state: AppState }) {
+  const [overrides, setOverrides] = useState<SizeGuideOverrides>({})
+  const designed: GarmentType | undefined =
+    (state.garment?.type ? resolveGarmentType(state.garment.type) ?? undefined : undefined)
+  return (
+    <SizeGuide
+      garmentType={designed}
+      overrides={overrides}
+      onOverridesChange={setOverrides}
+    />
+  )
 }
 
 function Header({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {

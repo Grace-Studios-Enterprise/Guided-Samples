@@ -4,7 +4,7 @@ import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
 import {
   LayoutDashboard, FolderOpen, Palette, Package,
-  ShoppingCart, Library, Settings, ChevronRight, CheckCircle2, X, ArrowRight
+  ShoppingCart, Library, Settings, ChevronRight, CheckCircle2, X, ArrowRight, Ruler
 } from 'lucide-react'
 
 interface Props {
@@ -81,6 +81,7 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
         <NavItem icon={<FolderOpen size={14}/>} label="Projects" active={section === 'projects'} onClick={() => onSectionChange('projects')} />
         <NavItem icon={<Palette size={14}/>} label="Logo & Design" active={section === 'design'} onClick={() => onSectionChange('design')} />
         <NavItem icon={<Package size={14}/>} label="Tech Packs" active={section === 'techpacks'} onClick={() => onSectionChange('techpacks')} />
+        <NavItem icon={<Ruler size={14}/>} label="Size Guide" active={section === 'sizeguide'} onClick={() => onSectionChange('sizeguide')} />
         <NavItem icon={<ShoppingCart size={14}/>} label="Orders" active={section === 'orders'} href="/track" />
         <NavItem icon={<Library size={14}/>} label="Library" active={section === 'library'} onClick={() => onSectionChange('library')} />
         <NavItem icon={<Settings size={14}/>} label="Settings" active={section === 'settings'} onClick={() => onSectionChange('settings')} />
