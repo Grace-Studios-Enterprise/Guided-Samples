@@ -82,14 +82,12 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onSign
             <span className="font-bold text-grace-ink text-sm tracking-widest uppercase">Grace Enterprise</span>
           </div>
           <div className="flex items-center gap-2">
-            {onSignIn && (
-              <button onClick={onSignIn} className="btn-secondary py-2 text-[10px]">
-                Sign In
-              </button>
-            )}
-            {onSignUp && (
-              <button onClick={onSignUp} className="py-2 px-4 rounded-full bg-grace-ink text-white text-[10px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors">
-                Sign Up
+            {(onSignIn || onSignUp) && (
+              <button
+                onClick={() => onSignIn?.()}
+                className="py-2 px-4 rounded-full bg-grace-ink text-white text-[10px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors"
+              >
+                Sign In / Sign Up
               </button>
             )}
           </div>
