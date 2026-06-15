@@ -102,6 +102,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
   })
 
   const [saved, setSaved] = useState(false)
+  const [unit, setUnit] = useState<'in' | 'cm'>('in')
 
   // ── Fit block derivation ─────────────────────────────────────────────────
   const guide = useMemo(
@@ -371,94 +372,108 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         </div>
       </div>
 
-      {/* ── Section 3: Measurements ───────────────────────────────────────── */}
+      {/* ── Section 3: Measurements + Technical Flat ─────────────────────── */}
       <div className="mb-6 card">
         <div className="flex items-center gap-2 mb-4">
           <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-          <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Measurements (Inches)</p>
+          <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">
+            Measurements
+          </p>
+          {/* Unit toggle */}
+          <div className="flex items-center rounded-full border border-grace-border overflow-hidden ml-2">
+            <button
+              onClick={() => setUnit('in')}
+              className={`px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${unit === 'in' ? 'bg-grace-ink text-white' : 'text-grace-stone hover:text-grace-ink'}`}
+            >
+              IN
+            </button>
+            <button
+              onClick={() => setUnit('cm')}
+              className={`px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${unit === 'cm' ? 'bg-grace-ink text-white' : 'text-grace-stone hover:text-grace-ink'}`}
+            >
+              CM
+            </button>
+          </div>
           <span className="ml-auto text-[10px] text-grace-stone">{GARMENT_LABEL[garmentType]} · {guide?.rows.length ?? 0} rows</span>
-          <button className="text-[10px] font-semibold text-grace-stone hover:text-grace-ink transition-colors ml-2">
-            Edit All
-          </button>
         </div>
 
-        {guide ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-grace-border">
-                  <th className="text-left text-grace-stone text-[10px] font-semibold uppercase tracking-wider pb-2 pr-4">Point of Measure</th>
-                  {ALL_SIZES.map(s => (
-                    <th key={s} className="text-center text-grace-ink text-[11px] font-bold pb-2 px-1 min-w-[52px]">{s}</th>
-                  ))}
-                  <th className="w-6" />
-                </tr>
-              </thead>
-              <tbody>
-                {guide.rows.map(row => (
-                  <tr key={row.key} className="border-b border-grace-border last:border-0 group">
-                    <td className="py-2 pr-4 font-semibold text-grace-ink text-[12px] whitespace-nowrap">{row.label}</td>
-                    {ALL_SIZES.map(s => (
-                      <td key={s} className="py-2 px-1">
-                        <input
-                          type="number"
-                          step="0.125"
-                          value={row.values[s] ?? 0}
-                          onChange={e => handleMeasurementEdit(row.key, s as SizeKey, e.target.value)}
-                          className="w-full text-center text-[12px] text-grace-ink bg-grace-mist/50 border border-grace-border rounded-lg px-1 py-1.5 focus:outline-none focus:border-grace-ink tabular-nums"
-                        />
-                      </td>
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Technical flat */}
+          <div className="flex items-start justify-center lg:justify-start shrink-0">
+            <TechFlat kind={flatKind} />
+          </div>
+
+          {/* Table */}
+          <div className="flex-1 min-w-0">
+            {guide ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-grace-border">
+                      <th className="text-left text-grace-stone text-[10px] font-semibold uppercase tracking-wider pb-2 pr-4">Point of Measure</th>
+                      {ALL_SIZES.map(s => (
+                        <th key={s} className="text-center text-grace-ink text-[11px] font-bold pb-2 px-1 min-w-[52px]">{s}</th>
+                      ))}
+                      <th className="w-6" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guide.rows.map(row => (
+                      <tr key={row.key} className="border-b border-grace-border last:border-0 group">
+                        <td className="py-2 pr-4 font-semibold text-grace-ink text-[12px] whitespace-nowrap">{row.label}</td>
+                        {ALL_SIZES.map(s => {
+                          const inchVal = row.values[s] ?? 0
+                          const displayVal = unit === 'cm'
+                            ? (inchVal * 2.54).toFixed(1)
+                            : inchVal.toString()
+                          return (
+                            <td key={s} className="py-2 px-1">
+                              <input
+                                type="number"
+                                step={unit === 'cm' ? '0.5' : '0.125'}
+                                value={displayVal}
+                                onChange={e => {
+                                  const raw = parseFloat(e.target.value)
+                                  const inVal = unit === 'cm' ? raw / 2.54 : raw
+                                  handleMeasurementEdit(row.key, s as SizeKey, inVal.toString())
+                                }}
+                                className="w-full text-center text-[12px] text-grace-ink bg-grace-mist/50 border border-grace-border rounded-lg px-1 py-1.5 focus:outline-none focus:border-grace-ink tabular-nums"
+                              />
+                            </td>
+                          )
+                        })}
+                        <td className="py-2 pl-1">
+                          <button
+                            onClick={() => resetRow(row.key)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-grace-stone hover:text-grace-ink"
+                            title="Reset to default"
+                          >
+                            <Pencil size={11}/>
+                          </button>
+                        </td>
+                      </tr>
                     ))}
-                    <td className="py-2 pl-1">
-                      <button
-                        onClick={() => resetRow(row.key)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-grace-stone hover:text-grace-ink"
-                        title="Reset to default"
-                      >
-                        <Pencil size={11}/>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-grace-stone py-4">No measurements available for this garment.</p>
+            )}
+
+            <p className="mt-3 text-[10px] text-grace-stone leading-relaxed">
+              Only the {guide?.rows.length ?? 4} core measurements are shown. Additional technical specifications are automatically included in your production package.
+            </p>
           </div>
-        ) : (
-          <p className="text-sm text-grace-stone py-4 text-center">No measurements available for this garment.</p>
-        )}
-
-        <p className="mt-3 text-[10px] text-grace-stone leading-relaxed">
-          Only the {guide?.rows.length ?? 4} core measurements are shown. Additional technical specifications are automatically included in your production package.
-        </p>
-      </div>
-
-      {/* ── Section 4: Technical Flats ────────────────────────────────────── */}
-      <div className="mb-6 card">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
-            <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Technical Flats</p>
-          </div>
-          <button
-            onClick={() => {/* navigate to technical drawing section */}}
-            className="flex items-center gap-1 text-[11px] text-grace-stone hover:text-grace-ink font-medium transition-colors"
-          >
-            View Full Technical Drawing <ChevronRight size={13}/>
-          </button>
-        </div>
-
-        <div className="flex justify-center">
-          <TechFlat kind={flatKind} />
         </div>
       </div>
 
-      {/* ── Section 5: Pantones + Graphic Placement ───────────────────────── */}
+      {/* ── Section 4: Pantones + Graphic Placement ───────────────────────── */}
       <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
 
         {/* Pantones */}
         <div className="card">
           <div className="flex items-center gap-2 mb-4">
-            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
+            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
             <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Pantones</p>
           </div>
           <div className="space-y-2 mb-3">
@@ -544,7 +559,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         {/* Graphic Placement */}
         <div className="card">
           <div className="flex items-center gap-2 mb-4">
-            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">5</span>
+            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
             <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Graphic Placement</p>
           </div>
           <div className="space-y-3 mb-3">
