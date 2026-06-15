@@ -82,7 +82,7 @@ function Dashboard({ state, onStartDesign }: { state: AppState; onStartDesign: (
     { label: 'Previews', value: state.preview ? 1 : 0 },
   ]
   return (
-    <div className="p-4 md:p-6 max-w-[1100px]">
+    <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
       <Header icon={<LayoutDashboard size={20} />} title="Dashboard" subtitle="Overview of your design activity" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         {stats.map(s => (
@@ -108,7 +108,7 @@ function Dashboard({ state, onStartDesign }: { state: AppState; onStartDesign: (
 function Projects({ state, onStartDesign }: { state: AppState; onStartDesign: () => void }) {
   const hasProject = state.logo || state.garment || state.design
   return (
-    <div className="p-4 md:p-6 max-w-[1100px]">
+    <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
       <Header icon={<FolderOpen size={20} />} title="Projects" subtitle="Your saved design projects" />
       {hasProject ? (
         <div className="card flex items-center gap-4">
@@ -142,7 +142,7 @@ function Projects({ state, onStartDesign }: { state: AppState; onStartDesign: ()
 
 function Orders() {
   return (
-    <div className="p-4 md:p-6 max-w-[1100px]">
+    <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
       <Header icon={<ShoppingCart size={20} />} title="Orders" subtitle="Production and sample orders" />
       <EmptyState icon={<ShoppingCart size={28} />} title="No orders yet" subtitle="Submit a tech pack to a manufacturer to place an order." />
     </div>
@@ -155,7 +155,7 @@ function LibraryView({ state }: { state: AppState }) {
     state.garment && { label: 'GRACE_garment', src: state.garment.dataUrl },
   ].filter(Boolean) as { label: string; src: string }[]
   return (
-    <div className="p-4 md:p-6 max-w-[1100px]">
+    <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
       <Header icon={<Library size={20} />} title="Library" subtitle="Your reusable logos and garments" />
       {assets.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -190,7 +190,7 @@ function SettingsView() {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-[700px]">
+    <div className="p-4 md:p-6 max-w-[700px] mx-auto">
       <Header icon={<Settings size={20} />} title="Settings" subtitle="Manage your account and preferences" />
 
       {/* Profile */}

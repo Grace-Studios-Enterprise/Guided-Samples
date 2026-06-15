@@ -399,7 +399,17 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
               CM
             </button>
           </div>
-          <span className="ml-auto text-[10px] text-grace-stone">{GARMENT_LABEL[garmentType]} · <span className="italic">tap any cell to edit</span></span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-[10px] text-grace-stone">{GARMENT_LABEL[garmentType]}</span>
+            <div className="relative group/tip">
+              <button className="w-5 h-5 rounded-full border border-grace-border text-grace-stone flex items-center justify-center text-[10px] hover:border-grace-ink hover:text-grace-ink transition-colors" aria-label="About measurements">
+                i
+              </button>
+              <div className="absolute bottom-full right-0 mb-2 w-60 bg-grace-ink text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20">
+                Tap any cell to edit. Only the core measurements are shown — additional technical specs are automatically included in your production package.
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
@@ -465,9 +475,6 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
               <p className="text-sm text-grace-stone py-4">No measurements available for this garment.</p>
             )}
 
-            <p className="mt-3 text-[10px] text-grace-stone leading-relaxed">
-              Only the {guide?.rows.length ?? 4} core measurements are shown. Additional technical specifications are automatically included in your production package.
-            </p>
           </div>
         </div>
       </div>
@@ -618,9 +625,6 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
           >
             <Plus size={11}/> Add Placement
           </button>
-          <p className="mt-2 text-[9px] text-grace-stone leading-relaxed">
-            Placement measurements are based on the selected size and fit.
-          </p>
         </div>
       </div>
 

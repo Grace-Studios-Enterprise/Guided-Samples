@@ -155,7 +155,7 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
 function NavItem({ icon, label, active, onClick, href }: {
   icon: React.ReactNode; label: string; active: boolean; onClick?: () => void; href?: string
 }) {
-  const cls = `w-full flex items-center justify-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-colors font-medium ${
+  const cls = `w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-colors font-medium ${
     active ? 'bg-grace-mist text-grace-ink' : 'text-grace-stone hover:bg-grace-mist hover:text-grace-ink'
   }`
   if (href) {
