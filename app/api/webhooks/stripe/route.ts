@@ -3,6 +3,13 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { transitionStage } from '@/lib/workflowEngine'
 import type { ProductionStage } from '@/types/productionStages'
+import {
+  ACTIVATION_FEE_CENTS,
+  EXTRA_LOGO_FEE_CENTS,
+  productionPriceCents,
+  clampQuantity,
+} from '@/lib/pricing'
+import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
 
 // The webhook runs as trusted server code with no user session. It MUST use the
 // service-role key to bypass row-level security — the anon key would be blocked
@@ -22,11 +29,6 @@ function createWebhookClient() {
 // supplier we work with. Override via DEFAULT_SUPPLIER_EMAIL / _NAME env vars.
 const DEFAULT_SUPPLIER_EMAIL = process.env.DEFAULT_SUPPLIER_EMAIL ?? 'k.campjr@gmail.com'
 const DEFAULT_SUPPLIER_NAME = process.env.DEFAULT_SUPPLIER_NAME ?? 'Production Partner'
-
-const GARMENT_PRICES: Record<string, number> = {
-  'T-Shirt': 2500, 'Hoodie': 4500, 'Sweatshirt': 3500,
-  'Polo': 3000, 'Tank Top': 2000, 'Jacket': 6000,
-}
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -79,9 +81,11 @@ async function handleSamplePayment(
   const sb = createWebhookClient()
   if (!sb) return
 
-  const { design_order_id, user_id, garment_type, extra_logos } = meta
+  const { design_order_id, user_id, garment_type, extra_logos, size_breakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
-  const garmentPrice = GARMENT_PRICES[garment_type] ?? 3500
+  const garmentPrice = productionPriceCents(garment_type)
+  const breakdown = normalizeBreakdown(size_breakdown ? JSON.parse(size_breakdown) : null)
+  const sampleQty = Math.max(1, sumBreakdown(breakdown))
 
   const { data: techPack } = await sb
     .from('tech_packs')
@@ -102,10 +106,12 @@ async function handleSamplePayment(
     sample_fee_cents: session.amount_total,
     sample_stripe_session_id: session.id,
     sample_paid_at: new Date().toISOString(),
-    activation_fee_cents: 10000,
+    activation_fee_cents: ACTIVATION_FEE_CENTS,
     garment_price_cents: garmentPrice,
+    production_quantity: sampleQty,
+    size_breakdown: breakdown,
     extra_logo_count: extraLogosCount,
-    extra_logo_fee_cents: extraLogosCount * 400,
+    extra_logo_fee_cents: extraLogosCount * EXTRA_LOGO_FEE_CENTS,
     tech_pack_snapshot: techPack ?? {},
     status: 'paid',
   })
@@ -129,9 +135,12 @@ async function handleDirectDeposit(
   const sb = createWebhookClient()
   if (!sb) return
 
-  const { design_order_id, user_id, garment_type, extra_logos } = meta
+  const { design_order_id, user_id, garment_type, extra_logos, quantity, size_breakdown: rawBreakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
-  const garmentPrice = GARMENT_PRICES[garment_type] ?? 3500
+  const garmentPrice = productionPriceCents(garment_type)
+  const breakdown = normalizeBreakdown(rawBreakdown ? JSON.parse(rawBreakdown) : null)
+  const breakdownTotal = sumBreakdown(breakdown)
+  const qty = clampQuantity(breakdownTotal > 0 ? breakdownTotal : (quantity ?? '1'))
 
   const { data: techPack } = await sb
     .from('tech_packs')
@@ -154,8 +163,10 @@ async function handleDirectDeposit(
     deposit_paid_at: new Date().toISOString(),
     activation_fee_cents: 0,
     garment_price_cents: garmentPrice,
+    production_quantity: qty,
+    size_breakdown: breakdown,
     extra_logo_count: extraLogosCount,
-    extra_logo_fee_cents: extraLogosCount * 400,
+    extra_logo_fee_cents: extraLogosCount * EXTRA_LOGO_FEE_CENTS,
     tech_pack_snapshot: techPack ?? {},
     status: 'in_production',
     paid_at: new Date().toISOString(),

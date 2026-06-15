@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
+import { clampQuantity, bulkSubtotalCents, finalBalanceCents } from '@/lib/pricing'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest) {
 
   const { data: order, error: orderError } = await sb
     .from('production_orders')
-    .select('id, user_id, production_stage, deposit_amount_cents')
+    .select('id, user_id, production_stage, deposit_amount_cents, garment_price_cents, extra_logo_fee_cents, production_quantity')
     .eq('id', order_id)
     .eq('user_id', user.id)
     .single()
@@ -29,8 +30,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Order is not awaiting final payment' }, { status: 422 })
   }
 
-  // Final payment mirrors the deposit amount — both halves are equal
-  const finalAmount = order.deposit_amount_cents ?? 0
+  // Final payment is the remaining balance: full subtotal minus the deposit
+  // already paid. Computed from the stored quantity so the two halves are exact.
+  const qty = clampQuantity(order.production_quantity ?? 1)
+  const subtotal = bulkSubtotalCents(
+    order.garment_price_cents ?? 0,
+    order.extra_logo_fee_cents ?? 0,
+    qty,
+  )
+  const finalAmount = subtotal > 0
+    ? finalBalanceCents(subtotal)
+    : (order.deposit_amount_cents ?? 0)
 
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'

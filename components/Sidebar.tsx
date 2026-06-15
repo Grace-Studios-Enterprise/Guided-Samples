@@ -4,7 +4,7 @@ import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
 import {
   LayoutDashboard, FolderOpen, Palette, Package,
-  ShoppingCart, Library, Settings, ChevronRight, CheckCircle2, X
+  ShoppingCart, Library, Settings, ChevronRight, CheckCircle2, X, ArrowRight
 } from 'lucide-react'
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   onSectionChange: (section: string) => void
   mobileOpen: boolean
   onMobileClose: () => void
+  onExpertHelp?: () => void
 }
 
 const phases = [
@@ -25,8 +26,16 @@ const phases = [
   { id: 5, label: 'Tech Pack', desc: 'Specs & measurements' },
 ]
 
-export default function Sidebar({ currentPhase, onPhaseChange, state, section, onSectionChange, mobileOpen, onMobileClose }: Props) {
-  // Auth disabled — useAuth may return null user while sign-in is commented out
+function GraceMark({ size = 24 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-label="GRACE mark">
+      <circle cx="24" cy="24" r="23" stroke="#0A0A0A" strokeWidth="2.5"/>
+      <circle cx="24" cy="24" r="7" fill="#C8372D"/>
+    </svg>
+  )
+}
+
+export default function Sidebar({ currentPhase, onPhaseChange, state, section, onSectionChange, mobileOpen, onMobileClose, onExpertHelp }: Props) {
   const { user, signOut } = useAuth() ?? {}
 
   const isPhaseComplete = (phase: number) => {
@@ -43,42 +52,42 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
 
   return (
     <aside className={`
-      fixed inset-y-0 left-0 z-30 w-56 bg-white border-r border-slate-200 flex flex-col
+      fixed inset-y-0 left-0 z-30 w-56 bg-white border-r border-grace-border flex flex-col
       transform transition-transform duration-200 ease-in-out
       lg:relative lg:translate-x-0 lg:z-auto
       ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
     `}>
       {/* Brand */}
-      <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+      <div className="p-4 border-b border-grace-border flex items-center justify-between">
         <button
           onClick={() => onSectionChange('dashboard')}
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          className="flex items-center gap-2.5 hover:opacity-70 transition-opacity"
           title="Go to Dashboard"
         >
-          <div className="w-7 h-7 bg-brand-green rounded-md flex items-center justify-center text-xs font-bold text-white">G</div>
+          <GraceMark size={26}/>
           <div className="text-left">
-            <div className="text-sm font-bold text-gray-900 leading-none">GRACE</div>
-            <div className="text-[10px] text-gray-400 tracking-widest">ENTERPRISE</div>
+            <div className="text-xs font-black text-grace-ink leading-none tracking-widest uppercase">GRACE</div>
+            <div className="text-[9px] text-grace-stone tracking-[0.2em] uppercase">Enterprise</div>
           </div>
         </button>
-        <button onClick={onMobileClose} className="lg:hidden p-1 rounded-lg hover:bg-slate-100 text-gray-400">
-          <X size={16}/>
+        <button onClick={onMobileClose} className="lg:hidden p-1 rounded-lg hover:bg-grace-mist text-grace-stone">
+          <X size={15}/>
         </button>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        <NavItem icon={<LayoutDashboard size={15}/>} label="Dashboard" active={section === 'dashboard'} onClick={() => onSectionChange('dashboard')} />
-        <NavItem icon={<FolderOpen size={15}/>} label="Projects" active={section === 'projects'} onClick={() => onSectionChange('projects')} />
-        <NavItem icon={<Palette size={15}/>} label="Logo & Design" active={section === 'design'} onClick={() => onSectionChange('design')} />
-        <NavItem icon={<Package size={15}/>} label="Tech Packs" active={section === 'techpacks'} onClick={() => onSectionChange('techpacks')} />
-        <NavItem icon={<ShoppingCart size={15}/>} label="Orders" active={section === 'orders'} href="/track" />
-        <NavItem icon={<Library size={15}/>} label="Library" active={section === 'library'} onClick={() => onSectionChange('library')} />
-        <NavItem icon={<Settings size={15}/>} label="Settings" active={section === 'settings'} onClick={() => onSectionChange('settings')} />
+        <NavItem icon={<LayoutDashboard size={14}/>} label="Dashboard" active={section === 'dashboard'} onClick={() => onSectionChange('dashboard')} />
+        <NavItem icon={<FolderOpen size={14}/>} label="Projects" active={section === 'projects'} onClick={() => onSectionChange('projects')} />
+        <NavItem icon={<Palette size={14}/>} label="Logo & Design" active={section === 'design'} onClick={() => onSectionChange('design')} />
+        <NavItem icon={<Package size={14}/>} label="Tech Packs" active={section === 'techpacks'} onClick={() => onSectionChange('techpacks')} />
+        <NavItem icon={<ShoppingCart size={14}/>} label="Orders" active={section === 'orders'} href="/track" />
+        <NavItem icon={<Library size={14}/>} label="Library" active={section === 'library'} onClick={() => onSectionChange('library')} />
+        <NavItem icon={<Settings size={14}/>} label="Settings" active={section === 'settings'} onClick={() => onSectionChange('settings')} />
 
         {/* Phase progress */}
-        <div className="pt-4 pb-1">
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest px-2 mb-2">Workflow</p>
+        <div className="pt-5 pb-1">
+          <p className="text-[9px] font-bold text-grace-stone uppercase tracking-[0.2em] px-2 mb-2">Workflow</p>
           <div className="space-y-0.5">
             {phases.map(phase => {
               const complete = isPhaseComplete(phase.id)
@@ -89,18 +98,18 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
                   onClick={() => onPhaseChange(phase.id)}
                   className={`w-full text-left px-2 py-2 rounded-lg transition-colors text-xs flex items-center gap-2 ${
                     active
-                      ? 'bg-brand-green text-white'
-                      : 'text-gray-500 hover:bg-slate-100 hover:text-gray-900'
+                      ? 'bg-grace-ink text-white'
+                      : 'text-grace-stone hover:bg-grace-mist hover:text-grace-ink'
                   }`}
                 >
                   <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] shrink-0 ${
-                    complete ? 'border-brand-green bg-brand-green text-white' :
+                    complete ? 'border-grace-ink bg-grace-ink text-white' :
                     active ? 'border-white text-white' :
-                    'border-gray-300 text-gray-500'
+                    'border-grace-border text-grace-stone'
                   }`}>
-                    {complete ? <CheckCircle2 size={12}/> : phase.id}
+                    {complete ? <CheckCircle2 size={11}/> : phase.id}
                   </span>
-                  <span className="truncate">{phase.label}</span>
+                  <span className="truncate font-medium">{phase.label}</span>
                 </button>
               )
             })}
@@ -108,19 +117,33 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
         </div>
       </nav>
 
+      {/* Expert help upsell */}
+      {onExpertHelp && (
+        <div className="mx-3 mb-3 p-3 rounded-xl border border-grace-border bg-grace-mist">
+          <p className="text-[9px] font-bold tracking-[0.18em] uppercase text-grace-stone mb-0.5">Need help?</p>
+          <p className="text-[11px] font-bold text-grace-ink leading-tight mb-2">Work with GRACE Studios</p>
+          <button
+            onClick={onExpertHelp}
+            className="w-full flex items-center justify-center gap-1 py-1.5 px-3 rounded-full bg-grace-ink text-white text-[9px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors"
+          >
+            Talk to an Expert <ArrowRight size={9}/>
+          </button>
+        </div>
+      )}
+
       {/* User */}
-      <div className="p-3 border-t border-slate-200 space-y-1">
+      <div className="p-3 border-t border-grace-border space-y-1">
         <button
           onClick={() => onSectionChange('settings')}
-          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-grace-mist transition-colors"
         >
-          <div className="w-6 h-6 bg-brand-green rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0">{initials}</div>
-          <span className="text-xs text-gray-600 flex-1 text-left truncate">{user?.name ?? 'Grace Brand'}</span>
-          <ChevronRight size={12} className="text-gray-400 shrink-0"/>
+          <div className="w-6 h-6 bg-grace-ink rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0">{initials}</div>
+          <span className="text-xs text-grace-stone flex-1 text-left truncate">{user?.name ?? 'Grace Brand'}</span>
+          <ChevronRight size={11} className="text-grace-stone shrink-0"/>
         </button>
         <button
           onClick={signOut}
-          className="w-full text-left px-2 py-1 text-[11px] text-gray-400 hover:text-gray-700 transition-colors rounded-lg hover:bg-slate-50"
+          className="w-full text-left px-2 py-1 text-[10px] text-grace-stone hover:text-grace-ink transition-colors rounded-lg hover:bg-grace-mist tracking-widest uppercase"
         >
           Sign out
         </button>
@@ -132,8 +155,8 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
 function NavItem({ icon, label, active, onClick, href }: {
   icon: React.ReactNode; label: string; active: boolean; onClick?: () => void; href?: string
 }) {
-  const cls = `w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-colors ${
-    active ? 'bg-slate-100 text-gray-900' : 'text-gray-500 hover:bg-slate-50 hover:text-gray-700'
+  const cls = `w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-colors font-medium ${
+    active ? 'bg-grace-mist text-grace-ink' : 'text-grace-stone hover:bg-grace-mist hover:text-grace-ink'
   }`
   if (href) {
     return (

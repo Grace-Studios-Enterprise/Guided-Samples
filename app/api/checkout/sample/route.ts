@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
-
-const ACTIVATION_FEE_CENTS = 10000
-const SAMPLE_FEE_CENTS = 5000
-const EXTRA_LOGO_FEE_CENTS = 400
+import { ACTIVATION_FEE_CENTS, EXTRA_LOGO_FEE_CENTS, samplePriceCents } from '@/lib/pricing'
+import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -16,7 +14,7 @@ export async function POST(req: NextRequest) {
   if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { design_order_id, garment_type, style_name, extra_logos, notes } = await req.json()
+  const { design_order_id, garment_type, style_name, extra_logos, size_breakdown, notes } = await req.json()
 
   const { data: project, error: projectError } = await sb
     .from('projects')
@@ -36,6 +34,11 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
   const extraLogosCount = Number(extra_logos) || 0
+  const sampleFeeCents = samplePriceCents(garment_type)
+
+  // Samples have no MOQ. A size breakdown is optional — default to a single piece.
+  const breakdown = normalizeBreakdown(size_breakdown)
+  const sampleCount = Math.max(1, sumBreakdown(breakdown))
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
     {
@@ -54,11 +57,11 @@ export async function POST(req: NextRequest) {
         currency: 'usd',
         product_data: {
           name: `${garment_type} Sample`,
-          description: style_name ? `Style: ${style_name}` : 'Single sample production',
+          description: style_name ? `Style: ${style_name}` : 'Sample production',
         },
-        unit_amount: SAMPLE_FEE_CENTS,
+        unit_amount: sampleFeeCents,
       },
-      quantity: 1,
+      quantity: sampleCount,
     },
   ]
 
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest) {
         },
         unit_amount: EXTRA_LOGO_FEE_CENTS,
       },
-      quantity: extraLogosCount,
+      quantity: extraLogosCount * sampleCount,
     })
   }
 
@@ -86,6 +89,7 @@ export async function POST(req: NextRequest) {
       garment_type,
       style_name: style_name ?? '',
       extra_logos: String(extraLogosCount),
+      size_breakdown: JSON.stringify(breakdown),
       notes: notes ?? '',
     },
     success_url: `${origin}/track?payment=sample_success&session_id={CHECKOUT_SESSION_ID}`,

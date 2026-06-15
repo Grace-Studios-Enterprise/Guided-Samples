@@ -6,10 +6,11 @@ import { CreditCard, Loader2, ShieldCheck, Package } from 'lucide-react'
 interface Props {
   orderId:     string
   finalAmount: number
+  quantity?:   number
   onSuccess:   () => void
 }
 
-export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, onSuccess }: Props) {
+export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, quantity }: Props) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
@@ -53,6 +54,12 @@ export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, onSucc
       </p>
 
       <div className="border border-slate-100 rounded-xl p-3 mb-4">
+        {quantity ? (
+          <div className="flex justify-between items-center text-[11px] text-gray-400 mb-1">
+            <span>Production Quantity</span>
+            <span>{quantity} pc{quantity > 1 ? 's' : ''}</span>
+          </div>
+        ) : null}
         <div className="flex justify-between items-center">
           <span className="text-xs text-gray-600">Remaining Balance (50%)</span>
           <span className="text-sm font-semibold text-gray-900">{formatted}</span>

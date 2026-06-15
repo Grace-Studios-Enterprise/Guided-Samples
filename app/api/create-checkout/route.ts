@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { ACTIVATION_FEE_CENTS, EXTRA_LOGO_FEE_CENTS, samplePriceCents } from '@/lib/pricing'
 
-const ACTIVATION_FEE = 10000 // $100.00 in cents
-
-const GARMENT_PRICES: Record<string, number> = {
-  'T-Shirt': 2500,
-  'Hoodie': 4500,
-  'Crewneck': 4000,
-  'Zip Hoodie': 5000,
-  'Track Jacket': 3500,
-  'Windbreaker': 4000,
-  'Basketball Jersey': 4000,
-  'Sweatpants': 3500,
-  'Track Pants': 3500,
-  'Basketball Shorts': 2500,
-}
+const ACTIVATION_FEE = ACTIVATION_FEE_CENTS
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -25,7 +13,7 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(secretKey)
   const { garmentType, styleName, extraLogos, notes } = await req.json()
 
-  const garmentPrice = GARMENT_PRICES[garmentType] ?? 3500
+  const garmentPrice = samplePriceCents(garmentType)
   const garmentLabel = garmentType || 'Custom Garment'
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
 
@@ -62,7 +50,7 @@ export async function POST(req: NextRequest) {
           name: 'Additional Logo Placement',
           description: `${extraLogos} additional logo location${extraLogos > 1 ? 's' : ''} at $4 each`,
         },
-        unit_amount: 400,
+        unit_amount: EXTRA_LOGO_FEE_CENTS,
       },
       quantity: extraLogos,
     })

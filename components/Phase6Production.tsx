@@ -1,25 +1,28 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, Download, CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, CreditCard, ShieldCheck, Clock, Zap } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, CreditCard, ShieldCheck, Clock, Zap, ArrowRight } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { createClient } from '@/lib/supabase'
 import AuthModal from '@/components/AuthModal'
+import SizeBreakdownPicker from '@/components/SizeBreakdownPicker'
+import { emptyBreakdown, sumBreakdown, type SizeBreakdown } from '@/lib/sizes'
+import { MIN_PRODUCTION_QUANTITY } from '@/lib/pricing'
 
 const LOGO_FEE = 4
-const SAMPLE_FEE = 50
-const ACTIVATION_FEE = 100
+const ACTIVATION_FEE = 25
+// Per-piece production (bulk) pricing in dollars. Mirrors lib/pricing.ts.
 const GARMENT_PRICES: Record<string, number> = {
   'T-Shirt': 25,
   'Hoodie': 45,
-  'Crewneck': 40,
   'Zip Hoodie': 50,
+  'Crewneck': 35,
   'Track Jacket': 35,
-  'Windbreaker': 40,
-  'Basketball Jersey': 40,
-  'Sweatpants': 35,
   'Track Pants': 35,
+  'Windbreaker': 40,
+  'Basketball Jersey': 20,
   'Basketball Shorts': 25,
+  'Sweatpants': 35,
 }
 
 interface Props {
@@ -28,6 +31,7 @@ interface Props {
   onBack: () => void
   projectId: string | null
   onEnsureProject: () => Promise<string | null>
+  onExpertHelp?: () => void
 }
 
 export interface TechPackData {
@@ -37,7 +41,7 @@ export interface TechPackData {
   placements: { location: string; description: string }[]
 }
 
-export default function Phase6Production({ state, techPack, onBack, projectId, onEnsureProject }: Props) {
+export default function Phase6Production({ state, techPack, onBack, projectId, onEnsureProject, onExpertHelp }: Props) {
   const [notes, setNotes] = useState('')
   const [sampleLoading, setSampleLoading] = useState(false)
   const [directLoading, setDirectLoading] = useState(false)
@@ -45,6 +49,8 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
   const [errorMsg, setErrorMsg] = useState('')
   const [authOpen, setAuthOpen] = useState(false)
   const [pendingPath, setPendingPath] = useState<'sample' | 'direct' | null>(null)
+  const [sampleBreakdown, setSampleBreakdown] = useState<SizeBreakdown>(emptyBreakdown)
+  const [directBreakdown, setDirectBreakdown] = useState<SizeBreakdown>(emptyBreakdown)
 
   const logo = state.logo?.dataUrl
   const garment = state.garment?.dataUrl
@@ -58,10 +64,16 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
   const extraLogos = Math.max(0, logoCount - 1)
   const logoFeeTotal = extraLogos * LOGO_FEE
 
-  const sampleTotal = ACTIVATION_FEE + SAMPLE_FEE + logoFeeTotal
+  // Sample fee is double the per-piece production price (one sample piece).
+  const sampleFee = garmentPrice * 2
+  // Sample path: no MOQ — 1+ pieces, broken down by size
+  const sampleQty = Math.max(1, sumBreakdown(sampleBreakdown))
+  const sampleTotal = ACTIVATION_FEE + sampleFee * sampleQty + logoFeeTotal * sampleQty
 
-  // 50% deposit = half of (garment_price + logo fees)
-  const productionTotal = garmentPrice + logoFeeTotal
+  // DIRECT path: MOQ enforced, size breakdown drives quantity
+  const directQty = sumBreakdown(directBreakdown)
+  const directBelowMOQ = directQty < MIN_PRODUCTION_QUANTITY
+  const productionTotal = (garmentPrice + logoFeeTotal) * Math.max(1, directQty)
   const depositAmount = Math.round(productionTotal / 2 * 100) / 100
 
   const assets = [
@@ -106,6 +118,7 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
           garment_type: garmentType,
           style_name: styleName,
           extra_logos: extraLogos,
+          size_breakdown: path === 'direct' ? directBreakdown : sampleBreakdown,
           notes,
         }),
       })
@@ -291,35 +304,45 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
                   Adds ~2–3 weeks
                 </div>
 
-                <div className="border-t border-slate-100 pt-3 mb-4 space-y-1.5 text-xs">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">What you pay today</p>
+                <div className="border-t border-slate-100 pt-3 mb-3 space-y-1.5 text-xs">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Sizes <span className="normal-case font-normal text-gray-400">(no minimum)</span></p>
+                  <SizeBreakdownPicker
+                    value={sampleBreakdown}
+                    onChange={setSampleBreakdown}
+                    minTotal={0}
+                    disabled={sampleLoading || directLoading}
+                  />
+                </div>
+
+                <div className="border border-slate-100 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">What you pay today</p>
                   <div className="flex justify-between text-gray-600">
                     <span>Activation Fee</span>
                     <span>${ACTIVATION_FEE}.00</span>
                   </div>
                   <div className="flex justify-between text-gray-600">
-                    <span>Sample Fee</span>
-                    <span>${SAMPLE_FEE}.00</span>
+                    <span>Sample Fee ({sampleQty} pc{sampleQty > 1 ? 's' : ''} × ${sampleFee})</span>
+                    <span>${(sampleFee * sampleQty).toFixed(2)}</span>
                   </div>
                   {extraLogos > 0 && (
                     <div className="flex justify-between text-gray-600">
-                      <span>{extraLogos} Extra Logo{extraLogos > 1 ? 's' : ''}</span>
-                      <span>+${logoFeeTotal}.00</span>
+                      <span>Extra Logos</span>
+                      <span>+${(logoFeeTotal * sampleQty).toFixed(2)}</span>
                     </div>
                   )}
                   <div className="border-t border-slate-100 pt-1.5 flex justify-between font-semibold text-gray-900">
                     <span>Total due today</span>
-                    <span>${sampleTotal}.00</span>
+                    <span>${sampleTotal.toFixed(2)}</span>
                   </div>
                 </div>
 
                 <button
                   onClick={handleSampleCheckout}
-                  disabled={sampleLoading || directLoading}
+                  disabled={sampleLoading || directLoading || sampleQty < 1}
                   className="btn-primary mt-auto w-full flex items-center justify-center gap-2 text-xs py-2.5"
                 >
                   {sampleLoading ? <Loader2 size={13} className="animate-spin"/> : <CreditCard size={13}/>}
-                  {sampleLoading ? 'Redirecting…' : 'Order First Piece Sample'}
+                  {sampleLoading ? 'Redirecting…' : `Order ${sampleQty} Sample${sampleQty > 1 ? 's' : ''}`}
                 </button>
               </div>
 
@@ -339,26 +362,45 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
                   Fastest option
                 </div>
 
-                <div className="border-t border-slate-100 pt-3 mb-4 space-y-1.5 text-xs">
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">What you pay today</p>
-                  <div className="flex justify-between text-gray-600">
-                    <span>50% Production Deposit</span>
-                    <span>${depositAmount.toFixed(2)}</span>
-                  </div>
-                  <p className="text-[10px] text-gray-400">Remaining 50% due after quality check</p>
-                  <div className="border-t border-slate-100 pt-1.5 flex justify-between font-semibold text-gray-900">
-                    <span>Total due today</span>
-                    <span>${depositAmount.toFixed(2)}</span>
-                  </div>
+                <div className="border-t border-slate-100 pt-3 mb-3 space-y-1.5 text-xs">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-2">Sizes <span className="normal-case font-normal text-gray-400">(min {MIN_PRODUCTION_QUANTITY} pieces)</span></p>
+                  <SizeBreakdownPicker
+                    value={directBreakdown}
+                    onChange={setDirectBreakdown}
+                    minTotal={MIN_PRODUCTION_QUANTITY}
+                    disabled={sampleLoading || directLoading}
+                  />
                 </div>
+
+                {directQty > 0 && (
+                  <div className="border border-slate-100 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal ({directQty} pcs)</span>
+                      <span>${productionTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>50% Production Deposit</span>
+                      <span>${depositAmount.toFixed(2)}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400">Remaining 50% due after quality check</p>
+                    <div className="border-t border-slate-100 pt-1.5 flex justify-between font-semibold text-gray-900">
+                      <span>Due today</span>
+                      <span>${depositAmount.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
 
                 <button
                   onClick={handleDirectCheckout}
-                  disabled={sampleLoading || directLoading}
-                  className="btn-secondary mt-auto w-full flex items-center justify-center gap-2 text-xs py-2.5"
+                  disabled={sampleLoading || directLoading || directBelowMOQ}
+                  className="btn-secondary mt-auto w-full flex items-center justify-center gap-2 text-xs py-2.5 disabled:opacity-50"
                 >
                   {directLoading ? <Loader2 size={13} className="animate-spin"/> : <CreditCard size={13}/>}
-                  {directLoading ? 'Redirecting…' : 'Start Production'}
+                  {directLoading
+                    ? 'Redirecting…'
+                    : directBelowMOQ
+                      ? `Add ${MIN_PRODUCTION_QUANTITY - directQty} more pieces`
+                      : 'Start Production'}
                 </button>
               </div>
             </div>
@@ -398,6 +440,22 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
               Logo, garment image, preview render,<br/>and full tech pack
             </p>
           </div>
+
+          {onExpertHelp && (
+            <div className="card border-grace-ink/10 bg-grace-mist">
+              <p className="text-[10px] font-bold tracking-widest uppercase text-grace-stone mb-1">Need Help?</p>
+              <p className="text-xs font-bold text-grace-ink mb-1">Work with GRACE Studios</p>
+              <p className="text-[11px] text-grace-stone leading-relaxed mb-3">
+                Stuck or want a professional to take it from here? Our team handles design, tech pack, and production direction end-to-end.
+              </p>
+              <button
+                onClick={onExpertHelp}
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-4 rounded-full bg-grace-ink text-white text-[10px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors"
+              >
+                Talk to an Expert <ArrowRight size={11}/>
+              </button>
+            </div>
+          )}
 
           <div className="card">
             <p className="text-xs font-medium text-gray-600 mb-2">Package Contents</p>
