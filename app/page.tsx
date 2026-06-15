@@ -67,6 +67,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [techPack, setTechPack] = useState<TechPackData | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin')
   const projectIdRef = useRef<string | undefined>(undefined)
 
   // Auto-save to Supabase whenever phase advances
@@ -149,12 +150,14 @@ function App() {
         <LandingPage
           onSelfService={() => setView('studio')}
           onCreativeDirection={() => { prevViewRef.current = 'landing'; setView('creative-direction') }}
-          onSignIn={() => setAuthOpen(true)}
+          onSignIn={() => { setAuthInitialMode('signin'); setAuthOpen(true) }}
+          onSignUp={() => { setAuthInitialMode('signup'); setAuthOpen(true) }}
         />
         <AuthModal
           open={authOpen}
           onClose={() => setAuthOpen(false)}
           onSuccess={() => { setAuthOpen(false); setSection('dashboard'); setView('studio') }}
+          initialMode={authInitialMode}
         />
       </>
     )

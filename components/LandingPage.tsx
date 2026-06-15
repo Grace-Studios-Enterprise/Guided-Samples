@@ -6,6 +6,7 @@ interface Props {
   onSelfService:        () => void
   onCreativeDirection:  () => void
   onSignIn?:            () => void
+  onSignUp?:            () => void
 }
 
 function GraceMark({ size = 32 }: { size?: number }) {
@@ -69,7 +70,7 @@ const FEATURES = [
   'One-click supplier email with attachments',
 ]
 
-export default function LandingPage({ onSelfService, onCreativeDirection, onSignIn }: Props) {
+export default function LandingPage({ onSelfService, onCreativeDirection, onSignIn, onSignUp }: Props) {
   return (
     <div className="min-h-screen bg-white text-grace-ink overflow-y-auto">
 
@@ -84,6 +85,11 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onSign
             {onSignIn && (
               <button onClick={onSignIn} className="btn-secondary py-2 text-[10px]">
                 Sign In
+              </button>
+            )}
+            {onSignUp && (
+              <button onClick={onSignUp} className="py-2 px-4 rounded-full bg-grace-ink text-white text-[10px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors">
+                Sign Up
               </button>
             )}
           </div>
