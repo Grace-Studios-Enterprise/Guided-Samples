@@ -202,14 +202,14 @@ async function sendEmail(
     <html>
     <body style="font-family:sans-serif;color:#1a1a1a;max-width:520px;margin:0 auto;padding:32px 16px;">
       <div style="margin-bottom:24px;">
-        <div style="display:inline-block;background:#184D3E;border-radius:10px;padding:8px 12px;">
+        <div style="display:inline-block;background:#0A0A0A;border-radius:10px;padding:8px 12px;">
           <span style="color:white;font-weight:700;font-size:13px;letter-spacing:-0.3px;">GRACE</span>
         </div>
       </div>
       <h2 style="font-size:18px;font-weight:700;margin:0 0 8px;">${subject}</h2>
       <p style="font-size:14px;color:#555;line-height:1.6;margin:0 0 24px;">${body}</p>
       <a href="${appUrl}/track"
-         style="display:inline-block;background:#184D3E;color:white;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;">
+         style="display:inline-block;background:#0A0A0A;color:white;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;">
         View Order
       </a>
       <p style="font-size:11px;color:#aaa;margin-top:32px;">

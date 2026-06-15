@@ -53,7 +53,7 @@ export default function AdminDashboard({ onSelectOrder }: Props) {
           onClick={() => setStageFilter('')}
           className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
             stageFilter === ''
-              ? 'bg-[#184D3E] text-white border-[#184D3E]'
+              ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
               : 'bg-white text-gray-600 border-slate-200 hover:border-slate-300'
           }`}
         >
@@ -68,7 +68,7 @@ export default function AdminDashboard({ onSelectOrder }: Props) {
               onClick={() => setStageFilter(stage === stageFilter ? '' : stage!)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1 ${
                 stageFilter === stage
-                  ? 'bg-[#184D3E] text-white border-[#184D3E]'
+                  ? 'bg-[#0A0A0A] text-white border-[#0A0A0A]'
                   : NEEDS_ACTION_STAGES.has(stage!)
                   ? 'bg-amber-50 text-amber-700 border-amber-300 hover:border-amber-400'
                   : 'bg-white text-gray-600 border-slate-200 hover:border-slate-300'

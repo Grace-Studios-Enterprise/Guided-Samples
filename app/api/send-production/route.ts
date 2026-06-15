@@ -47,28 +47,28 @@ export async function POST(req: NextRequest) {
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:700px;margin:0 auto;color:#1a1a1a;">
-      <div style="background:#184D3E;padding:24px 32px;border-radius:8px 8px 0 0;">
+      <div style="background:#0A0A0A;padding:24px 32px;border-radius:8px 8px 0 0;">
         <h1 style="color:#fff;margin:0;font-size:22px;">Production Order</h1>
         <p style="color:#a7c4bc;margin:6px 0 0;font-size:13px;">${styleInfo.brandName ?? ''} — ${styleInfo.styleName ?? ''}</p>
       </div>
 
       <div style="padding:24px 32px;background:#fff;border:1px solid #e2e8f0;border-top:none;">
-        <h2 style="font-size:14px;color:#184D3E;margin:0 0 12px;">Style Information</h2>
+        <h2 style="font-size:14px;color:#0A0A0A;margin:0 0 12px;">Style Information</h2>
         <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px;">
           ${Object.entries(styleInfo as Record<string,string>).filter(([,v]) => v).map(([k,v]) =>
             `<tr><td style="padding:5px 0;color:#6b7280;width:180px;">${k.replace(/([A-Z])/g,' $1').trim()}</td><td style="padding:5px 0;color:#1a1a1a;">${v}</td></tr>`
           ).join('')}
         </table>
 
-        ${notes ? `<div style="background:#f8fafc;border-left:3px solid #184D3E;padding:12px 16px;border-radius:4px;margin-bottom:24px;"><p style="margin:0;font-size:13px;color:#374151;">${notes}</p></div>` : ''}
+        ${notes ? `<div style="background:#f8fafc;border-left:3px solid #0A0A0A;padding:12px 16px;border-radius:4px;margin-bottom:24px;"><p style="margin:0;font-size:13px;color:#374151;">${notes}</p></div>` : ''}
 
-        <h2 style="font-size:14px;color:#184D3E;margin:0 0 12px;">Pantone Colors</h2>
+        <h2 style="font-size:14px;color:#0A0A0A;margin:0 0 12px;">Pantone Colors</h2>
         <ul style="margin:0 0 24px;padding:0 0 0 4px;list-style:none;font-size:13px;">${pantoneList}</ul>
 
-        <h2 style="font-size:14px;color:#184D3E;margin:0 0 12px;">Graphic Placement</h2>
+        <h2 style="font-size:14px;color:#0A0A0A;margin:0 0 12px;">Graphic Placement</h2>
         <ul style="margin:0 0 24px;padding-left:18px;font-size:13px;">${placementList}</ul>
 
-        <h2 style="font-size:14px;color:#184D3E;margin:0 0 12px;">Measurements (inches)</h2>
+        <h2 style="font-size:14px;color:#0A0A0A;margin:0 0 12px;">Measurements (inches)</h2>
         <div style="overflow-x:auto;margin-bottom:24px;">
           <table style="border-collapse:collapse;font-size:12px;">${measurementHeader}${measurementRows}</table>
         </div>

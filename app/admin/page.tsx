@@ -45,8 +45,8 @@ export default function AdminPage() {
       {/* Header */}
       <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-3">
-          <h1 className="text-sm font-semibold text-[#184D3E] tracking-tight">GRACE Admin</h1>
-          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#184D3E]/10 text-[#184D3E] uppercase tracking-widest">
+          <h1 className="text-sm font-semibold text-[#0A0A0A] tracking-tight">GRACE Admin</h1>
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#0A0A0A]/10 text-[#0A0A0A] uppercase tracking-widest">
             Internal
           </span>
         </div>

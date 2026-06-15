@@ -509,7 +509,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                     height: layer.height,
                     transform: `rotate(${layer.rotation}deg)`,
                     cursor: dragging?.id === layer.id ? 'grabbing' : 'grab',
-                    outline: selectedId === layer.id ? '2px solid #184D3E' : 'none',
+                    outline: selectedId === layer.id ? '2px solid #0A0A0A' : 'none',
                     outlineOffset: 2,
                     userSelect: 'none',
                   }}
@@ -530,7 +530,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                             width: 10,
                             height: 10,
                             background: 'white',
-                            border: '2px solid #184D3E',
+                            border: '2px solid #0A0A0A',
                             borderRadius: 2,
                             ...handle,
                           }}

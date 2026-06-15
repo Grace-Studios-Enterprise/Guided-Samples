@@ -19,9 +19,9 @@ const config: Config = {
         'grace-border': '#E4E4E4',
         // Keep brand-green for backward compat with design studio phases (Module 1)
         brand: {
-          green: '#184D3E',
-          'green-light': '#1a5c4a',
-          'green-dark': '#0f2e25',
+          green: '#0A0A0A',
+          'green-light': '#222222',
+          'green-dark': '#000000',
         },
       },
     },

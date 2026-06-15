@@ -110,7 +110,7 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
               {order.id.slice(0, 8)}…
             </h2>
             {order.production_stage && (
-              <span className="text-xs px-2.5 py-1 rounded-full bg-[#184D3E]/10 text-[#184D3E] font-medium">
+              <span className="text-xs px-2.5 py-1 rounded-full bg-[#0A0A0A]/10 text-[#0A0A0A] font-medium">
                 {STAGE_LABELS[order.production_stage]}
               </span>
             )}
@@ -122,7 +122,7 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
             </span>
             {order.supplier_email && (
               <span className="flex items-center gap-1">
-                <User size={11} className="text-[#184D3E]" />
+                <User size={11} className="text-[#0A0A0A]" />
                 {order.supplier_email}
               </span>
             )}
@@ -139,7 +139,7 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors -mb-px ${
               tab === t.id
-                ? 'border-[#184D3E] text-[#184D3E]'
+                ? 'border-[#0A0A0A] text-[#0A0A0A]'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -183,7 +183,7 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
               </button>
             </div>
             {supplierError   && <p className="text-xs text-red-500">{supplierError}</p>}
-            {supplierSuccess && <p className="text-xs text-[#184D3E]">{supplierSuccess}</p>}
+            {supplierSuccess && <p className="text-xs text-[#0A0A0A]">{supplierSuccess}</p>}
           </div>
 
           {/* Internal notes */}
@@ -291,7 +291,7 @@ export default function AdminOrderDetail({ orderId, onBack }: Props) {
               return (
                 <div key={i} className="card flex gap-3 items-start">
                   <div className={`mt-0.5 shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                    isNote ? 'bg-blue-50 text-blue-500' : 'bg-[#184D3E]/10 text-[#184D3E]'
+                    isNote ? 'bg-blue-50 text-blue-500' : 'bg-[#0A0A0A]/10 text-[#0A0A0A]'
                   }`}>
                     {isNote ? <Edit3 size={11} /> : <Clock size={11} />}
                   </div>

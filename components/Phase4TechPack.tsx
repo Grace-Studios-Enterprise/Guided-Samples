@@ -73,7 +73,7 @@ export default function Phase4TechPack({ state, onBack }: Props) {
   })
 
   const [measurements, setMeasurements] = useState(DEFAULT_MEASUREMENTS)
-  const [pantones, setPantones] = useState([{ color: '#184D3E', name: 'PANTONE 5535 C' }])
+  const [pantones, setPantones] = useState([{ color: '#0A0A0A', name: 'PANTONE Black C' }])
   const [newPantone, setNewPantone] = useState('')
   const [newPantoneColor, setNewPantoneColor] = useState('#888888')
   const [placements, setPlacements] = useState([

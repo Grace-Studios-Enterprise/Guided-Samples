@@ -133,7 +133,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
         svg: '',
         dataUrl,
         style: 'Uploaded',
-        color: '#184D3E',
+        color: '#0A0A0A',
       }
       onComplete(logo)
     }

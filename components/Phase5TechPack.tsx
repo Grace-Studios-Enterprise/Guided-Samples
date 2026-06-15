@@ -75,7 +75,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
   const [overrides, setOverrides] = useState<SizeGuideOverrides>({})
 
   const [pantones, setPantones] = useState<{ color: string; name: string }[]>([
-    { color: '#184D3E', name: 'PANTONE 5535 C' },
+    { color: '#0A0A0A', name: 'PANTONE Black C' },
     { color: '#9B9B9B', name: 'PANTONE Cool Gray 7 C' },
   ])
   const [newPantoneColor, setNewPantoneColor] = useState('#888888')
@@ -329,7 +329,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
               onClick={() => switchGarment(g.key)}
               className={`px-3 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-colors ${
                 g.key === garmentType
-                  ? 'bg-[#184D3E] text-white'
+                  ? 'bg-[#0A0A0A] text-white'
                   : 'bg-white text-grace-stone hover:text-grace-ink border border-grace-border'
               }`}
             >
@@ -344,7 +344,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         <div className="flex items-start gap-4 flex-wrap">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-3">
-              <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+              <span className="w-6 h-6 rounded-full bg-[#0A0A0A] text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
               <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Select Fit</p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -356,7 +356,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
                     onClick={() => setFit(f)}
                     className={`px-4 py-2 rounded-full text-[12px] font-semibold tracking-wide transition-all ${
                       selected
-                        ? 'bg-[#184D3E] text-white shadow-sm'
+                        ? 'bg-[#0A0A0A] text-white shadow-sm'
                         : 'bg-white text-grace-stone hover:text-grace-ink border border-grace-border hover:border-grace-ink'
                     }`}
                   >
@@ -375,7 +375,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
       {/* ── Section 3: Measurements + Technical Flat ─────────────────────── */}
       <div className="mb-6 card">
         <div className="flex items-center gap-2 mb-4">
-          <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+          <span className="w-6 h-6 rounded-full bg-[#0A0A0A] text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
           <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">
             Measurements
           </p>
@@ -473,7 +473,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         {/* Pantones */}
         <div className="card">
           <div className="flex items-center gap-2 mb-4">
-            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+            <span className="w-6 h-6 rounded-full bg-[#0A0A0A] text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
             <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Pantones</p>
           </div>
           <div className="space-y-2 mb-3">
@@ -559,7 +559,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         {/* Graphic Placement */}
         <div className="card">
           <div className="flex items-center gap-2 mb-4">
-            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
+            <span className="w-6 h-6 rounded-full bg-[#0A0A0A] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
             <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Graphic Placement</p>
           </div>
           <div className="space-y-3 mb-3">
@@ -627,7 +627,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         </button>
         <button
           onClick={() => onSendToProduction(buildTechPackData())}
-          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#184D3E] text-white text-[12px] font-bold tracking-widest uppercase hover:bg-[#0f3328] transition-colors"
+          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#0A0A0A] text-white text-[12px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors"
         >
           <Send size={14}/> Send to Production
         </button>

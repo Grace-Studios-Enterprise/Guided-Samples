@@ -117,13 +117,13 @@ function svgToDataUrl(svg: string): string {
 
 function detectColor(prompt: string): string {
   const p = prompt.toLowerCase()
-  if (p.includes('forest green') || p.includes('green')) return '#184D3E'
+  if (p.includes('forest green') || p.includes('green')) return '#0A0A0A'
   if (p.includes('black')) return '#1a1a1a'
   if (p.includes('navy') || p.includes('blue')) return '#1a2c5e'
   if (p.includes('red')) return '#8b1a1a'
   if (p.includes('gold') || p.includes('yellow')) return '#b8860b'
   if (p.includes('white')) return '#e8e8e8'
-  return '#184D3E'
+  return '#0A0A0A'
 }
 
 function detectStyle(prompt: string): string {
