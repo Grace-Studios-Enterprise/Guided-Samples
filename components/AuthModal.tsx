@@ -8,6 +8,7 @@ interface Props {
   open: boolean
   onClose: () => void
   onSuccess: () => void
+  initialMode?: 'signin' | 'signup'
 }
 
 function GraceMark({ size = 32 }: { size?: number }) {
@@ -19,9 +20,9 @@ function GraceMark({ size = 32 }: { size?: number }) {
   )
 }
 
-export default function AuthModal({ open, onClose, onSuccess }: Props) {
+export default function AuthModal({ open, onClose, onSuccess, initialMode = 'signin' }: Props) {
   const { signIn, signUp } = useAuth()
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

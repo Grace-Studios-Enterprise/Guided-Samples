@@ -1,9 +1,25 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { Plus, Upload, Download, Save, CheckCircle2, ArrowLeft, Trash2, ArrowRight, Sparkles, Loader2 } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import {
+  CheckCircle2, Pencil, Plus, Trash2, Download, Save, Send, ArrowLeft,
+  MoreVertical, ChevronRight, X,
+} from 'lucide-react'
 import { AppState } from '@/app/page'
 import type { TechPackData } from '@/components/Phase6Production'
+import {
+  getConsumerSizeGuide,
+  fitLabel,
+  formatInches,
+  type SizeGuideOverrides,
+} from '@/lib/fitBlocks/sizeGuide'
+import { getTechnicalDrawingData } from '@/lib/fitBlocks/technicalDrawing'
+import { getFitLibrary, resolveGarmentType } from '@/lib/fitBlocks'
+import { ALL_SIZES } from '@/lib/fitBlocks/types'
+import type { GarmentType, FitVariant, SizeKey } from '@/lib/fitBlocks/types'
+import { TechFlat, FLAT_FOR_GARMENT } from '@/components/TechFlats'
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   state: AppState
@@ -11,756 +27,615 @@ interface Props {
   onSendToProduction: (tp: TechPackData) => void
 }
 
-// ─── Garment templates ───────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL']
+const PHASE5_GARMENTS: { key: GarmentType; label: string }[] = [
+  { key: 'short_sleeve_tee', label: 'T-Shirt' },
+  { key: 'hoodie',           label: 'Hoodie' },
+  { key: 'crewneck',         label: 'Crewneck' },
+  { key: 'zip_hoodie',       label: 'Zip Hoodie' },
+  { key: 'track_jacket',     label: 'Track Jacket' },
+  { key: 'windbreaker',      label: 'Windbreaker' },
+  { key: 'sweatpants',       label: 'Sweatpants' },
+  { key: 'track_pants',      label: 'Track Pants' },
+  { key: 'shorts',           label: 'Shorts' },
+]
 
-type TemplateRow = { label: string; defaults: number[] }
+const GARMENT_LABEL: Record<GarmentType, string> = Object.fromEntries(
+  PHASE5_GARMENTS.map(g => [g.key, g.label])
+) as Record<GarmentType, string>
 
-const grade = (base: number, step: number): number[] =>
-  SIZES.map((_, i) => Math.round((base + (i - 2) * step) * 4) / 4)
-
-// Each template specifies display rows in order with sensible M defaults + grade step
-const TEMPLATES: Record<string, TemplateRow[]> = {
-  'T-Shirt': [
-    { label: 'Chest (Flat)',    defaults: grade(21, 1) },
-    { label: 'Body Length',     defaults: grade(28, 0.5) },
-    { label: 'Shoulder Width',  defaults: grade(18, 0.5) },
-    { label: 'Sleeve Length',   defaults: grade(8.5, 0.25) },
-    { label: 'Armhole',         defaults: grade(9.5, 0.25) },
-    { label: 'Bottom Opening',  defaults: grade(21, 1) },
-    { label: 'Neck Opening',    defaults: grade(7.5, 0.25) },
-    { label: 'Sleeve Opening',  defaults: grade(5.5, 0.25) },
-  ],
-  'Hoodie': [
-    { label: 'Chest (Flat)',    defaults: grade(23, 1) },
-    { label: 'Body Length',     defaults: grade(28, 0.5) },
-    { label: 'Shoulder Width',  defaults: grade(20, 0.5) },
-    { label: 'Sleeve Length',   defaults: grade(24.5, 0.25) },
-    { label: 'Armhole',         defaults: grade(10, 0.25) },
-    { label: 'Bottom Opening',  defaults: grade(21, 1) },
-    { label: 'Neck Opening',    defaults: grade(8, 0.25) },
-    { label: 'Sleeve Opening',  defaults: grade(4.5, 0.125) },
-    { label: 'Hood Height',     defaults: grade(13, 0.25) },
-    { label: 'Hood Opening',    defaults: grade(10, 0.25) },
-    { label: 'Hood Depth',      defaults: grade(9, 0.25) },
-    { label: 'Cuff Opening',    defaults: grade(4, 0.125) },
-  ],
-  'Crewneck': [
-    { label: 'Chest (Flat)',    defaults: grade(22, 1) },
-    { label: 'Body Length',     defaults: grade(27, 0.5) },
-    { label: 'Shoulder Width',  defaults: grade(19, 0.5) },
-    { label: 'Sleeve Length',   defaults: grade(24, 0.25) },
-    { label: 'Armhole',         defaults: grade(9.5, 0.25) },
-    { label: 'Bottom Opening',  defaults: grade(20, 1) },
-    { label: 'Neck Opening',    defaults: grade(7.5, 0.25) },
-    { label: 'Sleeve Opening',  defaults: grade(4.75, 0.125) },
-    { label: 'Cuff Opening',    defaults: grade(4, 0.125) },
-  ],
-  'Zip Hoodie': [
-    { label: 'Chest (Flat)',        defaults: grade(22.5, 1) },
-    { label: 'Body Length',         defaults: grade(28, 0.5) },
-    { label: 'Shoulder Width',      defaults: grade(19.5, 0.5) },
-    { label: 'Sleeve Length',       defaults: grade(24.5, 0.25) },
-    { label: 'Armhole',             defaults: grade(10, 0.25) },
-    { label: 'Bottom Opening',      defaults: grade(21, 1) },
-    { label: 'Neck Opening',        defaults: grade(8, 0.25) },
-    { label: 'Sleeve Opening',      defaults: grade(4.5, 0.125) },
-    { label: 'Hood Height',         defaults: grade(13, 0.25) },
-    { label: 'Hood Opening',        defaults: grade(10, 0.25) },
-    { label: 'Hood Depth',          defaults: grade(9, 0.25) },
-    { label: 'Cuff Opening',        defaults: grade(4, 0.125) },
-    { label: 'Front Zipper Length', defaults: grade(26, 0.5) },
-  ],
-  'Sweatpants': [
-    { label: 'Waist (Flat)',   defaults: grade(14, 1) },
-    { label: 'Hip Width',      defaults: grade(22, 1) },
-    { label: 'Front Rise',     defaults: grade(12, 0.25) },
-    { label: 'Back Rise',      defaults: grade(14.5, 0.25) },
-    { label: 'Inseam',         defaults: grade(29, 0.5) },
-    { label: 'Outseam',        defaults: grade(42, 0.5) },
-    { label: 'Thigh Width',    defaults: grade(13, 0.5) },
-    { label: 'Knee Width',     defaults: grade(10, 0.25) },
-    { label: 'Leg Opening',    defaults: grade(7, 0.25) },
-    { label: 'Cuff Opening',   defaults: grade(5.5, 0.125) },
-  ],
-  'Track Jacket': [
-    { label: 'Chest (Flat)',        defaults: grade(21.5, 1) },
-    { label: 'Body Length',         defaults: grade(27.5, 0.5) },
-    { label: 'Shoulder Width',      defaults: grade(18.5, 0.5) },
-    { label: 'Sleeve Length',       defaults: grade(24.5, 0.25) },
-    { label: 'Armhole',             defaults: grade(9.5, 0.25) },
-    { label: 'Bottom Opening',      defaults: grade(21, 1) },
-    { label: 'Neck Opening',        defaults: grade(7.5, 0.25) },
-    { label: 'Sleeve Opening',      defaults: grade(4.75, 0.125) },
-    { label: 'Front Zipper Length', defaults: grade(25.5, 0.5) },
-    { label: 'Collar Height',       defaults: grade(1.5, 0) },
-  ],
-  'Track Pants': [
-    { label: 'Waist (Flat)',    defaults: grade(13.5, 1) },
-    { label: 'Hip Width',       defaults: grade(21.5, 1) },
-    { label: 'Front Rise',      defaults: grade(11.5, 0.25) },
-    { label: 'Back Rise',       defaults: grade(14, 0.25) },
-    { label: 'Inseam',          defaults: grade(29, 0.5) },
-    { label: 'Outseam',         defaults: grade(41.5, 0.5) },
-    { label: 'Thigh Width',     defaults: grade(12.5, 0.5) },
-    { label: 'Knee Width',      defaults: grade(10, 0.25) },
-    { label: 'Leg Opening',     defaults: grade(6.5, 0.25) },
-    { label: 'Zipper Opening',  defaults: grade(0, 0) },
-  ],
-  'Windbreaker': [
-    { label: 'Chest (Flat)',        defaults: grade(22, 1) },
-    { label: 'Body Length',         defaults: grade(28, 0.5) },
-    { label: 'Shoulder Width',      defaults: grade(19, 0.5) },
-    { label: 'Sleeve Length',       defaults: grade(25, 0.25) },
-    { label: 'Armhole',             defaults: grade(10, 0.25) },
-    { label: 'Bottom Opening',      defaults: grade(21.5, 1) },
-    { label: 'Neck Opening',        defaults: grade(8, 0.25) },
-    { label: 'Sleeve Opening',      defaults: grade(4.75, 0.125) },
-    { label: 'Front Zipper Length', defaults: grade(26, 0.5) },
-    { label: 'Collar Height',       defaults: grade(2, 0) },
-    { label: 'Hood Height',         defaults: grade(13, 0.25) },
-    { label: 'Hood Opening',        defaults: grade(10, 0.25) },
-  ],
-  'Basketball Jersey': [
-    { label: 'Chest (Flat)',   defaults: grade(20, 1) },
-    { label: 'Body Length',    defaults: grade(30, 0.5) },
-    { label: 'Shoulder Width', defaults: grade(16, 0.5) },
-    { label: 'Neck Opening',   defaults: grade(9, 0.25) },
-    { label: 'Armhole',        defaults: grade(12, 0.5) },
-    { label: 'Bottom Opening', defaults: grade(22, 1) },
-  ],
-  'Basketball Shorts': [
-    { label: 'Waist (Flat)', defaults: grade(13, 1) },
-    { label: 'Hip Width',    defaults: grade(21, 1) },
-    { label: 'Front Rise',   defaults: grade(12, 0.25) },
-    { label: 'Back Rise',    defaults: grade(13.5, 0.25) },
-    { label: 'Inseam',       defaults: grade(11, 0.25) },
-    { label: 'Outseam',      defaults: grade(24, 0.25) },
-    { label: 'Thigh Width',  defaults: grade(13, 0.5) },
-    { label: 'Leg Opening',  defaults: grade(12, 0.5) },
-  ],
-}
-
-const GARMENT_TYPE_LIST = Object.keys(TEMPLATES)
-
-// Map garment prompts / Phase 2 type strings → template keys
-function inferTemplate(typeString: string): string {
-  const t = typeString.toLowerCase()
-  if (t.includes('zip hoodie') || t.includes('zip-hoodie') || t.includes('full zip')) return 'Zip Hoodie'
-  if (t.includes('hoodie') || t.includes('pullover')) return 'Hoodie'
-  if (t.includes('crewneck') || t.includes('crew neck') || t.includes('sweatshirt')) return 'Crewneck'
-  if (t.includes('windbreaker') || t.includes('wind breaker') || t.includes('anorak')) return 'Windbreaker'
-  if (t.includes('track jacket') || t.includes('trackjacket')) return 'Track Jacket'
-  if (t.includes('track pant') || t.includes('trackpant')) return 'Track Pants'
-  if (t.includes('sweatpant') || t.includes('jogger') || t.includes('sweat pant')) return 'Sweatpants'
-  if (t.includes('basketball short') || t.includes('bball short')) return 'Basketball Shorts'
-  if (t.includes('basketball jersey') || t.includes('jersey')) return 'Basketball Jersey'
-  if (t.includes('short') || t.includes('pant') || t.includes('bottom')) return 'Track Pants'
-  if (t.includes('t-shirt') || t.includes('tshirt') || t.includes('t shirt') || t.includes('tee')) return 'T-Shirt'
-  return 'T-Shirt'
-}
-
-function templateToMeasurements(key: string): Record<string, number[]> {
-  const rows = TEMPLATES[key] ?? TEMPLATES['T-Shirt']
-  return Object.fromEntries(rows.map(r => [r.label, r.defaults]))
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type StyleInfo = {
-  styleName: string; sku: string; revision: string; season: string
-  collection: string; brandName: string; clientName: string
-  dateCreated: string; designer: string; garmentType: string
-  gender: string; ageCategory: string; fitDescription: string; sizeRange: string
-  fabricContent: string; fabricWeight: string; construction: string
-  fabricFinish: string; careInstructions: string
-  supplierNotes: string
-}
-
-const GENDERS = ['Unisex', "Men's", "Women's", 'Kids']
-const AGE_CATEGORIES = ['Adult', 'Youth', 'Toddler', 'Infant']
-const SIZE_RANGES = ['XS–3XL', 'S–XL', 'S–2XL', 'XS–XL', 'One Size', 'Custom']
 const SEASONS = ['SS24', 'FW24', 'SS25', 'FW25', 'SS26', 'FW26', 'Year Round']
-const SECTIONS = ['Style Information', 'Fabric & Material', 'Measurements', 'Pantones', 'Graphic Placement', 'Construction', 'Notes & Finishes']
+const GENDERS = ['Unisex', "Men's", "Women's", 'Kids']
 
-// ─── Component ────────────────────────────────────────────────────────────────
+
+// ─── Editable placement type ──────────────────────────────────────────────────
+
+type EditablePlacement = {
+  location: string
+  description: string
+  widthInches: number
+  heightInches: number
+  yOffsetInches: number
+  notes: string
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Phase5TechPack({ state, onBack, onSendToProduction }: Props) {
-  const today = new Date().toISOString().split('T')[0]
+  // ── Infer initial garment from Phase 2 ────────────────────────────────────
+  const inferredGarmentType: GarmentType = useMemo(() => {
+    if (!state.garment?.type) return 'short_sleeve_tee'
+    return resolveGarmentType(state.garment.type) ?? 'short_sleeve_tee'
+  }, [state.garment?.type])
 
-  // Infer garment type from Phase 2 if available
-  const inferredType = state.garment?.type
-    ? inferTemplate(state.garment.type)
-    : 'T-Shirt'
+  // ── Core state ────────────────────────────────────────────────────────────
+  const [garmentType, setGarmentType] = useState<GarmentType>(inferredGarmentType)
+  const [fit, setFit] = useState<FitVariant | undefined>(undefined)
+  const [overrides, setOverrides] = useState<SizeGuideOverrides>({})
 
-  const [styleInfo, setStyleInfo] = useState<StyleInfo>({
-    styleName: `GRACE ${inferredType.toUpperCase()}`,
+  const [pantones, setPantones] = useState<{ color: string; name: string }[]>([
+    { color: '#184D3E', name: 'PANTONE 5535 C' },
+    { color: '#9B9B9B', name: 'PANTONE Cool Gray 7 C' },
+  ])
+  const [newPantoneColor, setNewPantoneColor] = useState('#888888')
+  const [newPantoneName, setNewPantoneName] = useState('')
+  const [openPantoneMenu, setOpenPantoneMenu] = useState<number | null>(null)
+
+  const [styleOpen, setStyleOpen] = useState(false)
+  const [styleMeta, setStyleMeta] = useState({
+    styleName: '',
     sku: 'GRC-001',
     revision: 'A',
     season: 'FW25',
-    collection: '',
     brandName: 'GRACE',
-    clientName: '',
-    dateCreated: today,
-    designer: '',
-    garmentType: inferredType,
     gender: 'Unisex',
-    ageCategory: 'Adult',
-    fitDescription: 'Oversized',
     sizeRange: 'XS–3XL',
     fabricContent: '',
     fabricWeight: '',
     construction: '',
-    fabricFinish: '',
     careInstructions: '',
     supplierNotes: '',
+    clientName: '',
+    designer: '',
+    collection: '',
   })
 
-  const [measurements, setMeasurements] = useState<Record<string, number[]>>(
-    () => templateToMeasurements(inferredType)
+  const [saved, setSaved] = useState(false)
+  const [unit, setUnit] = useState<'in' | 'cm'>('in')
+
+  // ── Fit block derivation ─────────────────────────────────────────────────
+  const guide = useMemo(
+    () => getConsumerSizeGuide(garmentType, fit, overrides),
+    [garmentType, fit, overrides],
   )
-  const [newRowLabel, setNewRowLabel] = useState('')
-  const [pantones, setPantones] = useState([{ color: '#184D3E', name: 'PANTONE 5535 C' }])
-  const [newPantone, setNewPantone] = useState('')
-  const [newPantoneColor, setNewPantoneColor] = useState('#888888')
-  const [placements, setPlacements] = useState([{ location: 'Front', description: 'Center chest logo placement' }])
-  const [uploadMsg, setUploadMsg] = useState('')
-  const [detecting, setDetecting] = useState(false)
-  const [detectError, setDetectError] = useState('')
-  const [detectingMeasurements, setDetectingMeasurements] = useState(false)
-  const [measurementDetectError, setMeasurementDetectError] = useState('')
-  const [measurementDetectInfo, setMeasurementDetectInfo] = useState('')
-  const initialized = useRef(false)
+  const library = getFitLibrary(garmentType)
+  const resolvedFit = guide?.fit
 
-  // When Phase 2 garment type becomes available, auto-load its template once
-  useEffect(() => {
-    if (initialized.current || !state.garment?.type) return
-    initialized.current = true
-    const key = inferTemplate(state.garment.type)
-    setMeasurements(templateToMeasurements(key))
-    setStyleInfo(s => ({
-      ...s,
-      garmentType: key,
-      styleName: s.styleName === 'GRACE T-SHIRT' ? `GRACE ${key.toUpperCase()}` : s.styleName,
+  // Technical drawing for size M (front flat)
+  const drawingM = useMemo(
+    () => getTechnicalDrawingData(garmentType, fit, 'M', overrides),
+    [garmentType, fit, overrides],
+  )
+
+  // Auto-derive placements from drawing data
+  const derivedPlacements = useMemo((): EditablePlacement[] => {
+    if (!drawingM?.placements.length) return [{ location: 'Front', description: '', widthInches: 10, heightInches: 10, yOffsetInches: 2.5, notes: '' }]
+    return drawingM.placements.map(p => ({
+      location: p.location.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
+      description: p.label,
+      widthInches: p.widthInches,
+      heightInches: p.heightInches,
+      yOffsetInches: p.yOffsetInches,
+      notes: p.notes,
     }))
-  }, [state.garment?.type])
+  }, [drawingM])
 
-  const set = (key: keyof StyleInfo, value: string) =>
-    setStyleInfo(s => ({ ...s, [key]: value }))
+  const [placements, setPlacements] = useState<EditablePlacement[]>(derivedPlacements)
 
-  const switchTemplate = (newType: string) => {
-    if (newType === styleInfo.garmentType) return
-    setMeasurementDetectInfo('')
-    setStyleInfo(s => ({ ...s, garmentType: newType }))
-    setMeasurements(templateToMeasurements(newType))
-  }
-
-  const designImage = state.design?.previewDataUrl || state.garment?.dataUrl || ''
-
-  // ── Measurement helpers ──────────────────────────────────────────────────
-
-  const updateMeasurement = (row: string, sizeIdx: number, value: string) =>
-    setMeasurements(m => ({ ...m, [row]: m[row].map((v, i) => i === sizeIdx ? parseFloat(value) || v : v) }))
-
-  const updateRowLabel = (oldLabel: string, newLabel: string) => {
-    if (!newLabel.trim() || newLabel === oldLabel) return
-    setMeasurements(m => {
-      const entries = Object.entries(m)
-      const idx = entries.findIndex(([k]) => k === oldLabel)
-      if (idx < 0) return m
-      entries[idx] = [newLabel, entries[idx][1]]
-      return Object.fromEntries(entries)
+  // ── Measurement editing ───────────────────────────────────────────────────
+  function handleMeasurementEdit(rowKey: string, size: SizeKey, raw: string) {
+    const value = parseFloat(raw)
+    if (!Number.isFinite(value) || !resolvedFit) return
+    setOverrides(prev => {
+      const next = JSON.parse(JSON.stringify(prev)) as SizeGuideOverrides
+      next[garmentType] ??= {}
+      next[garmentType][resolvedFit] ??= {}
+      next[garmentType][resolvedFit][rowKey] ??= {}
+      next[garmentType][resolvedFit][rowKey][size] = value
+      return next
     })
   }
 
-  const removeRow = (label: string) =>
-    setMeasurements(m => Object.fromEntries(Object.entries(m).filter(([k]) => k !== label)))
-
-  const addRow = () => {
-    const label = newRowLabel.trim() || 'Custom Measurement'
-    if (measurements[label]) return
-    setMeasurements(m => ({ ...m, [label]: SIZES.map(() => 0) }))
-    setNewRowLabel('')
-  }
-
-  // ── Auto-detect measurements ─────────────────────────────────────────────
-
-  const handleAutoDetectMeasurements = async () => {
-    const img = state.garment?.dataUrl || designImage
-    if (!img) { setMeasurementDetectError('No garment image found — generate a garment in Phase 2 first.'); return }
-    setDetectingMeasurements(true)
-    setMeasurementDetectError('')
-    setMeasurementDetectInfo('')
-    try {
-      const res = await fetch('/api/detect-measurements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: img }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Detection failed')
-      // Merge detected values into current template rows — only update rows that exist
-      setMeasurements(m => {
-        const next = { ...m }
-        const labelMap: Record<string, string> = {
-          'Chest (Flat)': 'Chest (Flat)',
-          'Body Length': 'Body Length',
-          'Length': 'Body Length',
-          'Sleeve Length': 'Sleeve Length',
-          'Shoulder': 'Shoulder Width',
-          'Shoulder Width': 'Shoulder Width',
-          'Armhole': 'Armhole',
-          'Bottom Opening': 'Bottom Opening',
-        }
-        for (const [detectedKey, vals] of Object.entries(data.measurements as Record<string, number[]>)) {
-          const mapped = labelMap[detectedKey] ?? detectedKey
-          if (next[mapped]) next[mapped] = vals
-          else if (next[detectedKey]) next[detectedKey] = vals
-        }
-        return next
-      })
-      setMeasurementDetectInfo(
-        `Detected ${data.garmentType ?? 'garment'} (${data.fit ?? 'regular'} fit) · Size M: length ${data.sizeM.lengthM}", chest ${data.sizeM.chestFlatM}", shoulder ${data.sizeM.shoulderM}". Review and adjust.`
-      )
-    } catch (e) {
-      setMeasurementDetectError(e instanceof Error ? e.message : 'Detection failed.')
-    } finally {
-      setDetectingMeasurements(false)
-    }
-  }
-
-  // ── Auto-detect placement ────────────────────────────────────────────────
-
-  const handleAutoDetect = async () => {
-    if (!designImage) { setDetectError('No applied-design image found — confirm your design in Phase 3 first.'); return }
-    setDetecting(true)
-    setDetectError('')
-    try {
-      const res = await fetch('/api/detect-placement', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: designImage, measurements, sizeIndex: SIZES.indexOf('M') }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Detection failed')
-      const entry = { location: data.location, description: data.description }
-      setPlacements(ps => {
-        const idx = ps.findIndex(p => p.location.toLowerCase() === 'front')
-        return idx >= 0 ? ps.map((p, i) => i === idx ? entry : p) : [entry, ...ps]
-      })
-    } catch (e) {
-      setDetectError(e instanceof Error ? e.message : 'Detection failed.')
-    } finally {
-      setDetecting(false)
-    }
-  }
-
-  // ── Upload / download ────────────────────────────────────────────────────
-
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.name.endsWith('.json')) {
-      const reader = new FileReader()
-      reader.onload = ev => {
-        try {
-          const data = JSON.parse(ev.target?.result as string)
-          if (data.styleInfo) setStyleInfo(s => ({ ...s, ...data.styleInfo }))
-          if (data.measurements) setMeasurements(data.measurements)
-          if (Array.isArray(data.pantones)) setPantones(data.pantones)
-          if (Array.isArray(data.placements)) setPlacements(data.placements)
-          setUploadMsg(`Imported ${file.name}`)
-        } catch { setUploadMsg('Could not parse file') }
+  function resetRow(rowKey: string) {
+    if (!resolvedFit) return
+    setOverrides(prev => {
+      const next = JSON.parse(JSON.stringify(prev)) as SizeGuideOverrides
+      if (next[garmentType]?.[resolvedFit]?.[rowKey]) {
+        delete next[garmentType][resolvedFit][rowKey]
       }
-      reader.readAsText(file)
-    } else { setUploadMsg(`${file.name} attached`) }
-    e.target.value = ''
+      return next
+    })
   }
 
-  const downloadTechPack = () => {
-    const blob = new Blob([JSON.stringify({ styleInfo, measurements, pantones, placements }, null, 2)], { type: 'application/json' })
+  // ── Garment switch ────────────────────────────────────────────────────────
+  function switchGarment(g: GarmentType) {
+    setGarmentType(g)
+    setFit(undefined)
+    setOverrides({})
+  }
+
+  // ── Build TechPackData for production ─────────────────────────────────────
+  function buildTechPackData(): TechPackData {
+    const measurementsRecord: Record<string, number[]> = {}
+    if (guide) {
+      for (const row of guide.rows) {
+        measurementsRecord[row.label] = ALL_SIZES.map(s => row.values[s] ?? 0)
+      }
+    }
+    return {
+      styleInfo: {
+        styleName: styleMeta.styleName || `GRACE ${GARMENT_LABEL[garmentType] ?? garmentType}`,
+        sku: styleMeta.sku,
+        revision: styleMeta.revision,
+        season: styleMeta.season,
+        brandName: styleMeta.brandName,
+        garmentType: GARMENT_LABEL[garmentType] ?? garmentType,
+        gender: styleMeta.gender,
+        sizeRange: styleMeta.sizeRange,
+        fitDescription: resolvedFit ? fitLabel(resolvedFit) : '',
+        fabricContent: styleMeta.fabricContent,
+        fabricWeight: styleMeta.fabricWeight,
+        construction: styleMeta.construction,
+        careInstructions: styleMeta.careInstructions,
+        supplierNotes: styleMeta.supplierNotes,
+        clientName: styleMeta.clientName,
+        designer: styleMeta.designer,
+        collection: styleMeta.collection,
+        dateCreated: new Date().toISOString().split('T')[0],
+        fabricFinish: '',
+        ageCategory: 'Adult',
+      },
+      measurements: measurementsRecord,
+      pantones,
+      placements: placements.map(p => ({
+        location: p.location,
+        description: [
+          p.description,
+          `Size: ${formatInches(p.widthInches)}" W × ${formatInches(p.heightInches)}" H`,
+          `Offset: ${formatInches(p.yOffsetInches)}" below collar`,
+          p.notes,
+        ].filter(Boolean).join('. '),
+      })),
+    }
+  }
+
+  function handleDownload() {
+    const data = buildTechPackData()
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${styleInfo.styleName.replace(/\s+/g, '_')}_TechPack.json`
+    a.download = `${(data.styleInfo.styleName as string).replace(/\s+/g, '_')}_TechPack.json`
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  const addPantone = () => {
-    if (!newPantone.trim()) return
-    setPantones(p => [...p, { color: newPantoneColor, name: newPantone.trim() }])
-    setNewPantone('')
-    setNewPantoneColor('#888888')
+  function handleSaveDraft() {
+    handleDownload()
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
   }
 
-  const sectionComplete = (section: string) => {
-    if (section === 'Style Information') return !!styleInfo.styleName && !!styleInfo.sku
-    if (section === 'Fabric & Material') return !!styleInfo.fabricContent
-    if (section === 'Measurements') return Object.keys(measurements).length > 0
-    if (section === 'Pantones') return pantones.length > 0
-    if (section === 'Graphic Placement') return placements.length > 0
-    if (section === 'Notes & Finishes') return !!styleInfo.supplierNotes
-    return true
-  }
+  const artworkUrl = state.logo?.dataUrl ?? null
+  const flatKind = FLAT_FOR_GARMENT[garmentType]
 
-  // ── Render ───────────────────────────────────────────────────────────────
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6 w-full">
 
-      <div className="mb-5 flex items-start justify-between">
-        <div>
-          <p className="phase-header">Phase 5</p>
-          <h1 className="text-xl font-bold text-gray-900">Tech Pack & Specifications</h1>
-          <p className="text-gray-500 text-sm mt-1">Measurements and placement auto-loaded for your {styleInfo.garmentType}</p>
+      {/* Back link */}
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-grace-stone hover:text-grace-ink transition-colors mb-5">
+        <ArrowLeft size={14}/> Back
+      </button>
+
+      {/* ── Completion banner ─────────────────────────────────────────────── */}
+      <div className="mb-6 rounded-2xl border border-grace-border bg-white px-6 py-5 flex items-center justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <div className="w-8 h-8 rounded-full bg-grace-ink flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 size={16} className="text-white" />
+          </div>
+          <div>
+            <p className="text-[9px] font-bold tracking-[0.24em] uppercase text-grace-stone mb-1">
+              Your Production Package Is Ready
+            </p>
+            <p className="text-[15px] font-black text-grace-ink uppercase tracking-tight leading-none">
+              {styleMeta.styleName || `GRACE ${GARMENT_LABEL[garmentType]}`}
+            </p>
+            <p className="text-[11px] text-grace-stone mt-1 leading-relaxed">
+              {GARMENT_LABEL[garmentType]}
+              {resolvedFit && <> · {fitLabel(resolvedFit)}</>}
+              {' · XS–3XL · '}
+              {styleMeta.season}
+            </p>
+          </div>
         </div>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
-          <ArrowLeft size={14}/> Back
+        <button
+          onClick={() => setStyleOpen(v => !v)}
+          className="shrink-0 flex items-center gap-1.5 text-[11px] font-semibold text-grace-stone hover:text-grace-ink border border-grace-border rounded-full px-3 py-1.5 transition-colors"
+        >
+          <Pencil size={11}/> Edit Style Details
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr_1fr_180px] gap-4">
-
-        {/* Col 1: Upload + sections */}
-        <div className="space-y-3">
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-2">Input Details</p>
-            <label className="btn-secondary w-full flex items-center justify-center gap-2 cursor-pointer mb-1.5">
-              <Upload size={13}/> Upload Tech Pack
-              <input type="file" className="hidden" accept=".json,.pdf,.xlsx" onChange={handleUpload}/>
-            </label>
-            <p className="text-[11px] text-gray-400 text-center">JSON, PDF, XLSX</p>
-            {uploadMsg && <p className="text-[11px] text-brand-green text-center mt-2">{uploadMsg}</p>}
+      {/* ── Style details panel ───────────────────────────────────────────── */}
+      {styleOpen && (
+        <div className="mb-5 card">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone">Style Details</p>
+            <button onClick={() => setStyleOpen(false)} className="text-grace-stone hover:text-grace-ink"><X size={14}/></button>
           </div>
-
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-2">Sections</p>
-            <div className="space-y-1.5">
-              {SECTIONS.map(s => (
-                <div key={s} className="flex items-center gap-2">
-                  <CheckCircle2 size={12} className={sectionComplete(s) ? 'text-brand-green' : 'text-gray-300'}/>
-                  <span className={`text-xs ${sectionComplete(s) ? 'text-gray-700' : 'text-gray-400'}`}>{s}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Col 2: Style Info */}
-        <div className="space-y-3">
-          <div className="card">
-            <p className="text-xs font-semibold text-gray-900 mb-4">Style Information</p>
-            <div className="space-y-3">
-              {([
-                ['Style Name',       'styleName',     'text'],
-                ['SKU / Style No.',  'sku',           'text'],
-                ['Revision',         'revision',      'text'],
-                ['Collection',       'collection',    'text'],
-                ['Brand Name',       'brandName',     'text'],
-                ['Client Name',      'clientName',    'text'],
-                ['Designer',         'designer',      'text'],
-                ['Fit Description',  'fitDescription','text'],
-              ] as [string, keyof StyleInfo, string][]).map(([label, key]) => (
-                <div key={key}>
-                  <label className="text-[11px] text-gray-500 mb-1 block">{label}</label>
-                  <input
-                    type="text"
-                    className="input-field text-xs py-2"
-                    value={styleInfo[key]}
-                    onChange={e => set(key, e.target.value)}
-                    placeholder={label}
-                  />
-                </div>
-              ))}
-              <div>
-                <label className="text-[11px] text-gray-500 mb-1 block">Date Created</label>
-                <input type="date" className="input-field text-xs py-2" value={styleInfo.dateCreated} onChange={e => set('dateCreated', e.target.value)}/>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {([
+              ['Style Name', 'styleName'], ['SKU / Style No.', 'sku'], ['Revision', 'revision'],
+              ['Brand Name', 'brandName'], ['Collection', 'collection'], ['Designer', 'designer'],
+              ['Client Name', 'clientName'], ['Fabric Content', 'fabricContent'], ['Fabric Weight (GSM)', 'fabricWeight'],
+              ['Construction', 'construction'], ['Care Instructions', 'careInstructions'],
+            ] as [string, keyof typeof styleMeta][]).map(([label, key]) => (
+              <div key={key}>
+                <label className="text-[10px] text-grace-stone mb-1 block">{label}</label>
+                <input
+                  className="w-full text-xs border border-grace-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-grace-ink bg-white"
+                  value={styleMeta[key]}
+                  onChange={e => setStyleMeta(s => ({ ...s, [key]: e.target.value }))}
+                  placeholder={label}
+                />
               </div>
-              <SelectField label="Season" value={styleInfo.season} onChange={v => set('season', v)} options={SEASONS}/>
-              <div>
-                <label className="text-[11px] text-gray-500 mb-1 block">Garment Type</label>
-                <p className="input-field text-xs py-2 text-gray-700">{styleInfo.garmentType}</p>
-              </div>
-              <SelectField label="Gender"       value={styleInfo.gender}      onChange={v => set('gender', v)}      options={GENDERS}/>
-              <SelectField label="Age Category" value={styleInfo.ageCategory} onChange={v => set('ageCategory', v)} options={AGE_CATEGORIES}/>
-              <SelectField label="Size Range"   value={styleInfo.sizeRange}   onChange={v => set('sizeRange', v)}   options={SIZE_RANGES}/>
+            ))}
+            <div>
+              <label className="text-[10px] text-grace-stone mb-1 block">Season</label>
+              <select className="w-full text-xs border border-grace-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-grace-ink bg-white"
+                value={styleMeta.season} onChange={e => setStyleMeta(s => ({ ...s, season: e.target.value }))}>
+                {SEASONS.map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-grace-stone mb-1 block">Gender</label>
+              <select className="w-full text-xs border border-grace-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-grace-ink bg-white"
+                value={styleMeta.gender} onChange={e => setStyleMeta(s => ({ ...s, gender: e.target.value }))}>
+                {GENDERS.map(o => <option key={o}>{o}</option>)}
+              </select>
             </div>
           </div>
-
-          {/* Fabric & Material */}
-          <div className="card">
-            <p className="text-xs font-semibold text-gray-900 mb-4">Fabric &amp; Material</p>
-            <div className="space-y-3">
-              {([
-                ['Fabric Content',     'fabricContent',     'e.g. 80% Cotton, 20% Polyester'],
-                ['Fabric Weight (GSM)','fabricWeight',      'e.g. 320 GSM'],
-                ['Construction',       'construction',      'e.g. French Terry, Fleece, Jersey'],
-                ['Fabric Finish',      'fabricFinish',      'e.g. Enzyme Wash, Garment Dye, Raw'],
-                ['Care Instructions',  'careInstructions',  'e.g. Cold wash, tumble dry low'],
-              ] as [string, keyof StyleInfo, string][]).map(([label, key, placeholder]) => (
-                <div key={key}>
-                  <label className="text-[11px] text-gray-500 mb-1 block">{label}</label>
-                  <input
-                    type="text"
-                    className="input-field text-xs py-2"
-                    value={styleInfo[key]}
-                    onChange={e => set(key, e.target.value)}
-                    placeholder={placeholder}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Supplier Notes */}
-          <div className="card">
-            <p className="text-xs font-semibold text-gray-900 mb-3">Notes to Supplier</p>
+          <div className="mt-3">
+            <label className="text-[10px] text-grace-stone mb-1 block">Notes to Supplier</label>
             <textarea
-              className="w-full text-xs rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-gray-700 focus:outline-none focus:border-brand-green resize-none"
-              rows={5}
-              placeholder="Special instructions, timeline requirements, quality standards, packaging notes, reference samples…"
-              value={styleInfo.supplierNotes}
-              onChange={e => set('supplierNotes', e.target.value)}
+              className="w-full text-xs border border-grace-border rounded-lg px-2.5 py-2 focus:outline-none focus:border-grace-ink bg-white resize-none"
+              rows={3}
+              value={styleMeta.supplierNotes}
+              onChange={e => setStyleMeta(s => ({ ...s, supplierNotes: e.target.value }))}
+              placeholder="Special instructions, timeline, quality standards…"
             />
           </div>
         </div>
+      )}
 
-        {/* Col 3: Measurements + Pantones + Placement */}
-        <div className="space-y-3">
-
-          {/* Measurements */}
-          <div className="card">
-            {/* Template tab bar — two rows: tops / bottoms */}
-            <div className="mb-3 space-y-1">
-              {[
-                ['T-Shirt', 'Hoodie', 'Crewneck', 'Zip Hoodie', 'Track Jacket', 'Windbreaker', 'Basketball Jersey'],
-                ['Sweatpants', 'Track Pants', 'Basketball Shorts'],
-              ].map((group, gi) => (
-                <div key={gi} className="flex flex-wrap gap-1">
-                  {group.map(t => (
-                    <button
-                      key={t}
-                      onClick={() => switchTemplate(t)}
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors whitespace-nowrap ${
-                        styleInfo.garmentType === t
-                          ? 'bg-brand-green text-white'
-                          : 'bg-slate-100 text-gray-500 hover:bg-slate-200'
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="text-xs font-semibold text-gray-900">Measurements (inches)</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">{styleInfo.garmentType} · {Object.keys(measurements).length} rows</p>
-              </div>
-              <button
-                onClick={handleAutoDetectMeasurements}
-                disabled={detectingMeasurements || (!state.garment?.dataUrl && !designImage)}
-                className="flex items-center gap-1.5 text-xs text-brand-green hover:text-brand-green-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
-              >
-                {detectingMeasurements ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Sparkles size={11}/> Auto Detect</>}
-              </button>
-            </div>
-
-            {measurementDetectInfo && <p className="text-[10px] text-brand-green bg-green-50 rounded-lg px-2.5 py-1.5 mb-2 leading-relaxed">{measurementDetectInfo}</p>}
-            {measurementDetectError && <p className="text-[10px] text-red-500 mb-2">{measurementDetectError}</p>}
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr>
-                    <th className="text-left text-gray-400 pb-2 pr-2 font-normal whitespace-nowrap text-[11px]">Point of Measure</th>
-                    {SIZES.map(s => <th key={s} className="text-center text-gray-400 pb-2 px-0.5 font-normal w-9 text-[11px]">{s}</th>)}
-                    <th className="w-6"/>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(measurements).map(([row, vals]) => (
-                    <tr key={row} className="border-t border-slate-100 group">
-                      <td className="py-1 pr-1">
-                        <input
-                          className="text-[11px] text-gray-600 bg-transparent focus:bg-slate-50 rounded px-1 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-brand-green/30"
-                          defaultValue={row}
-                          onBlur={e => updateRowLabel(row, e.target.value)}
-                        />
-                      </td>
-                      {vals.map((v, i) => (
-                        <td key={i} className="py-1 px-0.5">
-                          <input
-                            type="number"
-                            step="0.25"
-                            value={v}
-                            onChange={e => updateMeasurement(row, i, e.target.value)}
-                            className="w-9 bg-slate-50 border border-slate-200 rounded px-0.5 py-1 text-center text-gray-700 text-[11px] focus:outline-none focus:border-brand-green"
-                          />
-                        </td>
-                      ))}
-                      <td className="py-1 pl-1">
-                        <button
-                          onClick={() => removeRow(row)}
-                          className="text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <Trash2 size={11}/>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Add custom row */}
-            <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
-              <input
-                className="input-field text-xs py-1.5 flex-1"
-                placeholder="Add measurement row…"
-                value={newRowLabel}
-                onChange={e => setNewRowLabel(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addRow()}
-              />
-              <button onClick={addRow} className="btn-secondary px-3 shrink-0"><Plus size={13}/></button>
-            </div>
-          </div>
-
-          {/* Pantones */}
-          <div className="card">
-            <p className="text-xs font-semibold text-gray-900 mb-3">Pantones</p>
-            <div className="space-y-2 mb-3">
-              {pantones.map((p, i) => (
-                <div key={i} className="flex items-center gap-2 group">
-                  <input type="color" value={p.color} onChange={e => setPantones(ps => ps.map((x, j) => j === i ? { ...x, color: e.target.value } : x))} className="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer bg-transparent p-0.5"/>
-                  <input className="input-field text-xs py-1.5 flex-1" value={p.name} onChange={e => setPantones(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}/>
-                  <button onClick={() => setPantones(ps => ps.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={12}/></button>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input type="color" value={newPantoneColor} onChange={e => setNewPantoneColor(e.target.value)} className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer bg-transparent p-0.5 shrink-0"/>
-              <input className="input-field text-xs py-2 flex-1" placeholder="PANTONE 0000 C" value={newPantone} onChange={e => setNewPantone(e.target.value)} onKeyDown={e => e.key === 'Enter' && addPantone()}/>
-              <button onClick={addPantone} className="btn-secondary px-3"><Plus size={14}/></button>
-            </div>
-          </div>
-
-          {/* Graphic Placement */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-gray-900">Graphic Placement</p>
-              <button onClick={() => setPlacements(p => [...p, { location: '', description: '' }])} className="text-xs text-brand-green hover:text-brand-green-light flex items-center gap-1">
-                <Plus size={11}/> Add
-              </button>
-            </div>
+      {/* ── Section 1: Garment selector ───────────────────────────────────── */}
+      <div className="mb-6">
+        <div className="flex flex-wrap gap-1.5">
+          {PHASE5_GARMENTS.map(g => (
             <button
-              onClick={handleAutoDetect}
-              disabled={detecting || !designImage}
-              className="btn-primary w-full flex items-center justify-center gap-2 mb-3 disabled:opacity-50"
-              title={designImage ? 'Analyze design and auto-fill placement specs' : 'Confirm a design in Phase 3 first'}
+              key={g.key}
+              onClick={() => switchGarment(g.key)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-colors ${
+                g.key === garmentType
+                  ? 'bg-[#184D3E] text-white'
+                  : 'bg-white text-grace-stone hover:text-grace-ink border border-grace-border'
+              }`}
             >
-              {detecting ? <><Loader2 size={13} className="animate-spin"/> Analyzing design…</> : <><Sparkles size={13}/> Auto Detect Placement</>}
+              {g.label}
             </button>
-            {detectError && <p className="text-[11px] text-red-500 mb-2">{detectError}</p>}
-            <div className="space-y-2">
-              {placements.map((p, i) => (
-                <div key={i} className="bg-slate-50 rounded-lg p-2.5 space-y-2 group">
-                  <div className="flex items-center gap-2">
-                    <input className="input-field text-xs py-1.5 flex-1" value={p.location} onChange={e => setPlacements(ps => ps.map((x, j) => j === i ? { ...x, location: e.target.value } : x))} placeholder="Location (Front, Back…)"/>
-                    <button onClick={() => setPlacements(ps => ps.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"><Trash2 size={12}/></button>
-                  </div>
-                  <textarea className="textarea-field text-xs py-1.5" rows={Math.max(2, p.description.split('\n').length)} value={p.description} onChange={e => setPlacements(ps => ps.map((x, j) => j === i ? { ...x, description: e.target.value } : x))} placeholder="Description / dimensions"/>
-                </div>
-              ))}
-            </div>
-
-            {state.garment && (
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                {['Front', 'Back', 'Left Sleeve', 'Right Sleeve'].map(view => (
-                  <div key={view} className="text-center">
-                    <div className="bg-slate-50 rounded-lg flex items-center justify-center" style={{ height: 60 }}>
-                      {state.garment?.svg
-                        ? <div dangerouslySetInnerHTML={{ __html: state.garment.svg }} className="h-full [&>svg]:h-full [&>svg]:w-auto opacity-60" style={{ padding: 6 }}/>
-                        : <img src={state.garment?.dataUrl} alt={view} className="h-full w-full object-contain p-2 opacity-60"/>}
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1">{view}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          ))}
         </div>
-
-        {/* Col 4: Summary + Actions */}
-        <div className="space-y-3">
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-3">Summary</p>
-            <div className="space-y-2 text-xs">
-              {styleInfo.styleName && <SummaryRow label="Style" value={styleInfo.styleName}/>}
-              {styleInfo.sku && <SummaryRow label="SKU" value={styleInfo.sku}/>}
-              {styleInfo.revision && <SummaryRow label="Rev." value={styleInfo.revision}/>}
-              {styleInfo.season && <SummaryRow label="Season" value={styleInfo.season}/>}
-              {styleInfo.brandName && <SummaryRow label="Brand" value={styleInfo.brandName}/>}
-              {styleInfo.garmentType && <SummaryRow label="Type" value={styleInfo.garmentType}/>}
-              {styleInfo.gender && <SummaryRow label="Gender" value={styleInfo.gender}/>}
-              {styleInfo.sizeRange && <SummaryRow label="Sizes" value={styleInfo.sizeRange}/>}
-              <SummaryRow label="Rows" value={`${Object.keys(measurements).length} measurements`}/>
-            </div>
-          </div>
-
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-2">Sections</p>
-            <div className="space-y-1.5">
-              {SECTIONS.map(s => (
-                <div key={s} className="flex items-center gap-2">
-                  <CheckCircle2 size={11} className={sectionComplete(s) ? 'text-brand-green' : 'text-gray-300'}/>
-                  <span className={`text-[11px] leading-tight ${sectionComplete(s) ? 'text-gray-700' : 'text-gray-400'}`}>{s}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button
-            onClick={() => onSendToProduction({ styleInfo, measurements, pantones, placements })}
-            className="w-full flex items-center justify-center gap-2 bg-brand-green hover:bg-brand-green-light text-white font-medium py-3 px-4 rounded-xl transition-colors text-sm"
-          >
-            Send to Production <ArrowRight size={15}/>
-          </button>
-
-          <button onClick={downloadTechPack} className="btn-secondary w-full flex items-center justify-center gap-2">
-            <Save size={14}/> Save Tech Pack
-          </button>
-
-          <button onClick={downloadTechPack} className="btn-secondary w-full flex items-center justify-center gap-2">
-            <Download size={14}/> Download
-          </button>
-        </div>
-
       </div>
-    </div>
-  )
-}
 
-function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
-  return (
-    <div>
-      <label className="text-[11px] text-gray-500 mb-1 block">{label}</label>
-      <select className="input-field text-xs py-2" value={value} onChange={e => onChange(e.target.value)}>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  )
-}
+      {/* ── Section 2: Fit selector ───────────────────────────────────────── */}
+      <div className="mb-6 card">
+        <div className="flex items-start gap-4 flex-wrap">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+              <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Select Fit</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {library.availableFits.map(f => {
+                const selected = resolvedFit === f
+                return (
+                  <button
+                    key={f}
+                    onClick={() => setFit(f)}
+                    className={`px-4 py-2 rounded-full text-[12px] font-semibold tracking-wide transition-all ${
+                      selected
+                        ? 'bg-[#184D3E] text-white shadow-sm'
+                        : 'bg-white text-grace-stone hover:text-grace-ink border border-grace-border hover:border-grace-ink'
+                    }`}
+                  >
+                    {fitLabel(f)}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <p className="text-[10px] text-grace-stone max-w-[180px] leading-relaxed self-end pb-0.5">
+            Measurements are generated based on your selected fit. You can edit any size below.
+          </p>
+        </div>
+      </div>
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-2">
-      <span className="text-gray-500 shrink-0">{label}</span>
-      <span className="text-gray-700 truncate text-right">{value}</span>
+      {/* ── Section 3: Measurements + Technical Flat ─────────────────────── */}
+      <div className="mb-6 card">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+          <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">
+            Measurements
+          </p>
+          {/* Unit toggle */}
+          <div className="flex items-center rounded-full border border-grace-border overflow-hidden ml-2">
+            <button
+              onClick={() => setUnit('in')}
+              className={`px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${unit === 'in' ? 'bg-grace-ink text-white' : 'text-grace-stone hover:text-grace-ink'}`}
+            >
+              IN
+            </button>
+            <button
+              onClick={() => setUnit('cm')}
+              className={`px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${unit === 'cm' ? 'bg-grace-ink text-white' : 'text-grace-stone hover:text-grace-ink'}`}
+            >
+              CM
+            </button>
+          </div>
+          <span className="ml-auto text-[10px] text-grace-stone">{GARMENT_LABEL[garmentType]} · {guide?.rows.length ?? 0} rows</span>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Technical flat */}
+          <div className="flex items-start justify-center lg:justify-start shrink-0">
+            <TechFlat kind={flatKind} />
+          </div>
+
+          {/* Table */}
+          <div className="flex-1 min-w-0">
+            {guide ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-grace-border">
+                      <th className="text-left text-grace-stone text-[10px] font-semibold uppercase tracking-wider pb-2 pr-4">Point of Measure</th>
+                      {ALL_SIZES.map(s => (
+                        <th key={s} className="text-center text-grace-ink text-[11px] font-bold pb-2 px-1 min-w-[52px]">{s}</th>
+                      ))}
+                      <th className="w-6" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guide.rows.map(row => (
+                      <tr key={row.key} className="border-b border-grace-border last:border-0 group">
+                        <td className="py-2 pr-4 font-semibold text-grace-ink text-[12px] whitespace-nowrap">{row.label}</td>
+                        {ALL_SIZES.map(s => {
+                          const inchVal = row.values[s] ?? 0
+                          const displayVal = unit === 'cm'
+                            ? (inchVal * 2.54).toFixed(1)
+                            : inchVal.toString()
+                          return (
+                            <td key={s} className="py-2 px-1">
+                              <input
+                                type="number"
+                                step={unit === 'cm' ? '0.5' : '0.125'}
+                                value={displayVal}
+                                onChange={e => {
+                                  const raw = parseFloat(e.target.value)
+                                  const inVal = unit === 'cm' ? raw / 2.54 : raw
+                                  handleMeasurementEdit(row.key, s as SizeKey, inVal.toString())
+                                }}
+                                className="w-full text-center text-[12px] text-grace-ink bg-grace-mist/50 border border-grace-border rounded-lg px-1 py-1.5 focus:outline-none focus:border-grace-ink tabular-nums"
+                              />
+                            </td>
+                          )
+                        })}
+                        <td className="py-2 pl-1">
+                          <button
+                            onClick={() => resetRow(row.key)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-grace-stone hover:text-grace-ink"
+                            title="Reset to default"
+                          >
+                            <Pencil size={11}/>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-grace-stone py-4">No measurements available for this garment.</p>
+            )}
+
+            <p className="mt-3 text-[10px] text-grace-stone leading-relaxed">
+              Only the {guide?.rows.length ?? 4} core measurements are shown. Additional technical specifications are automatically included in your production package.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Section 4: Pantones + Graphic Placement ───────────────────────── */}
+      <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        {/* Pantones */}
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+            <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Pantones</p>
+          </div>
+          <div className="space-y-2 mb-3">
+            {pantones.map((p, i) => (
+              <div key={i} className="relative flex items-center gap-2.5 group">
+                <span className="w-8 h-8 rounded-lg border border-grace-border shrink-0 cursor-pointer relative overflow-hidden">
+                  <span className="absolute inset-0" style={{ backgroundColor: p.color }} />
+                  <input
+                    type="color"
+                    value={p.color}
+                    onChange={e => setPantones(ps => ps.map((x, j) => j === i ? { ...x, color: e.target.value } : x))}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                </span>
+                <span className="flex-1 text-[12px] font-semibold text-grace-ink">{p.name}</span>
+                <div className="relative">
+                  <button
+                    onClick={() => setOpenPantoneMenu(openPantoneMenu === i ? null : i)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-grace-stone hover:text-grace-ink p-1"
+                  >
+                    <MoreVertical size={13}/>
+                  </button>
+                  {openPantoneMenu === i && (
+                    <div className="absolute right-0 top-full z-10 mt-1 w-28 bg-white border border-grace-border rounded-lg shadow-lg py-1">
+                      <button
+                        onClick={() => { setPantones(ps => ps.filter((_, j) => j !== i)); setOpenPantoneMenu(null) }}
+                        className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-grace-mist"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Add Pantone */}
+          <div className="flex items-center gap-2 pt-2 border-t border-grace-border">
+            <span className="w-8 h-8 rounded-lg border border-grace-border shrink-0 relative overflow-hidden">
+              <span className="absolute inset-0" style={{ backgroundColor: newPantoneColor }} />
+              <input
+                type="color"
+                value={newPantoneColor}
+                onChange={e => setNewPantoneColor(e.target.value)}
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+              />
+            </span>
+            <input
+              className="flex-1 text-[11px] border border-grace-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-grace-ink"
+              placeholder="PANTONE 0000 C"
+              value={newPantoneName}
+              onChange={e => setNewPantoneName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && newPantoneName.trim()) {
+                  setPantones(p => [...p, { color: newPantoneColor, name: newPantoneName.trim() }])
+                  setNewPantoneName('')
+                  setNewPantoneColor('#888888')
+                }
+              }}
+            />
+            <button
+              onClick={() => {
+                if (!newPantoneName.trim()) return
+                setPantones(p => [...p, { color: newPantoneColor, name: newPantoneName.trim() }])
+                setNewPantoneName('')
+                setNewPantoneColor('#888888')
+              }}
+              className="text-[11px] font-semibold text-grace-stone hover:text-grace-ink"
+            >
+              <Plus size={14}/>
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              setPantones(p => [...p, { color: '#888888', name: '' }])
+            }}
+            className="mt-2 w-full text-[11px] text-grace-stone hover:text-grace-ink font-medium flex items-center justify-center gap-1"
+          >
+            <Plus size={11}/> Add Pantone
+          </button>
+        </div>
+
+        {/* Graphic Placement */}
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-6 h-6 rounded-full bg-[#184D3E] text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
+            <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-grace-ink">Graphic Placement</p>
+          </div>
+          <div className="space-y-3 mb-3">
+            {(drawingM?.placements ?? []).filter(p => ['center_chest', 'left_chest', 'left_hip', 'right_hip'].includes(p.location)).map((p, i) => (
+              <div key={i} className="flex items-start gap-3">
+                {artworkUrl ? (
+                  <img src={artworkUrl} alt="logo" className="w-12 h-12 object-contain rounded-lg border border-grace-border bg-grace-mist p-1 shrink-0"/>
+                ) : (
+                  <div className="w-12 h-12 rounded-lg border border-grace-border bg-grace-mist shrink-0 flex items-center justify-center">
+                    <span className="text-[8px] text-grace-stone font-bold uppercase tracking-wider text-center">Logo</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[12px] font-bold text-grace-ink leading-none">
+                        {p.location.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
+                      </p>
+                      <p className="text-[10px] text-grace-stone mt-0.5">{p.label}</p>
+                    </div>
+                    <button className="text-grace-stone hover:text-grace-ink p-1 shrink-0"><MoreVertical size={12}/></button>
+                  </div>
+                  <div className="mt-1.5 grid grid-cols-2 gap-x-3">
+                    <div>
+                      <p className="text-[9px] text-grace-stone uppercase tracking-wider font-semibold">Size</p>
+                      <p className="text-[11px] font-semibold text-grace-ink tabular-nums">
+                        {formatInches(p.widthInches)}" W × {formatInches(p.heightInches)}" H
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-grace-stone uppercase tracking-wider font-semibold">Offset</p>
+                      <p className="text-[11px] font-semibold text-grace-ink tabular-nums">
+                        {formatInches(p.yOffsetInches)}" below collar
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            className="w-full text-[11px] text-grace-stone hover:text-grace-ink font-medium flex items-center justify-center gap-1 pt-2 border-t border-grace-border"
+          >
+            <Plus size={11}/> Add Placement
+          </button>
+          <p className="mt-2 text-[9px] text-grace-stone leading-relaxed">
+            Placement measurements are based on the selected size and fit.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Production actions ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <button
+          onClick={handleSaveDraft}
+          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-grace-border bg-white text-grace-ink text-[12px] font-bold tracking-widest uppercase hover:bg-grace-mist transition-colors"
+        >
+          <Save size={14}/> {saved ? 'Saved!' : 'Save Draft'}
+        </button>
+        <button
+          onClick={handleDownload}
+          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-grace-ink text-white text-[12px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors"
+        >
+          <Download size={14}/> Download Tech Pack (PDF)
+        </button>
+        <button
+          onClick={() => onSendToProduction(buildTechPackData())}
+          className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#184D3E] text-white text-[12px] font-bold tracking-widest uppercase hover:bg-[#0f3328] transition-colors"
+        >
+          <Send size={14}/> Send to Production
+        </button>
+      </div>
+
+      <p className="text-[10px] text-grace-stone text-center leading-relaxed">
+        Your tech pack includes all measurements, construction details, and placements ready for production.
+      </p>
     </div>
   )
 }

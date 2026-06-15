@@ -6,70 +6,7 @@ interface Props {
   onSelfService:        () => void
   onCreativeDirection:  () => void
   onSignIn?:            () => void
-}
-
-function GraceMark({ size = 32 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-label="GRACE mark">
-      <circle cx="24" cy="24" r="23" stroke="#0A0A0A" strokeWidth="2"/>
-      <circle cx="24" cy="24" r="7" fill="#C8372D"/>
-    </svg>
-  )
-}
-
-const PHASES = [
-  {
-    number: '01',
-    label: 'Logo & Brand Mark',
-    description: 'Generate your logo with AI or upload your own. White backgrounds are removed automatically for clean placement.',
-    tags: ['AI Generation', 'Upload', 'Auto BG Removal'],
-  },
-  {
-    number: '02',
-    label: 'Create Your Garment',
-    description: 'Describe your blank garment and generate Clean or Realistic renders — or upload your own product photos.',
-    tags: ['Text to Garment', 'Clean & Realistic', 'Multi-View'],
-  },
-  {
-    number: '03',
-    label: 'Apply Design',
-    description: 'Position, scale, and rotate your logo on the garment with a live canvas editor. Confirm to lock in placement.',
-    tags: ['Live Editor', 'Drag & Drop', 'Precision Placement'],
-  },
-  {
-    number: '04',
-    label: 'Preview in Reality',
-    description: 'Generate photorealistic product renders. Describe the scene, lighting, or model to direct the shot exactly how you want.',
-    tags: ['Photorealistic', 'Custom Prompt', 'Studio Quality'],
-  },
-  {
-    number: '05',
-    label: 'Tech Pack',
-    description: 'Full spec sheet with AI-detected measurements, Pantone colors, graphic placement specs, and graded sizing across XS–3XL.',
-    tags: ['Auto-Detect', 'Grade Rules', 'Pantones'],
-  },
-  {
-    number: '06',
-    label: 'Send to Production',
-    description: 'Email the complete production package — logo, garment, tech pack — directly to your supplier, or download as a ZIP.',
-    tags: ['Email Supplier', 'ZIP Download', 'One Click'],
-  },
-]
-
-const FEATURES = [
-  'AI-generated garments and logos',
-  'Automatic white background removal',
-  'Canvas-based design placement editor',
-  'Photorealistic product visualization',
-  'Auto-detected measurements from garment image',
-  'Graded sizing tables (XS–3XL)',
-  '10 garment type measurement templates',
-  'AI graphic placement detection',
-  'Pantone color management',
-  'One-click supplier email with attachments',
-]
-
-export default function LandingPage({ onSelfService, onCreativeDirection, onSignIn }: Props) {
+export default function LandingPage({ onSelfService, onCreativeDirection, onSignIn, onSignUp }: Props) {
   return (
     <div className="min-h-screen bg-white text-grace-ink overflow-y-auto">
 
@@ -84,6 +21,11 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onSign
             {onSignIn && (
               <button onClick={onSignIn} className="btn-secondary py-2 text-[10px]">
                 Sign In
+              </button>
+            )}
+            {onSignUp && (
+              <button onClick={onSignUp} className="py-2 px-4 rounded-full bg-grace-ink text-white text-[10px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors">
+                Sign Up
               </button>
             )}
           </div>
