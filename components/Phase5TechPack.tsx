@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Upload, Download, Save, CheckCircle2, ArrowLeft, Trash2, ArrowRight, Sparkles, Loader2 } from 'lucide-react'
+import { Plus, Upload, Download, Save, CheckCircle2, ArrowLeft, Trash2, ArrowRight, Sparkles, Loader2, Send, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { AppState } from '@/app/page'
 import type { TechPackData } from '@/components/Phase6Production'
 
@@ -226,6 +226,10 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
   const [newPantoneColor, setNewPantoneColor] = useState('#888888')
   const [placements, setPlacements] = useState([{ location: 'Front', description: 'Center chest logo placement' }])
   const [uploadMsg, setUploadMsg] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [specOpen, setSpecOpen] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [detectError, setDetectError] = useState('')
   const [detectingMeasurements, setDetectingMeasurements] = useState(false)
@@ -388,6 +392,12 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
     URL.revokeObjectURL(url)
   }
 
+  const handleSaveDraft = () => {
+    downloadTechPack()
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+  }
+
   const addPantone = () => {
     if (!newPantone.trim()) return
     setPantones(p => [...p, { color: newPantoneColor, name: newPantone.trim() }])
@@ -407,20 +417,170 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  return (
-    <div className="p-6">
+  const flatImage = designImage || state.garment?.dataUrl || ''
+  const constructionNotes = [
+    styleInfo.fabricContent && `Fabric: ${styleInfo.fabricContent}`,
+    styleInfo.fabricWeight && `Weight: ${styleInfo.fabricWeight}`,
+    styleInfo.construction && `Construction: ${styleInfo.construction}`,
+    styleInfo.fabricFinish && `Finish: ${styleInfo.fabricFinish}`,
+    styleInfo.careInstructions && `Care: ${styleInfo.careInstructions}`,
+    styleInfo.supplierNotes && `Notes: ${styleInfo.supplierNotes}`,
+  ].filter(Boolean) as string[]
 
-      <div className="mb-5 flex items-start justify-between">
-        <div>
-          <p className="phase-header">Phase 5</p>
-          <h1 className="text-xl font-bold text-gray-900">Tech Pack & Specifications</h1>
-          <p className="text-gray-500 text-sm mt-1">Measurements and placement auto-loaded for your {styleInfo.garmentType}</p>
-        </div>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
+  return (
+    <div className="p-4 md:p-6 max-w-[900px]">
+
+      {/* Top bar */}
+      <div className="mb-6 flex items-center justify-between">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-grace-stone hover:text-grace-ink transition-colors">
           <ArrowLeft size={14}/> Back
+        </button>
+        <button
+          onClick={() => setEditing(e => !e)}
+          className="flex items-center gap-1.5 text-[11px] font-medium text-grace-stone hover:text-grace-ink transition-colors"
+        >
+          <Pencil size={12}/> {editing ? 'Done editing' : 'Edit details'}
         </button>
       </div>
 
+      {/* Review view */}
+      {!editing && (
+        <div>
+          {/* Hero completion state */}
+          <div className="mb-7 rounded-2xl border border-grace-border bg-grace-mist/40 px-6 py-7 flex flex-col sm:flex-row sm:items-center gap-5">
+            <div className="w-12 h-12 rounded-full bg-grace-ink flex items-center justify-center shrink-0">
+              <CheckCircle2 size={22} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone mb-0.5">Production Package</p>
+              <h1 className="text-2xl font-black text-grace-ink uppercase tracking-tight leading-tight">
+                Your production package is ready.
+              </h1>
+              <p className="text-grace-stone text-sm mt-1">
+                {styleInfo.styleName} · {styleInfo.garmentType} · {styleInfo.fitDescription} · {styleInfo.sizeRange} · {styleInfo.season}
+              </p>
+            </div>
+          </div>
+
+          {/* Technical flat — centerpiece */}
+          <div className="card mb-4 flex items-center justify-center bg-grace-mist/30 py-8">
+            {flatImage ? (
+              state.garment?.svg
+                ? <div dangerouslySetInnerHTML={{ __html: state.garment.svg }} className="[&>svg]:max-h-[360px] [&>svg]:w-auto" />
+                : <img src={flatImage} alt={styleInfo.garmentType} className="max-h-[360px] w-auto object-contain" />
+            ) : (
+              <p className="text-sm text-grace-stone">Technical flat will appear once your garment is generated.</p>
+            )}
+          </div>
+
+          {/* Pantones */}
+          <div className="card mb-4">
+            <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone mb-3">Colorway · Pantones</p>
+            <div className="flex flex-wrap gap-3">
+              {pantones.map((p, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-full border border-grace-border pl-1.5 pr-3 py-1.5">
+                  <span className="w-6 h-6 rounded-full border border-grace-border shrink-0" style={{ backgroundColor: p.color }} />
+                  <span className="text-[12px] font-semibold text-grace-ink">{p.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Graphic placements — informational */}
+          <div className="card mb-4">
+            <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone mb-3">Graphic Placement</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {placements.map((p, i) => (
+                <div key={i} className="rounded-xl border border-grace-border px-4 py-3 bg-grace-mist/30">
+                  <p className="text-[12px] font-bold text-grace-ink mb-0.5">{p.location || 'Placement'}</p>
+                  <p className="text-[11px] text-grace-stone leading-tight whitespace-pre-line">{p.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Measurement spec — collapsed, supplier-facing */}
+          <div className="card mb-4">
+            <button onClick={() => setSpecOpen(v => !v)} className="w-full flex items-center justify-between text-left">
+              <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone">
+                Measurement Spec · Graded {styleInfo.sizeRange}
+              </p>
+              {specOpen ? <ChevronUp size={15} className="text-grace-stone"/> : <ChevronDown size={15} className="text-grace-stone"/>}
+            </button>
+            {specOpen && (
+              <div className="mt-3 pt-3 border-t border-grace-border overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-grace-border">
+                      <th className="text-left font-semibold text-grace-stone text-[10px] uppercase tracking-wider py-2 pr-2">Point of Measure</th>
+                      {SIZES.map(s => <th key={s} className="text-center font-bold text-grace-ink py-2 px-1 min-w-[34px]">{s}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(measurements).map(([row, vals]) => (
+                      <tr key={row} className="border-b border-grace-border last:border-0">
+                        <td className="py-1.5 pr-2 font-semibold text-grace-ink text-[11px]">{row}</td>
+                        {vals.map((v, i) => (
+                          <td key={i} className="py-1.5 px-1 text-center text-grace-ink tabular-nums text-[11px]">{v}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Construction notes — collapsed */}
+          {constructionNotes.length > 0 && (
+            <div className="card mb-6">
+              <button onClick={() => setNotesOpen(v => !v)} className="w-full flex items-center justify-between text-left">
+                <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone">Construction & Materials</p>
+                {notesOpen ? <ChevronUp size={15} className="text-grace-stone"/> : <ChevronDown size={15} className="text-grace-stone"/>}
+              </button>
+              {notesOpen && (
+                <ul className="mt-3 space-y-1.5 pt-3 border-t border-grace-border">
+                  {constructionNotes.map((note, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[12px] text-grace-ink">
+                      <span className="mt-1.5 w-1 h-1 rounded-full bg-grace-ink shrink-0" />
+                      {note}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Primary actions */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={handleSaveDraft}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-full border border-grace-border bg-white text-grace-ink text-[12px] font-bold tracking-widest uppercase hover:bg-grace-mist transition-colors"
+            >
+              <Save size={14}/> {saved ? 'Saved!' : 'Save Draft'}
+            </button>
+            <button
+              onClick={downloadTechPack}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-full bg-grace-ink text-white text-[12px] font-bold tracking-widest uppercase hover:bg-zinc-800 transition-colors"
+            >
+              <Download size={14}/> Download Tech Pack
+            </button>
+            <button
+              onClick={() => onSendToProduction({ styleInfo, measurements, pantones, placements })}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-full bg-grace-red text-white text-[12px] font-bold tracking-widest uppercase hover:bg-red-700 transition-colors"
+            >
+              <Send size={14}/> Send to Production
+            </button>
+          </div>
+
+          <p className="text-[10px] text-grace-stone mt-5 text-center">
+            Generated by GRACE · Review your package, then approve and continue.
+          </p>
+        </div>
+      )}
+
+      {/* Edit (builder) view */}
+      {editing && (
       <div className="grid grid-cols-1 lg:grid-cols-[180px_1fr_1fr_180px] gap-4">
 
         {/* Col 1: Upload + sections */}
@@ -741,6 +901,7 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
         </div>
 
       </div>
+      )}
     </div>
   )
 }
