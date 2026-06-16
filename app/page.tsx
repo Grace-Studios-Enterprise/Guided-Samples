@@ -133,7 +133,11 @@ function App() {
 
   const goToPhase = (phase: number) => {
     setSection('design')
-    setState(s => ({ ...s, currentPhase: phase }))
+    setState(s => {
+      const next = { ...s, currentPhase: phase }
+      autoSave(next)
+      return next
+    })
     setSidebarOpen(false)
   }
 
