@@ -267,26 +267,29 @@ export default function Phase5TechPack({ state, onBack, onSendToProduction }: Pr
               Your Production Package Is Ready
             </p>
             <p className="text-[15px] font-black text-grace-ink uppercase tracking-tight leading-none">
-              {styleMeta.styleName || `GRACE ${GARMENT_LABEL[garmentType]}`}
+              {isUniform
+                ? (teamInfo.teamName || `${teamInfo.sport} Team`)
+                : (styleMeta.styleName || `GRACE ${GARMENT_LABEL[garmentType]}`)}
             </p>
             <p className="text-[11px] text-grace-stone mt-1 leading-relaxed">
-              {GARMENT_LABEL[garmentType]}
-              {resolvedFit && <> · {fitLabel(resolvedFit)}</>}
-              {' · XS–3XL · '}
-              {styleMeta.season}
+              {isUniform
+                ? `${teamInfo.sport} · ${teamInfo.uniformType}`
+                : <>{GARMENT_LABEL[garmentType]}{resolvedFit && <> · {fitLabel(resolvedFit)}</>}{' · XS–3XL · '}{styleMeta.season}</>}
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setStyleOpen(v => !v)}
-          className="shrink-0 flex items-center gap-1.5 text-[11px] font-semibold text-grace-stone hover:text-grace-ink border border-grace-border rounded-full px-3 py-1.5 transition-colors relative"
-        >
-          {!styleMeta.styleName && (<span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-grace-red animate-pulse" />)}<Pencil size={11}/> {styleOpen ? 'Close Details' : 'Edit Style Details'}
-        </button>
+        {!isUniform && (
+          <button
+            onClick={() => setStyleOpen(v => !v)}
+            className="shrink-0 flex items-center gap-1.5 text-[11px] font-semibold text-grace-stone hover:text-grace-ink border border-grace-border rounded-full px-3 py-1.5 transition-colors relative"
+          >
+            {!styleMeta.styleName && (<span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-grace-red animate-pulse" />)}<Pencil size={11}/> {styleOpen ? 'Close Details' : 'Edit Style Details'}
+          </button>
+        )}
       </div>
 
-      {/* ── Style details panel ───────────────────────────────────────────── */}
-      {styleOpen && (
+      {/* ── Style details panel (apparel only) ──────────────────────────────── */}
+      {!isUniform && styleOpen && (
         <div className="mb-5 card">
           <div className="flex items-center justify-between mb-4">
             <p className="text-[10px] font-bold tracking-[0.22em] uppercase text-grace-stone">Style Details</p>
