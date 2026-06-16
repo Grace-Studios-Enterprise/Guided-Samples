@@ -18,6 +18,8 @@ export type ProjectDetail = Project & {
   preview_urls?: string[]
   garment_type?: string
   garment_color?: string
+  // Full restorable snapshot of AppState with images stored as public URLs.
+  design_state?: AppState | null
   tech_pack?: {
     style_info: Record<string, string>
     measurements: Record<string, number[]>
@@ -47,6 +49,21 @@ async function uploadImage(supabase: ReturnType<typeof createClient>, userId: st
   }
 }
 
+// Persist an image, returning its public URL. Images already stored (http URLs,
+// e.g. from a restored project) are passed through untouched rather than being
+// re-uploaded as if they were base64 — which would fail and drop the image.
+async function persistImage(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  projectId: string,
+  type: string,
+  img: string | null | undefined,
+): Promise<string | null> {
+  if (!img) return null
+  if (/^https?:\/\//.test(img)) return img
+  return uploadImage(supabase, userId, projectId, type, img)
+}
+
 export async function saveProject(
   userId: string,
   state: AppState,
@@ -69,14 +86,37 @@ export async function saveProject(
 
   // Upload images in parallel
   const uploads = await Promise.all([
-    state.logo?.dataUrl     ? uploadImage(supabase, userId, id, 'logo', state.logo.dataUrl) : Promise.resolve(null),
-    state.garment?.dataUrl  ? uploadImage(supabase, userId, id, 'garment', state.garment.dataUrl) : Promise.resolve(null),
-    state.design?.previewDataUrl ? uploadImage(supabase, userId, id, 'composite', state.design.previewDataUrl) : Promise.resolve(null),
-    ...(state.preview?.images ?? []).map((img, i) => uploadImage(supabase, userId, id, `preview_${i}`, img)),
+    persistImage(supabase, userId, id, 'logo', state.logo?.dataUrl),
+    persistImage(supabase, userId, id, 'garment', state.garment?.dataUrl),
+    persistImage(supabase, userId, id, 'composite', state.design?.previewDataUrl),
+    ...(state.preview?.images ?? []).map((img, i) => persistImage(supabase, userId, id, `preview_${i}`, img)),
   ])
 
   const [logoUrl, garmentUrl, compositeUrl, ...previewUrls] = uploads
+  const previews = previewUrls.filter((u): u is string => !!u)
   const thumbnail = compositeUrl ?? garmentUrl ?? logoUrl
+
+  // Per-view garment images (front/back/side) — uploaded so a restored project
+  // keeps every angle, not just the primary view.
+  const viewKeys = ['front', 'back', 'side'] as const
+  const viewUploads = await Promise.all(
+    viewKeys.map(k => persistImage(supabase, userId, id, `view_${k}`, state.garment?.views?.[k])),
+  )
+  const viewUrls: { front?: string; back?: string; side?: string } = {}
+  viewKeys.forEach((k, i) => { if (viewUploads[i]) viewUrls[k] = viewUploads[i]! })
+
+  // Self-contained snapshot for restore-on-open. Image fields hold storage URLs.
+  const designState: AppState = {
+    currentPhase: state.currentPhase,
+    logo: state.logo ? { svg: state.logo.svg, dataUrl: logoUrl ?? '', style: state.logo.style, color: state.logo.color } : null,
+    garment: state.garment ? {
+      svg: state.garment.svg, dataUrl: garmentUrl ?? '', views: viewUrls,
+      type: state.garment.type, color: state.garment.color,
+      mode: state.garment.mode, sport: state.garment.sport, uniformType: state.garment.uniformType,
+    } : null,
+    design: state.design ? { confirmed: state.design.confirmed, previewDataUrl: compositeUrl ?? '' } : null,
+    preview: previews.length ? { images: previews } : null,
+  }
 
   // Update project with urls
   await supabase.from('projects').update({
@@ -86,7 +126,8 @@ export async function saveProject(
     logo_url: logoUrl,
     garment_url: garmentUrl,
     composite_url: compositeUrl,
-    preview_urls: previewUrls.filter(Boolean),
+    preview_urls: previews,
+    design_state: designState,
   }).eq('id', id)
 
   return id

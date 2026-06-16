@@ -80,10 +80,23 @@ function App() {
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin')
   const projectIdRef = useRef<string | undefined>(undefined)
 
+  // Resolve the user id from the live Supabase session, falling back to the
+  // context user. Both save paths use this so a project can never be written
+  // under a different user_id than the one listProjects() later queries with.
+  const resolveUid = async (): Promise<string | null> => {
+    const sb = createClient()
+    if (sb) {
+      const { data: { session } } = await sb.auth.getSession()
+      if (session?.user?.id) return session.user.id
+    }
+    return user?.id ?? null
+  }
+
   // Auto-save to Supabase whenever phase advances
   const autoSave = async (newState: AppState) => {
-    if (!user) return
-    const id = await saveProject(user.id, newState, projectIdRef.current)
+    const uid = await resolveUid()
+    if (!uid) return
+    const id = await saveProject(uid, newState, projectIdRef.current)
     if (id) projectIdRef.current = id
   }
 
@@ -99,10 +112,7 @@ function App() {
   // Reads the live session so it works immediately after sign-in at checkout,
   // before the `user` state from context has re-rendered.
   const ensureProject = async (): Promise<string | null> => {
-    const sb = createClient()
-    if (!sb) return null
-    const { data: { session } } = await sb.auth.getSession()
-    const uid = session?.user?.id
+    const uid = await resolveUid()
     if (!uid) return null
 
     const id = await saveProject(uid, state, projectIdRef.current)
@@ -131,19 +141,24 @@ function App() {
     setSidebarOpen(false)
   }
 
-  // Rebuild the in-memory AppState from a saved project row. We persist rendered
-  // image URLs (not the original SVG source), so restored logo/garment objects
-  // carry the public URL in `dataUrl` — enough to view and continue the design.
-  const restoreState = (d: ProjectDetail): AppState => ({
-    currentPhase: d.phase_reached ?? 1,
-    logo: d.logo_url ? { svg: '', dataUrl: d.logo_url, style: '', color: '' } : null,
-    garment: d.garment_url ? {
-      svg: '', dataUrl: d.garment_url, views: {},
-      type: d.garment_type ?? '', color: d.garment_color ?? '',
-    } : null,
-    design: d.composite_url ? { confirmed: true, previewDataUrl: d.composite_url } : null,
-    preview: d.preview_urls?.length ? { images: d.preview_urls } : null,
-  })
+  // Rebuild the in-memory AppState from a saved project row. Newer rows carry a
+  // full design_state snapshot (SVG source, logo style, per-view images, and
+  // uniform metadata) and restore exactly. Legacy rows saved before that column
+  // existed fall back to the dedicated image columns — viewable, but missing the
+  // SVG source and uniform metadata that weren't persisted at the time.
+  const restoreState = (d: ProjectDetail): AppState => {
+    if (d.design_state) return d.design_state
+    return {
+      currentPhase: d.phase_reached ?? 1,
+      logo: d.logo_url ? { svg: '', dataUrl: d.logo_url, style: '', color: '' } : null,
+      garment: d.garment_url ? {
+        svg: '', dataUrl: d.garment_url, views: {},
+        type: d.garment_type ?? '', color: d.garment_color ?? '',
+      } : null,
+      design: d.composite_url ? { confirmed: true, previewDataUrl: d.composite_url } : null,
+      preview: d.preview_urls?.length ? { images: d.preview_urls } : null,
+    }
+  }
 
   const openProject = async (id: string) => {
     projectIdRef.current = id
