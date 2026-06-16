@@ -169,9 +169,9 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
         {/* Left */}
         <div className="space-y-3">
 
-          {/* Source toggle */}
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-3">Source</p>
+          {/* Source + AI generation — kept together so the AI flow reads as one continuous step */}
+          <div className="card space-y-3">
+            <p className="text-xs font-medium text-gray-600 mb-1">Source</p>
             <div className="space-y-2">
               {([
                 ['generate', Cpu,    'Generate with AI',  'Describe the garment you want'],
@@ -191,6 +191,55 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
                 </button>
               ))}
             </div>
+
+            {/* Generate options — prompt, reference image, and the generate action all live with the AI source toggle */}
+            {mode === 'generate' && (
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-2 block">Describe your garment</label>
+                  <textarea className="textarea-field" rows={4} value={prompt}
+                    onChange={e => setPrompt(e.target.value)} placeholder="Describe the garment in detail..."/>
+                </div>
+
+                {/* Reference image */}
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-2 block">Reference photo <span className="text-gray-400 font-normal">(optional)</span></label>
+                  {referenceImage ? (
+                    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-white" style={{ height: 160 }}>
+                      <img src={referenceImage} alt="Reference" className="w-full h-full object-contain p-2"/>
+                      <button onClick={() => setReferenceImage(null)}
+                        className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow">
+                        <X size={12}/>
+                      </button>
+                      <span className="absolute bottom-2 left-2 text-[10px] text-white bg-black/50 rounded px-1.5 py-0.5">Reference</span>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-brand-green cursor-pointer transition-colors bg-slate-50 hover:bg-brand-green/5" style={{ height: 120 }}>
+                      <ImagePlus size={20} className="text-gray-300"/>
+                      <span className="text-xs text-gray-400 hover:text-gray-600">Upload a reference photo</span>
+                      <span className="text-[11px] text-gray-300">or click to browse</span>
+                      <input type="file" className="hidden" accept="image/*"
+                        onChange={e => {
+                          const file = e.target.files?.[0]; if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = ev => setReferenceImage(ev.target?.result as string)
+                          reader.readAsDataURL(file); e.target.value = ''
+                        }}/>
+                    </label>
+                  )}
+                </div>
+
+                <button onClick={handleGenerateAll} disabled={isLoading}
+                  className="btn-primary w-full flex items-center justify-center gap-2">
+                  {isLoading ? <><Loader2 size={14} className="animate-spin"/> {statusMsg || 'Generating…'}</> : <><Sparkles size={14}/> Generate Garment</>}
+                </button>
+                <GenerationCounter className="w-full justify-center" />
+
+                {Object.entries(errors).filter(([, v]) => v).map(([view, msg]) => (
+                  <p key={view} className="text-[11px] text-red-500">{view}: {msg}</p>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* View selector */}
@@ -213,55 +262,6 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
               })}
             </div>
           </div>
-
-          {/* Generate options */}
-          {mode === 'generate' && (
-            <div className="card space-y-3">
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-2 block">Describe your garment</label>
-                <textarea className="textarea-field" rows={4} value={prompt}
-                  onChange={e => setPrompt(e.target.value)} placeholder="Describe the garment in detail..."/>
-              </div>
-
-              {/* Reference image */}
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-2 block">Reference photo <span className="text-gray-400 font-normal">(optional)</span></label>
-                {referenceImage ? (
-                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-white" style={{ height: 160 }}>
-                    <img src={referenceImage} alt="Reference" className="w-full h-full object-contain p-2"/>
-                    <button onClick={() => setReferenceImage(null)}
-                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow">
-                      <X size={12}/>
-                    </button>
-                    <span className="absolute bottom-2 left-2 text-[10px] text-white bg-black/50 rounded px-1.5 py-0.5">Reference</span>
-                  </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-brand-green cursor-pointer transition-colors bg-slate-50 hover:bg-brand-green/5" style={{ height: 120 }}>
-                    <ImagePlus size={20} className="text-gray-300"/>
-                    <span className="text-xs text-gray-400 hover:text-gray-600">Upload a reference photo</span>
-                    <span className="text-[11px] text-gray-300">or click to browse</span>
-                    <input type="file" className="hidden" accept="image/*"
-                      onChange={e => {
-                        const file = e.target.files?.[0]; if (!file) return
-                        const reader = new FileReader()
-                        reader.onload = ev => setReferenceImage(ev.target?.result as string)
-                        reader.readAsDataURL(file); e.target.value = ''
-                      }}/>
-                  </label>
-                )}
-              </div>
-
-              <button onClick={handleGenerateAll} disabled={isLoading}
-                className="btn-primary w-full flex items-center justify-center gap-2">
-                {isLoading ? <><Loader2 size={14} className="animate-spin"/> {statusMsg || 'Generating…'}</> : <><Sparkles size={14}/> Generate Garment</>}
-              </button>
-              <GenerationCounter className="w-full justify-center" />
-
-              {Object.entries(errors).filter(([, v]) => v).map(([view, msg]) => (
-                <p key={view} className="text-[11px] text-red-500">{view}: {msg}</p>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Center */}
@@ -618,9 +618,9 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
             )}
           </div>
 
-          {/* Source toggle */}
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-3">Source</p>
+          {/* Source + AI generation — kept together so the AI flow reads as one continuous step */}
+          <div className="card space-y-3">
+            <p className="text-xs font-medium text-gray-600 mb-1">Source</p>
             <div className="space-y-2">
               {([
                 ['generate', Cpu,    'Generate with AI',  'Describe the uniform you want'],
@@ -640,6 +640,46 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
                 </button>
               ))}
             </div>
+
+            {/* Generate options — prompt, reference image, and the generate action all live with the AI source toggle */}
+            {mode === 'generate' && (
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-2 block">Describe your uniform</label>
+                  <textarea className="textarea-field" rows={4} value={prompt}
+                    onChange={e => setPrompt(e.target.value)} placeholder="Describe the uniform in detail..."/>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-2 block">Reference photo <span className="text-gray-400 font-normal">(optional)</span></label>
+                  {referenceImage ? (
+                    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-white" style={{ height: 160 }}>
+                      <img src={referenceImage} alt="Reference" className="w-full h-full object-contain p-2"/>
+                      <button onClick={() => setReferenceImage(null)} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow"><X size={12}/></button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-brand-green cursor-pointer transition-colors bg-slate-50 hover:bg-brand-green/5" style={{ height: 120 }}>
+                      <ImagePlus size={20} className="text-gray-300"/>
+                      <span className="text-xs text-gray-400">Upload a reference photo</span>
+                      <input type="file" className="hidden" accept="image/*" onChange={e => {
+                        const file = e.target.files?.[0]; if (!file) return
+                        const reader = new FileReader()
+                        reader.onload = ev => setReferenceImage(ev.target?.result as string)
+                        reader.readAsDataURL(file); e.target.value = ''
+                      }}/>
+                    </label>
+                  )}
+                </div>
+                <button onClick={handleGenerateAll} disabled={isLoading || !sport || !uniformType}
+                  className="btn-primary w-full flex items-center justify-center gap-2">
+                  {isLoading ? <><Loader2 size={14} className="animate-spin"/> {statusMsg || 'Generating…'}</> : <><Sparkles size={14}/> Generate Uniform</>}
+                </button>
+                <GenerationCounter className="w-full justify-center" />
+                {!sport || !uniformType ? <p className="text-[11px] text-gray-400 text-center">Select sport and uniform type first</p> : null}
+                {Object.entries(errors).filter(([, v]) => v).map(([view, msg]) => (
+                  <p key={view} className="text-[11px] text-red-500">{view}: {msg}</p>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* View selector */}
@@ -660,46 +700,6 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
               })}
             </div>
           </div>
-
-          {/* Generate options */}
-          {mode === 'generate' && (
-            <div className="card space-y-3">
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-2 block">Describe your uniform</label>
-                <textarea className="textarea-field" rows={4} value={prompt}
-                  onChange={e => setPrompt(e.target.value)} placeholder="Describe the uniform in detail..."/>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-2 block">Reference photo <span className="text-gray-400 font-normal">(optional)</span></label>
-                {referenceImage ? (
-                  <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-white" style={{ height: 160 }}>
-                    <img src={referenceImage} alt="Reference" className="w-full h-full object-contain p-2"/>
-                    <button onClick={() => setReferenceImage(null)} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow"><X size={12}/></button>
-                  </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-brand-green cursor-pointer transition-colors bg-slate-50 hover:bg-brand-green/5" style={{ height: 120 }}>
-                    <ImagePlus size={20} className="text-gray-300"/>
-                    <span className="text-xs text-gray-400">Upload a reference photo</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={e => {
-                      const file = e.target.files?.[0]; if (!file) return
-                      const reader = new FileReader()
-                      reader.onload = ev => setReferenceImage(ev.target?.result as string)
-                      reader.readAsDataURL(file); e.target.value = ''
-                    }}/>
-                  </label>
-                )}
-              </div>
-              <button onClick={handleGenerateAll} disabled={isLoading || !sport || !uniformType}
-                className="btn-primary w-full flex items-center justify-center gap-2">
-                {isLoading ? <><Loader2 size={14} className="animate-spin"/> {statusMsg || 'Generating…'}</> : <><Sparkles size={14}/> Generate Uniform</>}
-              </button>
-              <GenerationCounter className="w-full justify-center" />
-              {!sport || !uniformType ? <p className="text-[11px] text-gray-400 text-center">Select sport and uniform type first</p> : null}
-              {Object.entries(errors).filter(([, v]) => v).map(([view, msg]) => (
-                <p key={view} className="text-[11px] text-red-500">{view}: {msg}</p>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Center */}
