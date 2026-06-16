@@ -108,26 +108,6 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onSign
         {/* Path picker */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto mb-20">
 
-          {/* Self Service */}
-          <button
-            onClick={onSelfService}
-            className="group text-left bg-grace-ink hover:bg-zinc-800 transition-all p-7 rounded-2xl flex flex-col gap-4"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase">Self Service</span>
-              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/60 tracking-widest uppercase">Recommended</span>
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-white uppercase tracking-tight mb-2">Build It Yourself</h2>
-              <p className="text-xs text-white/60 leading-relaxed">
-                Generate a logo and garment, apply your design, build a full tech pack, and send straight to production — all in 6 guided phases.
-              </p>
-            </div>
-            <span className="flex items-center gap-1 text-xs font-bold text-white mt-auto tracking-widest uppercase">
-              Open Studio <ArrowRight size={12}/>
-            </span>
-          </button>
-
           {/* Creative Direction */}
           <button
             onClick={onCreativeDirection}
@@ -145,6 +125,25 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onSign
             </div>
             <span className="flex items-center gap-1 text-xs font-bold text-grace-ink mt-auto tracking-widest uppercase">
               Submit Brief <ArrowRight size={12}/>
+            </span>
+          </button>
+
+          {/* Self Service */}
+          <button
+            onClick={onSelfService}
+            className="group text-left bg-grace-ink hover:bg-zinc-800 transition-all p-7 rounded-2xl flex flex-col gap-4"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold tracking-[0.2em] text-white/40 uppercase">Self Service</span>
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-white uppercase tracking-tight mb-2">Build It Yourself</h2>
+              <p className="text-xs text-white/60 leading-relaxed">
+                Generate a logo and garment, apply your design, build a full tech pack, and send straight to production — all in 6 guided phases.
+              </p>
+            </div>
+            <span className="flex items-center gap-1 text-xs font-bold text-white mt-auto tracking-widest uppercase">
+              Open Studio <ArrowRight size={12}/>
             </span>
           </button>
 
