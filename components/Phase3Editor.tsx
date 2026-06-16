@@ -366,13 +366,13 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                 className="w-full accent-brand-green"
               />
               <div className="flex items-center justify-between mt-2 gap-1.5">
-                <button onClick={() => setGarmentScale(s => Math.max(25, s - 10))} className="btn-secondary px-1 min-w-0 flex-1 py-1 flex items-center justify-center">
+                <button onClick={() => setGarmentScale(s => Math.max(25, s - 10))} className="btn-secondary px-0 py-1 w-8 h-8 shrink-0 flex items-center justify-center">
                   <Minus size={12}/>
                 </button>
-                <button onClick={() => setGarmentScale(100)} className="btn-secondary px-1 min-w-0 flex-1 py-1 text-xs normal-case tracking-normal">
+                <button onClick={() => setGarmentScale(100)} className="btn-secondary px-2 py-1 flex-1 text-[11px] normal-case tracking-normal whitespace-nowrap">
                   Reset
                 </button>
-                <button onClick={() => setGarmentScale(s => Math.min(200, s + 10))} className="btn-secondary px-1 min-w-0 flex-1 py-1 flex items-center justify-center">
+                <button onClick={() => setGarmentScale(s => Math.min(200, s + 10))} className="btn-secondary px-0 py-1 w-8 h-8 shrink-0 flex items-center justify-center">
                   <Plus size={12}/>
                 </button>
               </div>
