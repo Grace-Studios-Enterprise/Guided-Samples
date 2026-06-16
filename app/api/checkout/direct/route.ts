@@ -22,13 +22,13 @@ export async function POST(req: NextRequest) {
   if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { design_order_id, garment_type, style_name, extra_logos, quantity, size_breakdown, notes } = await req.json()
+  const { design_order_id, garment_type, is_uniform, style_name, extra_logos, quantity, size_breakdown, notes } = await req.json()
 
   if (!garment_type) {
     return NextResponse.json({ error: 'garment_type is required' }, { status: 400 })
   }
 
-  const garmentPrice = productionPriceCents(garment_type)
+  const garmentPrice = productionPriceCents(garment_type, !!is_uniform)
   const extraLogoCount = Number(extra_logos ?? 0)
   const extraLogoFee = extraLogoCount * EXTRA_LOGO_FEE_CENTS
 
@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
       design_order_id: design_order_id ?? '',
       user_id: user.id,
       garment_type,
+      is_uniform: String(!!is_uniform),
       style_name: style_name ?? '',
       extra_logos: String(extraLogoCount),
       quantity: String(qty),

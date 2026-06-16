@@ -27,25 +27,29 @@ export const PRODUCTION_PRICE_CENTS: Record<string, number> = {
   'Track Pants':        3_500, // $35
   'Windbreaker':        4_000, // $40
   'Basketball Jersey':  2_000, // $20
-  'Basketball Shorts':  2_500, // $25
+  'Shorts':             3_500, // $35 — same as Sweatpants
   'Sweatpants':         3_500, // $35
 }
 
 // Fallback used when a garment type isn't in the table above.
 const DEFAULT_PRODUCTION_PRICE_CENTS = 3_500 // $35
 
+// Team uniform orders are priced flat regardless of garment subtype.
+export const UNIFORM_PRODUCTION_PRICE_CENTS = 6_500 // $65
+
 // Bulk production quantity bounds. MOQ (minimum order quantity) is 15 pieces.
 export const MIN_PRODUCTION_QUANTITY = 15
 export const MAX_PRODUCTION_QUANTITY = 100_000
 
-/** Per-piece production (bulk) price for a garment type. */
-export function productionPriceCents(garmentType: string): number {
+/** Per-piece production (bulk) price for a garment type. Uniform orders are a flat rate. */
+export function productionPriceCents(garmentType: string, isUniform?: boolean): number {
+  if (isUniform) return UNIFORM_PRODUCTION_PRICE_CENTS
   return PRODUCTION_PRICE_CENTS[garmentType] ?? DEFAULT_PRODUCTION_PRICE_CENTS
 }
 
 /** Sample price for a garment type — double the per-piece production price. */
-export function samplePriceCents(garmentType: string): number {
-  return productionPriceCents(garmentType) * 2
+export function samplePriceCents(garmentType: string, isUniform?: boolean): number {
+  return productionPriceCents(garmentType, isUniform) * 2
 }
 
 /** Clamp/normalise a client-supplied quantity to a safe integer in range. */

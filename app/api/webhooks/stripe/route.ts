@@ -100,9 +100,9 @@ async function handleSamplePayment(
   const sb = createWebhookClient()
   if (!sb) return
 
-  const { design_order_id, user_id, garment_type, extra_logos, size_breakdown } = meta
+  const { design_order_id, user_id, garment_type, is_uniform, extra_logos, size_breakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
-  const garmentPrice = productionPriceCents(garment_type)
+  const garmentPrice = productionPriceCents(garment_type, is_uniform === 'true')
   const breakdown = normalizeBreakdown(size_breakdown ? JSON.parse(size_breakdown) : null)
   const sampleQty = Math.max(1, sumBreakdown(breakdown))
 
@@ -159,9 +159,9 @@ async function handleDirectDeposit(
   const sb = createWebhookClient()
   if (!sb) return
 
-  const { design_order_id, user_id, garment_type, extra_logos, quantity, size_breakdown: rawBreakdown } = meta
+  const { design_order_id, user_id, garment_type, is_uniform, extra_logos, quantity, size_breakdown: rawBreakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
-  const garmentPrice = productionPriceCents(garment_type)
+  const garmentPrice = productionPriceCents(garment_type, is_uniform === 'true')
   const breakdown = normalizeBreakdown(rawBreakdown ? JSON.parse(rawBreakdown) : null)
   const breakdownTotal = sumBreakdown(breakdown)
   const qty = clampQuantity(breakdownTotal > 0 ? breakdownTotal : (quantity ?? '1'))

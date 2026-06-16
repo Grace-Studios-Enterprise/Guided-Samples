@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   if (!sb) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 })
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { design_order_id, garment_type, style_name, extra_logos, size_breakdown, notes } = await req.json()
+  const { design_order_id, garment_type, is_uniform, style_name, extra_logos, size_breakdown, notes } = await req.json()
 
   const { data: project, error: projectError } = await sb
     .from('projects')
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
   const extraLogosCount = Number(extra_logos) || 0
-  const sampleFeeCents = samplePriceCents(garment_type)
+  const sampleFeeCents = samplePriceCents(garment_type, !!is_uniform)
 
   const breakdown = normalizeBreakdown(size_breakdown)
   const sampleCount = Math.max(1, sumBreakdown(breakdown))
@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
       design_order_id,
       user_id: user.id,
       garment_type,
+      is_uniform: String(!!is_uniform),
       style_name: style_name ?? '',
       extra_logos: String(extraLogosCount),
       size_breakdown: JSON.stringify(breakdown),

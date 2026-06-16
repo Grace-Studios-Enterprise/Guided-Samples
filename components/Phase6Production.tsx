@@ -22,9 +22,12 @@ const GARMENT_PRICES: Record<string, number> = {
   'Track Pants': 35,
   'Windbreaker': 40,
   'Basketball Jersey': 20,
-  'Basketball Shorts': 25,
+  'Shorts': 35,
   'Sweatpants': 35,
 }
+
+// Team uniform orders are priced flat regardless of garment subtype. Mirrors lib/pricing.ts.
+const UNIFORM_PRICE = 65
 
 interface Props {
   state: AppState
@@ -59,7 +62,8 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
   const preview = state.design?.previewDataUrl || state.preview?.images?.[0]
 
   const garmentType = techPack.styleInfo.garmentType || state.garment?.type || 'T-Shirt'
-  const garmentPrice = GARMENT_PRICES[garmentType] ?? 35
+  const isUniform = state.garment?.mode === 'uniform'
+  const garmentPrice = isUniform ? UNIFORM_PRICE : (GARMENT_PRICES[garmentType] ?? 35)
   const styleName = techPack.styleInfo.styleName ?? ''
 
   const logoCount = techPack.placements.length
@@ -118,6 +122,7 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
         body: JSON.stringify({
           design_order_id: pid,
           garment_type: garmentType,
+          is_uniform: isUniform,
           style_name: styleName,
           extra_logos: extraLogos,
           size_breakdown: path === 'direct' ? directBreakdown : sampleBreakdown,
