@@ -365,14 +365,22 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                 onChange={e => setGarmentScale(parseInt(e.target.value))}
                 className="w-full accent-brand-green"
               />
-              <div className="flex items-center justify-between mt-2 gap-1.5">
-                <button onClick={() => setGarmentScale(s => Math.max(25, s - 10))} className="btn-secondary px-0 py-1 w-8 h-8 shrink-0 flex items-center justify-center">
+              <div className="grid grid-cols-[28px_1fr_28px] gap-1.5 mt-2">
+                <button
+                  onClick={() => setGarmentScale(s => Math.max(25, s - 10))}
+                  aria-label="Decrease garment size"
+                  className="h-7 rounded-md border border-slate-200 text-gray-500 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center transition-colors">
                   <Minus size={12}/>
                 </button>
-                <button onClick={() => setGarmentScale(100)} className="btn-secondary px-2 py-1 flex-1 text-[11px] normal-case tracking-normal whitespace-nowrap">
+                <button
+                  onClick={() => setGarmentScale(100)}
+                  className="h-7 rounded-md border border-slate-200 text-[11px] font-medium text-gray-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
                   Reset
                 </button>
-                <button onClick={() => setGarmentScale(s => Math.min(200, s + 10))} className="btn-secondary px-0 py-1 w-8 h-8 shrink-0 flex items-center justify-center">
+                <button
+                  onClick={() => setGarmentScale(s => Math.min(200, s + 10))}
+                  aria-label="Increase garment size"
+                  className="h-7 rounded-md border border-slate-200 text-gray-500 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center transition-colors">
                   <Plus size={12}/>
                 </button>
               </div>
