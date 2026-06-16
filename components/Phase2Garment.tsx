@@ -452,13 +452,13 @@ const SPORTS = ['Basketball', 'Football', 'Soccer', 'Baseball', 'Track', 'Volley
 type Sport = typeof SPORTS[number]
 
 const UNIFORM_TYPES: Record<Sport, string[]> = {
-  Basketball: ['Game Uniform', 'Practice Uniform'],
-  Football:   ['Game Uniform', 'Practice Uniform'],
-  Soccer:     ['Game Uniform', 'Practice Uniform'],
-  Baseball:   ['Game Uniform', 'Practice Uniform'],
-  Track:      ['Competition Uniform', 'Practice Uniform'],
-  Volleyball: ['Game Uniform', 'Practice Uniform'],
-  '7v7':      ['Game Uniform', 'Practice Uniform'],
+  Basketball: ['Game Uniform', 'Practice Uniform', 'Reversible Jersey'],
+  Football:   ['Game Uniform', 'Practice Uniform', 'Reversible Jersey'],
+  Soccer:     ['Game Uniform', 'Practice Uniform', 'Reversible Jersey'],
+  Baseball:   ['Game Uniform', 'Practice Uniform', 'Reversible Jersey'],
+  Track:      ['Competition Uniform', 'Practice Uniform', 'Reversible Jersey'],
+  Volleyball: ['Game Uniform', 'Practice Uniform', 'Reversible Jersey'],
+  '7v7':      ['Game Uniform', 'Practice Uniform', 'Reversible Jersey'],
 }
 
 // ─── Uniform flow — same garment creation UI with sport/type selectors in the left panel ───

@@ -35,21 +35,25 @@ export const PRODUCTION_PRICE_CENTS: Record<string, number> = {
 const DEFAULT_PRODUCTION_PRICE_CENTS = 3_500 // $35
 
 // Team uniform orders are priced flat regardless of garment subtype.
-export const UNIFORM_PRODUCTION_PRICE_CENTS = 6_500 // $65
+export const UNIFORM_PRODUCTION_PRICE_CENTS = 4_000 // $40
+
+// Reversible jerseys are a flat rate, regardless of sport.
+export const REVERSIBLE_JERSEY_PRODUCTION_PRICE_CENTS = 8_000 // $80
 
 // Bulk production quantity bounds. MOQ (minimum order quantity) is 15 pieces.
 export const MIN_PRODUCTION_QUANTITY = 15
 export const MAX_PRODUCTION_QUANTITY = 100_000
 
-/** Per-piece production (bulk) price for a garment type. Uniform orders are a flat rate. */
-export function productionPriceCents(garmentType: string, isUniform?: boolean): number {
+/** Per-piece production (bulk) price for a garment type. Uniform orders are a flat rate; reversible jerseys are a separate flat rate. */
+export function productionPriceCents(garmentType: string, isUniform?: boolean, isReversible?: boolean): number {
+  if (isReversible) return REVERSIBLE_JERSEY_PRODUCTION_PRICE_CENTS
   if (isUniform) return UNIFORM_PRODUCTION_PRICE_CENTS
   return PRODUCTION_PRICE_CENTS[garmentType] ?? DEFAULT_PRODUCTION_PRICE_CENTS
 }
 
 /** Sample price for a garment type — double the per-piece production price. */
-export function samplePriceCents(garmentType: string, isUniform?: boolean): number {
-  return productionPriceCents(garmentType, isUniform) * 2
+export function samplePriceCents(garmentType: string, isUniform?: boolean, isReversible?: boolean): number {
+  return productionPriceCents(garmentType, isUniform, isReversible) * 2
 }
 
 /** Clamp/normalise a client-supplied quantity to a safe integer in range. */

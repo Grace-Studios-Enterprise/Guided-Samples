@@ -27,7 +27,9 @@ const GARMENT_PRICES: Record<string, number> = {
 }
 
 // Team uniform orders are priced flat regardless of garment subtype. Mirrors lib/pricing.ts.
-const UNIFORM_PRICE = 65
+const UNIFORM_PRICE = 40
+// Reversible jerseys are a flat rate, regardless of sport. Mirrors lib/pricing.ts.
+const REVERSIBLE_JERSEY_PRICE = 80
 
 interface Props {
   state: AppState
@@ -63,7 +65,8 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
 
   const garmentType = techPack.styleInfo.garmentType || state.garment?.type || 'T-Shirt'
   const isUniform = state.garment?.mode === 'uniform'
-  const garmentPrice = isUniform ? UNIFORM_PRICE : (GARMENT_PRICES[garmentType] ?? 35)
+  const isReversible = state.garment?.uniformType === 'Reversible Jersey'
+  const garmentPrice = isReversible ? REVERSIBLE_JERSEY_PRICE : isUniform ? UNIFORM_PRICE : (GARMENT_PRICES[garmentType] ?? 35)
   const styleName = techPack.styleInfo.styleName ?? ''
 
   const logoCount = techPack.placements.length
@@ -123,6 +126,7 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
           design_order_id: pid,
           garment_type: garmentType,
           is_uniform: isUniform,
+          is_reversible: isReversible,
           style_name: styleName,
           extra_logos: extraLogos,
           size_breakdown: path === 'direct' ? directBreakdown : sampleBreakdown,
