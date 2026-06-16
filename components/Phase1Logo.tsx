@@ -4,9 +4,11 @@ import { useState, useRef } from 'react'
 import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, Upload, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { exportAsset } from '@/lib/export'
-import { streamGenerate } from '@/lib/streamGenerate'
+import { streamGenerate, PaywallError } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 import { removeWhiteBackground } from '@/lib/removeWhiteBg'
+import { useAICredits } from '@/lib/aiCreditsContext'
+import GenerationCounter from '@/components/GenerationCounter'
 
 interface Props {
   state: AppState
@@ -29,6 +31,7 @@ const EXAMPLES = [
 ]
 
 export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
+  const credits = useAICredits()
   const [prompt, setPrompt] = useState(
     state.logo ? '' : 'Create a vintage athletic logo for my brand called GRACE. Make it minimal with an arrow element. Use forest green.'
   )
@@ -83,15 +86,19 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
     }
 
     try {
+      const headers = await credits.getGenerationHeaders()
       const data = await streamGenerate<LogoResult>(
         '/api/generate-logo',
         { prompt, referenceImage },
         msg => setStatusMsg(msg),
+        headers,
       )
       cacheSet(key, data)
       setResult(data)
       setSelectedVariant(0)
+      credits.onGenerationComplete()
     } catch (e) {
+      if (e instanceof PaywallError) { credits.openPaywall(); return }
       console.error(e)
       setError('Generation failed. Please try again.')
     } finally {
@@ -170,6 +177,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
               {loading ? <Loader2 size={15} className="animate-spin"/> : <Sparkles size={15}/>}
               {loading ? (statusMsg || 'Generating…') : 'Generate Logo'}
             </button>
+            <GenerationCounter className="mt-2 w-full justify-center" />
             {error && <p className="text-[11px] text-red-500 mt-2">{error}</p>}
 
             {/* Reference image */}

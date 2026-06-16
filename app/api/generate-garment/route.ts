@@ -1,17 +1,27 @@
 import { NextRequest } from 'next/server'
 import { garmentPrompt } from '@/lib/prompts'
+import { getRouteUser } from '@/lib/supabase-server'
+import { checkAndConsume } from '@/lib/aiCredits'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
-export async function POST(req: NextRequest) {
-  const { prompt, referenceImage, view, frontImage } = await req.json()
+function sseError(message: string) {
+  return new Response(`data: ${JSON.stringify({ type: 'error', message })}\n\n`, {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+  })
+}
 
-  if (!prompt) {
-    return new Response(`data: ${JSON.stringify({ type: 'error', message: 'Prompt required' })}\n\n`, {
-      status: 400, headers: { 'Content-Type': 'text/event-stream' },
-    })
-  }
+export async function POST(req: NextRequest) {
+  const body = await req.json()
+  const { prompt, referenceImage, view, frontImage, projectId } = body
+
+  if (!prompt) return sseError('Prompt required')
+
+  // Credit enforcement — check before starting the expensive OpenAI call
+  const { user } = await getRouteUser(req)
+  const credit = await checkAndConsume(req, user?.id, projectId)
+  if (!credit.allowed) return sseError('PAYWALL')
 
   const { readable, writable } = new TransformStream()
   const writer = writable.getWriter()

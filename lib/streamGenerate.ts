@@ -1,6 +1,14 @@
 // Streaming SSE client for generation endpoints.
 // Calls onStatus for each status event, returns the complete payload.
 
+/** Thrown when the server rejects the request due to insufficient AI credits. */
+export class PaywallError extends Error {
+  constructor() {
+    super('PAYWALL')
+    this.name = 'PaywallError'
+  }
+}
+
 type SSEEvent =
   | { type: 'status'; message: string }
   | { type: 'complete'; [key: string]: unknown }
@@ -10,10 +18,14 @@ export async function streamGenerate<T>(
   url: string,
   body: unknown,
   onStatus: (msg: string) => void,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
     body: JSON.stringify(body),
   })
   if (!res.body) throw new Error('No response body from server')
@@ -34,7 +46,10 @@ export async function streamGenerate<T>(
       try { event = JSON.parse(line.slice(6)) } catch { continue }
       if (event.type === 'status') onStatus(event.message)
       if (event.type === 'complete') return event as unknown as T
-      if (event.type === 'error') throw new Error(event.message)
+      if (event.type === 'error') {
+        if (event.message === 'PAYWALL') throw new PaywallError()
+        throw new Error(event.message)
+      }
     }
   }
   throw new Error('Stream ended without a completion event')

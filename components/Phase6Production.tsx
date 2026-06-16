@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowLeft, Download, CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, CreditCard, ShieldCheck, Clock, Zap, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle2, Loader2, AlertCircle, Image as ImageIcon, CreditCard, ShieldCheck, Clock, Zap, ArrowRight, Sparkles } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { createClient } from '@/lib/supabase'
 import AuthModal from '@/components/AuthModal'
 import SizeBreakdownPicker from '@/components/SizeBreakdownPicker'
 import { emptyBreakdown, sumBreakdown, type SizeBreakdown } from '@/lib/sizes'
-import { MIN_PRODUCTION_QUANTITY } from '@/lib/pricing'
+import { MIN_PRODUCTION_QUANTITY, ACTIVATION_FEE_CENTS } from '@/lib/pricing'
+import { useAICredits } from '@/lib/aiCreditsContext'
 
 const LOGO_FEE = 4
 const ACTIVATION_FEE = 25
@@ -42,6 +43,7 @@ export interface TechPackData {
 }
 
 export default function Phase6Production({ state, techPack, onBack, projectId, onEnsureProject, onExpertHelp }: Props) {
+  const { spendCents } = useAICredits()
   const [notes, setNotes] = useState('')
   const [sampleLoading, setSampleLoading] = useState(false)
   const [directLoading, setDirectLoading] = useState(false)
@@ -314,11 +316,29 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
                   />
                 </div>
 
+                {spendCents > 0 && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-grace-mist border border-grace-border mb-3">
+                    <Sparkles size={12} className="text-grace-ink mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-semibold text-grace-ink leading-tight">
+                        Your previous AI purchases have been applied toward activation.
+                      </p>
+                      <p className="text-[10px] text-grace-stone mt-0.5">
+                        ${(Math.min(spendCents, ACTIVATION_FEE_CENTS) / 100).toFixed(2)} applied · ${(Math.max(0, ACTIVATION_FEE_CENTS - spendCents) / 100).toFixed(2)} due
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="border border-slate-100 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">What you pay today</p>
                   <div className="flex justify-between text-gray-600">
                     <span>Activation Fee</span>
-                    <span>${ACTIVATION_FEE}.00</span>
+                    {spendCents >= ACTIVATION_FEE_CENTS
+                      ? <span className="line-through text-gray-300">${ACTIVATION_FEE}.00</span>
+                      : spendCents > 0
+                        ? <span>${(( ACTIVATION_FEE_CENTS - spendCents) / 100).toFixed(2)} <span className="text-grace-stone">(was ${ACTIVATION_FEE})</span></span>
+                        : <span>${ACTIVATION_FEE}.00</span>
+                    }
                   </div>
                   <div className="flex justify-between text-gray-600">
                     <span>Sample Fee ({sampleQty} pc{sampleQty > 1 ? 's' : ''} × ${sampleFee})</span>

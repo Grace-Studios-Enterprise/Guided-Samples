@@ -10,6 +10,7 @@ import {
   clampQuantity,
 } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
+import { addCredits, applyActivationUnlock } from '@/lib/aiCredits'
 
 // The webhook runs as trusted server code with no user session. It MUST use the
 // service-role key to bypass row-level security — the anon key would be blocked
@@ -59,7 +60,9 @@ export async function POST(req: NextRequest) {
   const meta = session.metadata ?? {}
   const { payment_type } = meta
 
-  if (payment_type === 'sample') {
+  if (payment_type === 'credit_purchase') {
+    await handleCreditPurchase(session, meta)
+  } else if (payment_type === 'sample') {
     await handleSamplePayment(session, meta)
   } else if (payment_type === 'direct_deposit') {
     await handleDirectDeposit(session, meta)
@@ -72,6 +75,22 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ received: true })
+}
+
+async function handleCreditPurchase(
+  session: Stripe.Checkout.Session,
+  meta: Record<string, string>,
+) {
+  const { user_id, credits, amount_cents } = meta
+  if (!user_id) return
+
+  await addCredits(
+    user_id,
+    parseInt(credits ?? '0', 10),
+    parseInt(amount_cents ?? '0', 10),
+    session.id,
+  )
+  console.log('[stripe-webhook] AI credits added for user', user_id, '+', credits)
 }
 
 async function handleSamplePayment(
@@ -119,6 +138,11 @@ async function handleSamplePayment(
     console.error('[stripe-webhook] sample insert failed:', insertError)
   } else {
     console.log('[stripe-webhook] sample order created for user', user_id)
+    // Enable unlimited AI for this project and record any credit offset applied
+    const aiSpendApplied = parseInt(meta.ai_spend_applied_cents ?? '0', 10)
+    if (design_order_id && user_id) {
+      await applyActivationUnlock(user_id, design_order_id, aiSpendApplied)
+    }
   }
 
   const { error: lockError } = await sb
@@ -175,6 +199,10 @@ async function handleDirectDeposit(
     console.error('[stripe-webhook] direct insert failed:', insertError)
   } else {
     console.log('[stripe-webhook] direct order created for user', user_id)
+    const aiSpendApplied = parseInt(meta.ai_spend_applied_cents ?? '0', 10)
+    if (design_order_id && user_id) {
+      await applyActivationUnlock(user_id, design_order_id, aiSpendApplied)
+    }
   }
 
   const { error: lockError } = await sb

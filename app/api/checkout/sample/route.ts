@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
 import { ACTIVATION_FEE_CENTS, EXTRA_LOGO_FEE_CENTS, samplePriceCents } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
+import { getActivationOffset } from '@/lib/aiCredits'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -36,34 +37,42 @@ export async function POST(req: NextRequest) {
   const extraLogosCount = Number(extra_logos) || 0
   const sampleFeeCents = samplePriceCents(garment_type)
 
-  // Samples have no MOQ. A size breakdown is optional — default to a single piece.
   const breakdown = normalizeBreakdown(size_breakdown)
   const sampleCount = Math.max(1, sumBreakdown(breakdown))
 
-  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-    {
+  // Apply any prior AI credit spend toward the $25 activation fee
+  const { offsetCents } = await getActivationOffset(user.id)
+  const activationDueCents = Math.max(0, ACTIVATION_FEE_CENTS - offsetCents)
+
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = []
+
+  if (activationDueCents > 0) {
+    lineItems.push({
       price_data: {
         currency: 'usd',
         product_data: {
           name: 'GRACE Order Activation Fee',
-          description: 'One-time activation per production order',
+          description: offsetCents > 0
+            ? `$25 activation · $${(offsetCents / 100).toFixed(2)} AI credit applied`
+            : 'One-time activation per production order',
         },
-        unit_amount: ACTIVATION_FEE_CENTS,
+        unit_amount: activationDueCents,
       },
       quantity: 1,
-    },
-    {
-      price_data: {
-        currency: 'usd',
-        product_data: {
-          name: `${garment_type} Sample`,
-          description: style_name ? `Style: ${style_name}` : 'Sample production',
-        },
-        unit_amount: sampleFeeCents,
+    })
+  }
+
+  lineItems.push({
+    price_data: {
+      currency: 'usd',
+      product_data: {
+        name: `${garment_type} Sample`,
+        description: style_name ? `Style: ${style_name}` : 'Sample production',
       },
-      quantity: sampleCount,
+      unit_amount: sampleFeeCents,
     },
-  ]
+    quantity: sampleCount,
+  })
 
   if (extraLogosCount > 0) {
     lineItems.push({
@@ -91,6 +100,7 @@ export async function POST(req: NextRequest) {
       extra_logos: String(extraLogosCount),
       size_breakdown: JSON.stringify(breakdown),
       notes: notes ?? '',
+      ai_spend_applied_cents: String(offsetCents),
     },
     success_url: `${origin}/track?payment=sample_success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/track?payment=cancelled`,

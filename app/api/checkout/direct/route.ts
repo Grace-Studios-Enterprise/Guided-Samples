@@ -10,6 +10,7 @@ import {
   depositCents,
 } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
+import { getActivationOffset } from '@/lib/aiCredits'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -45,26 +46,48 @@ export async function POST(req: NextRequest) {
   const subtotal = bulkSubtotalCents(garmentPrice, extraLogoFee, qty)
   const depositAmount = depositCents(subtotal)
 
+  // Apply any prior AI credit spend toward the $25 activation fee
+  const { offsetCents } = await getActivationOffset(user.id)
+  const activationDueCents = Math.max(0, 2500 - offsetCents) // $25 = 2500 cents
+
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
 
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = []
+
+  if (activationDueCents > 0) {
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: 'GRACE Order Activation Fee',
+          description: offsetCents > 0
+            ? `$25 activation · $${(offsetCents / 100).toFixed(2)} AI credit applied`
+            : 'One-time activation per production order',
+        },
+        unit_amount: activationDueCents,
+      },
+      quantity: 1,
+    })
+  }
+
+  lineItems.push({
+    price_data: {
+      currency: 'usd',
+      product_data: {
+        name: `Production Deposit — 50% of $${(subtotal / 100).toFixed(2)}`,
+        description: style_name
+          ? `${garment_type} · ${qty} pcs · Style: ${style_name}`
+          : `${garment_type} · ${qty} pcs`,
+      },
+      unit_amount: depositAmount,
+    },
+    quantity: 1,
+  })
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    line_items: [
-      {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: `Production Deposit — 50% of $${(subtotal / 100).toFixed(2)}`,
-            description: style_name
-              ? `${garment_type} · ${qty} pcs · Style: ${style_name}`
-              : `${garment_type} · ${qty} pcs`,
-          },
-          unit_amount: depositAmount,
-        },
-        quantity: 1,
-      },
-    ],
+    line_items: lineItems,
     metadata: {
       payment_type: 'direct_deposit',
       design_order_id: design_order_id ?? '',
@@ -75,6 +98,7 @@ export async function POST(req: NextRequest) {
       quantity: String(qty),
       size_breakdown: JSON.stringify(breakdown),
       notes: notes ?? '',
+      ai_spend_applied_cents: String(offsetCents),
     },
     success_url: `${origin}/track?payment=direct_success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/track`,

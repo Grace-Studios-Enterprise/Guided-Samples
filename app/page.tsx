@@ -18,6 +18,8 @@ import type { TechPackData } from '@/components/Phase6Production'
 import SectionView from '@/components/SectionView'
 import LandingPage from '@/components/LandingPage'
 import CreativeDirectionForm from '@/components/CreativeDirectionForm'
+import AIPaywallModal from '@/components/AIPaywallModal'
+import { AICreditsProvider, useAICredits } from '@/lib/aiCreditsContext'
 import { Menu } from 'lucide-react'
 
 export type AppState = {
@@ -57,12 +59,16 @@ const EMPTY_STATE: AppState = {
 
 function App() {
   const { user, loading } = useAuth()
+  const { refreshCredits } = useAICredits()
   // Allow deep-linking straight to the studio dashboard (e.g. the "home" link
   // from the /track orders page) via /?view=studio.
-  const initialView = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).get('view') === 'studio'
-      ? 'studio' as const
-      : 'landing' as const
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const initialView = params?.get('view') === 'studio' ? 'studio' as const : 'landing' as const
+  // Refresh credits when returning from a Stripe credit-purchase session
+  if (params?.get('credits_added') && typeof window !== 'undefined') {
+    refreshCredits()
+    window.history.replaceState({}, '', window.location.pathname + '?view=studio')
+  }
   const [view, setView] = useState<'landing' | 'projects' | 'studio' | 'creative-direction'>(initialView)
   const prevViewRef = useRef<'landing' | 'studio'>('landing')
   const [state, setState] = useState<AppState>(EMPTY_STATE)
@@ -184,6 +190,7 @@ function App() {
   // Studio
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      <AIPaywallModal onStartProduction={() => { setSection('design'); setState(s => ({ ...s, currentPhase: 6 })) }} />
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-20 lg:hidden" onClick={() => setSidebarOpen(false)}/>
       )}
@@ -285,7 +292,9 @@ function App() {
 export default function Home() {
   return (
     <AuthProvider>
-      <App />
+      <AICreditsProvider>
+        <App />
+      </AICreditsProvider>
     </AuthProvider>
   )
 }

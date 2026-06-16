@@ -4,8 +4,10 @@ import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { Upload, Cpu, Loader2, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X, CheckSquare, Square, Sparkles, Download } from 'lucide-react'
 import { AppState } from '@/app/page'
-import { streamGenerate } from '@/lib/streamGenerate'
+import { streamGenerate, PaywallError } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
+import { useAICredits } from '@/lib/aiCreditsContext'
+import GenerationCounter from '@/components/GenerationCounter'
 
 type View = 'front' | 'back' | 'side'
 
@@ -23,6 +25,7 @@ interface Props {
 const ALL_VIEWS: View[] = ['front', 'back', 'side']
 
 function ApparelFlow({ state, onComplete, onBack }: Props) {
+  const credits = useAICredits()
   const [mode, setMode] = useState<'upload' | 'generate'>('generate')
   const [prompt, setPrompt] = useState(
     'Oversized unisex hoodie, 450gsm, french terry cotton, drop shoulder, double layered hood, ribbed cuffs and hem.'
@@ -61,15 +64,19 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
     setStatusMsg(`Generating ${view} view...`)
 
     try {
+      const headers = await credits.getGenerationHeaders()
       const data = await streamGenerate<ViewResult>(
         '/api/generate-garment',
         { prompt, referenceImage, view, frontImage: frontImage ?? null, quality: 'realistic' },
         msg => setStatusMsg(msg),
+        headers,
       )
       cacheSet(key, data)
       setViewResults(prev => ({ ...prev, [view]: data.image }))
+      credits.onGenerationComplete()
       return data.image
     } catch (e) {
+      if (e instanceof PaywallError) { credits.openPaywall(); return null }
       console.error(e)
       setErrors(prev => ({ ...prev, [view]: e instanceof Error ? e.message : 'Generation failed.' }))
       return null
@@ -248,6 +255,7 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
                 className="btn-primary w-full flex items-center justify-center gap-2">
                 {isLoading ? <><Loader2 size={14} className="animate-spin"/> {statusMsg || 'Generating…'}</> : <><Sparkles size={14}/> Generate Garment</>}
               </button>
+              <GenerationCounter className="w-full justify-center" />
 
               {Object.entries(errors).filter(([, v]) => v).map(([view, msg]) => (
                 <p key={view} className="text-[11px] text-red-500">{view}: {msg}</p>
@@ -456,6 +464,7 @@ const UNIFORM_TYPES: Record<Sport, string[]> = {
 // ─── Uniform flow — same garment creation UI with sport/type selectors in the left panel ───
 
 function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['garment']) => void; onBack: () => void }) {
+  const credits = useAICredits()
   const [sport, setSport] = useState<Sport | null>(null)
   const [uniformType, setUniformType] = useState<string | null>(null)
   const [mode, setMode] = useState<'upload' | 'generate'>('generate')
@@ -517,9 +526,13 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
     if (cached) { setViewResults(prev => ({ ...prev, [view]: cached.image })); return cached.image }
     setLoadingView(view); setErrors(prev => ({ ...prev, [view]: undefined })); setStatusMsg(`Generating ${view} view...`)
     try {
-      const data = await streamGenerate<ViewResult>('/api/generate-garment', { prompt, referenceImage, view, frontImage: frontImage ?? null, quality: 'realistic' }, msg => setStatusMsg(msg))
-      cacheSet(key, data); setViewResults(prev => ({ ...prev, [view]: data.image })); return data.image
+      const headers = await credits.getGenerationHeaders()
+      const data = await streamGenerate<ViewResult>('/api/generate-garment', { prompt, referenceImage, view, frontImage: frontImage ?? null, quality: 'realistic' }, msg => setStatusMsg(msg), headers)
+      cacheSet(key, data); setViewResults(prev => ({ ...prev, [view]: data.image }));
+      credits.onGenerationComplete()
+      return data.image
     } catch (e) {
+      if (e instanceof PaywallError) { credits.openPaywall(); return null }
       setErrors(prev => ({ ...prev, [view]: e instanceof Error ? e.message : 'Generation failed.' })); return null
     } finally { setLoadingView(null); setStatusMsg('') }
   }
@@ -680,6 +693,7 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
                 className="btn-primary w-full flex items-center justify-center gap-2">
                 {isLoading ? <><Loader2 size={14} className="animate-spin"/> {statusMsg || 'Generating…'}</> : <><Sparkles size={14}/> Generate Uniform</>}
               </button>
+              <GenerationCounter className="w-full justify-center" />
               {!sport || !uniformType ? <p className="text-[11px] text-gray-400 text-center">Select sport and uniform type first</p> : null}
               {Object.entries(errors).filter(([, v]) => v).map(([view, msg]) => (
                 <p key={view} className="text-[11px] text-red-500">{view}: {msg}</p>
