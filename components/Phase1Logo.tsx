@@ -44,6 +44,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
   const [transparentBg, setTransparentBg] = useState(true)
   const [exporting, setExporting] = useState<string | null>(null)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
+  const [uploadedLogo, setUploadedLogo] = useState<AppState['logo']>(null)
   const referenceInputRef = useRef<HTMLInputElement>(null)
 
   const currentImage = result ? result.images[selectedVariant] : null
@@ -96,6 +97,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
       cacheSet(key, data)
       setResult(data)
       setSelectedVariant(0)
+      setUploadedLogo(null) // a fresh generation supersedes any prior upload
       credits.onGenerationComplete()
     } catch (e) {
       if (e instanceof PaywallError) { credits.openPaywall(); return }
@@ -142,7 +144,11 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
         style: 'Uploaded',
         color: '#0A0A0A',
       }
-      onComplete(logo)
+      // Load the upload into the preview and wait for the user to confirm with
+      // "Use This Logo" — don't jump straight to the next phase.
+      setResult(null)
+      setUploadedLogo(logo)
+      setSavedLogo(logo)
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -268,11 +274,14 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
                 <span className="text-xs text-gray-400">This can take 10–30 seconds</span>
               </div>
             )}
-            {!loading && !result && (
+            {!loading && !result && !uploadedLogo && (
               <div className="text-gray-400 text-sm">Your logo will appear here</div>
             )}
             {!loading && currentImage && (
               <img src={currentImage} alt="Generated logo" className="max-w-full max-h-full object-contain p-4"/>
+            )}
+            {!loading && !currentImage && uploadedLogo && (
+              <img src={uploadedLogo.dataUrl} alt="Uploaded logo" className="max-w-full max-h-full object-contain p-4"/>
             )}
           </div>
 
@@ -351,9 +360,9 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
             </div>
           )}
 
-          {currentImage && (
+          {(currentImage || uploadedLogo) && (
             <button
-              onClick={handleUse}
+              onClick={uploadedLogo ? () => onComplete(uploadedLogo) : handleUse}
               className="w-full flex items-center justify-center gap-2 bg-brand-green hover:bg-brand-green-light text-white font-medium py-3 px-4 rounded-xl transition-colors text-sm"
             >
               Use This Logo

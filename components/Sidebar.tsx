@@ -2,9 +2,10 @@
 
 import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
+import { useAICredits } from '@/lib/aiCreditsContext'
 import {
   LayoutDashboard, FolderOpen, Palette, Package,
-  ShoppingCart, Library, Settings, ChevronRight, CheckCircle2, X, ArrowRight, Ruler
+  ShoppingCart, Library, Settings, ChevronRight, CheckCircle2, X, ArrowRight, Ruler, Sparkles
 } from 'lucide-react'
 
 interface Props {
@@ -37,6 +38,8 @@ function GraceMark({ size = 24 }: { size?: number }) {
 
 export default function Sidebar({ currentPhase, onPhaseChange, state, section, onSectionChange, mobileOpen, onMobileClose, onExpertHelp }: Props) {
   const { user, signOut } = useAuth() ?? {}
+  const { freeUsed, freeLimit, creditBalance } = useAICredits()
+  const generationsLeft = Math.max(0, freeLimit - freeUsed) + creditBalance
 
   const isPhaseComplete = (phase: number) => {
     if (phase === 1) return !!state.logo
@@ -84,6 +87,17 @@ export default function Sidebar({ currentPhase, onPhaseChange, state, section, o
 <NavItem icon={<ShoppingCart size={14}/>} label="Orders" active={section === 'orders'} href="/track" />
         <NavItem icon={<Library size={14}/>} label="Library" active={section === 'library'} onClick={() => onSectionChange('library')} />
         <NavItem icon={<Settings size={14}/>} label="Settings" active={section === 'settings'} onClick={() => onSectionChange('settings')} />
+
+        {/* AI credit balance — persistent, links to Settings to top up */}
+        <button
+          onClick={() => onSectionChange('settings')}
+          className="w-full mt-2 flex items-center gap-2 px-2.5 py-2 rounded-lg border border-grace-border hover:border-brand-green hover:bg-brand-green/5 transition-colors"
+          title="Manage AI credits"
+        >
+          <Sparkles size={13} className="text-brand-green shrink-0"/>
+          <span className="text-[11px] text-grace-stone flex-1 text-left">AI credits</span>
+          <span className={`text-[11px] font-bold ${generationsLeft > 0 ? 'text-grace-ink' : 'text-red-500'}`}>{generationsLeft}</span>
+        </button>
 
         {/* Expert help — visible in nav, not buried at bottom */}
         {onExpertHelp && (

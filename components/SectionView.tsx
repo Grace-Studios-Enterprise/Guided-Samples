@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import {
-  LayoutDashboard, FolderOpen, Package, ShoppingCart, Library, Settings, Plus, ArrowRight, Save, KeyRound, LogOut
+  LayoutDashboard, FolderOpen, Package, ShoppingCart, Library, Settings, Plus, ArrowRight, Save, KeyRound, LogOut, Sparkles
 } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
+import { useAICredits } from '@/lib/aiCreditsContext'
 import SizeGuide from '@/components/SizeGuide'
 import TechnicalDrawing from '@/components/TechnicalDrawing'
 import type { SizeGuideOverrides } from '@/lib/fitBlocks/sizeGuide'
@@ -216,6 +217,9 @@ function SettingsView() {
         </button>
       </div>
 
+      {/* AI Credits / billing */}
+      <CreditsCard />
+
       {/* Password reset via email */}
       <div className="card mb-4">
         <div className="flex items-center gap-2 mb-2">
@@ -232,6 +236,54 @@ function SettingsView() {
         <button onClick={signOut} className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 font-medium transition-colors">
           <LogOut size={14}/> Sign out
         </button>
+      </div>
+    </div>
+  )
+}
+
+// AI Credits summary on the Settings page — the persistent place to check
+// balance and top up, complementing the in-flow GenerationCounter/paywall.
+function CreditsCard() {
+  const { freeUsed, freeLimit, creditBalance, spendCents, openPaywall, refreshCredits } = useAICredits()
+  const freeRemaining = Math.max(0, freeLimit - freeUsed)
+  const totalRemaining = freeRemaining + creditBalance
+
+  return (
+    <div className="card mb-4">
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles size={15} className="text-brand-green"/>
+        <p className="text-sm font-semibold text-gray-900">AI Credits</p>
+      </div>
+      <p className="text-xs text-gray-500 mb-4">
+        Pay-as-you-go — credits never expire. There is no recurring subscription.
+      </p>
+
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="rounded-xl bg-grace-mist p-3">
+          <p className="text-2xl font-bold text-gray-900">{freeRemaining}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Free left ({freeUsed}/{freeLimit} used)</p>
+        </div>
+        <div className="rounded-xl bg-grace-mist p-3">
+          <p className="text-2xl font-bold text-gray-900">{creditBalance}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Paid credits</p>
+        </div>
+        <div className="rounded-xl bg-grace-mist p-3">
+          <p className="text-2xl font-bold text-gray-900">{totalRemaining}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Total generations</p>
+        </div>
+      </div>
+
+      {spendCents > 0 && (
+        <p className="text-[11px] text-gray-500 mb-3">
+          ${(spendCents / 100).toFixed(2)} in credits purchased to date · applies toward your $25 production activation fee.
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <button onClick={openPaywall} className="btn-primary flex items-center gap-2">
+          <Sparkles size={14}/> Buy more credits
+        </button>
+        <button onClick={refreshCredits} className="btn-secondary text-xs">Refresh</button>
       </div>
     </div>
   )
