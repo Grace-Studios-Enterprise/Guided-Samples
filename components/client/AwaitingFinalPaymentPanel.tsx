@@ -2,30 +2,44 @@
 
 import { useState } from 'react'
 import { CreditCard, Loader2, ShieldCheck, Package } from 'lucide-react'
+import { createClient } from '@/lib/supabase'
 
 interface Props {
-  orderId:     string
-  finalAmount: number
-  quantity?:   number
-  onSuccess:   () => void
+  orderId:           string
+  finalAmount:       number
+  quantity?:         number
+  unitPriceCents?:   number
+  extraLogoCents?:   number
+  onSuccess:         () => void
 }
 
-export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, quantity }: Props) {
+function money(cents: number) {
+  return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}
+
+export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, quantity, unitPriceCents = 0, extraLogoCents = 0 }: Props) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
-  const formatted = (finalAmount / 100).toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  })
+  const perPiece   = unitPriceCents + extraLogoCents
+  const qty        = quantity ?? 1
+  const subtotal   = perPiece * qty
+  const deposit    = Math.round(subtotal / 2)
+  // Use passed finalAmount if subtotal is unavailable (0), otherwise compute it
+  const remaining  = subtotal > 0 ? subtotal - deposit : finalAmount
 
   async function handlePay() {
     setLoading(true)
     setError('')
     try {
+      const sb = createClient()
+      const token = sb ? (await sb.auth.getSession()).data.session?.access_token : null
       const res = await fetch('/api/checkout/final-payment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ order_id: orderId }),
       })
       const data = await res.json()
@@ -53,18 +67,30 @@ export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, quanti
         Your order has passed quality check and is ready for shipment. Pay the remaining balance to authorize your supplier to ship.
       </p>
 
-      <div className="border border-slate-100 rounded-xl p-3 mb-4">
-        {quantity ? (
-          <div className="flex justify-between items-center text-[11px] text-gray-400 mb-1">
-            <span>Production Quantity</span>
-            <span>{quantity} pc{quantity > 1 ? 's' : ''}</span>
+      <div className="border border-slate-100 rounded-xl p-3 mb-4 space-y-1.5">
+        {perPiece > 0 && (
+          <div className="flex justify-between items-center text-[11px] text-gray-400">
+            <span>Price per piece</span>
+            <span>{money(perPiece)}</span>
           </div>
-        ) : null}
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-gray-600">Remaining Balance (50%)</span>
-          <span className="text-sm font-semibold text-gray-900">{formatted}</span>
+        )}
+        {perPiece > 0 && qty > 0 && (
+          <div className="flex justify-between items-center text-[11px] text-gray-400">
+            <span>{qty} pc{qty > 1 ? 's' : ''} × {money(perPiece)}</span>
+            <span>{money(subtotal)}</span>
+          </div>
+        )}
+        {deposit > 0 && (
+          <div className="flex justify-between items-center text-[11px] text-gray-400">
+            <span>Deposit already paid (50%)</span>
+            <span>− {money(deposit)}</span>
+          </div>
+        )}
+        <div className="flex justify-between items-center border-t border-slate-100 pt-1.5">
+          <span className="text-xs text-gray-600 font-medium">Remaining Balance (50%)</span>
+          <span className="text-sm font-semibold text-gray-900">{money(remaining)}</span>
         </div>
-        <p className="text-[10px] text-gray-400 mt-1">Shipment will be authorised immediately upon payment</p>
+        <p className="text-[10px] text-gray-400">Shipment authorised immediately upon payment</p>
       </div>
 
       {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
@@ -75,7 +101,7 @@ export default function AwaitingFinalPaymentPanel({ orderId, finalAmount, quanti
         className="btn-primary w-full flex items-center justify-center gap-2 py-2.5"
       >
         {loading ? <Loader2 size={13} className="animate-spin"/> : <CreditCard size={13}/>}
-        {loading ? 'Redirecting…' : 'Complete Payment & Authorize Shipment'}
+        {loading ? 'Redirecting…' : `Complete Payment & Authorize Shipment`}
       </button>
 
       <div className="flex items-center justify-center gap-1.5 text-[10px] text-gray-400 mt-2">

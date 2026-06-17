@@ -331,6 +331,8 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
                   order.production_quantity ?? 1,
                 ))}
                 quantity={order.production_quantity ?? 1}
+                unitPriceCents={(order as unknown as Record<string,number>).garment_price_cents ?? 0}
+                extraLogoCents={(order as unknown as Record<string,number>).extra_logo_fee_cents ?? 0}
                 onSuccess={load}
               />
             )}
