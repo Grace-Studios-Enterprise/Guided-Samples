@@ -56,22 +56,31 @@ async function rasterizeSvg(file: File): Promise<string> {
 }
 
 async function rasterizePdf(file: File): Promise<string> {
-  // Dynamically import pdfjs so it doesn't inflate the server bundle
+  // Dynamic import keeps pdfjs out of the server/SSR bundle
   const pdfjsLib = await import('pdfjs-dist')
-  // Point the worker at the bundled worker — Next.js copies public assets automatically
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+  // Serve the worker from public/ so it works without a CDN dependency
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
   const arrayBuffer = await file.arrayBuffer()
-  const pdf  = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) })
+  const pdf  = await loadingTask.promise
   const page = await pdf.getPage(1)
 
-  const scale = 2
-  const viewport = page.getViewport({ scale })
+  const SCALE = 2
+  const viewport = page.getViewport({ scale: SCALE })
   const canvas = document.createElement('canvas')
   canvas.width  = viewport.width
   canvas.height = viewport.height
   const ctx = canvas.getContext('2d')!
 
-  await page.render({ canvasContext: ctx as unknown as CanvasRenderingContext2D, viewport, canvas }).promise
+  // pdfjs v4+ RenderParameters require the canvas element alongside canvasContext
+  await page.render({
+    canvasContext: ctx as unknown as CanvasRenderingContext2D,
+    viewport,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    canvas: canvas as any,
+  }).promise
+
   return canvas.toDataURL('image/png')
 }
