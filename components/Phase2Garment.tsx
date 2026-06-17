@@ -173,7 +173,7 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
     <div className="p-6 w-full">
       <div className="mb-5 flex items-start justify-between">
         <div>
-          <p className="phase-header">Phase 2</p>
+          <p className="phase-header">Phase 1</p>
           <h1 className="text-xl font-bold text-gray-900">Create or Upload Blank Garment</h1>
           <p className="text-gray-500 text-sm mt-1">Upload photos of your blank garment or generate one with AI</p>
         </div>
@@ -622,7 +622,7 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
     <div className="p-6 w-full">
       <div className="mb-5 flex items-start justify-between">
         <div>
-          <p className="phase-header">Phase 2</p>
+          <p className="phase-header">Phase 1</p>
           <h1 className="text-xl font-bold text-gray-900">Create or Upload Blank Garment</h1>
           <p className="text-gray-500 text-sm mt-1">Upload photos of your blank uniform or generate one with AI</p>
         </div>
@@ -913,7 +913,7 @@ export default function Phase2Garment({ state, onComplete, onBack }: Props) {
     <div className="p-6 w-full max-w-2xl mx-auto">
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <p className="phase-header">Phase 2</p>
+          <p className="phase-header">Phase 1</p>
           <h1 className="text-xl font-bold text-gray-900">Product Selection</h1>
           <p className="text-gray-500 text-sm mt-1">What are you creating?</p>
         </div>

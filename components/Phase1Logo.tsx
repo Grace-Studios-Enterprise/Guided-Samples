@@ -157,7 +157,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
   return (
     <div className="p-6 w-full">
       <div className="mb-5">
-        <p className="phase-header">Phase 1</p>
+        <p className="phase-header">Phase 2</p>
         <h1 className="text-xl font-bold text-gray-900">AI Logo Generation</h1>
         <p className="text-gray-500 text-sm mt-1">Describe your logo and let AI create it for you</p>
       </div>

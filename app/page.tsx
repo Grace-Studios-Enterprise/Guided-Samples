@@ -284,17 +284,17 @@ function App() {
             <SectionView section={section} state={state} onStartDesign={() => goToPhase(1)} />
           )}
           {section === 'design' && state.currentPhase === 1 && (
-            <Phase1Logo
+            <Phase2Garment
               state={state}
-              onComplete={(logo) => advancePhase({ logo, currentPhase: 2 })}
-              onSkip={() => advancePhase({ currentPhase: 2 })}
+              onComplete={(garment) => advancePhase({ garment, currentPhase: 2 })}
+              onBack={() => goToPhase(1)}
             />
           )}
           {section === 'design' && state.currentPhase === 2 && (
-            <Phase2Garment
+            <Phase1Logo
               state={state}
-              onComplete={(garment) => advancePhase({ garment, currentPhase: 3 })}
-              onBack={() => goToPhase(1)}
+              onComplete={(logo) => advancePhase({ logo, currentPhase: 3 })}
+              onSkip={() => advancePhase({ currentPhase: 3 })}
             />
           )}
           {section === 'design' && state.currentPhase === 3 && (
