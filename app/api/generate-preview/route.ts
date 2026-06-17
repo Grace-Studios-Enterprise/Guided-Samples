@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         res = await fetch('https://api.openai.com/v1/images/generations', {
           method: 'POST',
           headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'dall-e-3', prompt: finalTechPrompt, n: 1, size: '1792x1024', quality: 'standard' }),
+          body: JSON.stringify({ model: 'gpt-image-2', prompt: finalTechPrompt, n: 2, size: '1024x1024', quality: 'medium' }),
         })
       } else {
         // Realistic preview: image editing with the garment composite as input

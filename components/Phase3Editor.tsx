@@ -463,12 +463,20 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
       } else {
         const img = await loadImage(layer.dataUrl)
         const lf = Math.min(layer.width / img.width, layer.height / img.height)
-        ctx.drawImage(img, (-img.width * lf) / 2, (-img.height * lf) / 2, img.width * lf, img.height * lf)
+        const iw = img.width * lf, ih = img.height * lf
         if (layer.tintColor) {
-          ctx.globalCompositeOperation = 'multiply'
-          ctx.fillStyle = layer.tintColor
-          ctx.fillRect(-layer.width / 2, -layer.height / 2, layer.width, layer.height)
-          ctx.globalCompositeOperation = 'source-over'
+          // Composite tint in isolation so it only affects the logo pixels,
+          // not the white canvas background behind transparent areas.
+          const off = document.createElement('canvas')
+          off.width = Math.ceil(iw); off.height = Math.ceil(ih)
+          const offCtx = off.getContext('2d')!
+          offCtx.drawImage(img, 0, 0, off.width, off.height)
+          offCtx.globalCompositeOperation = 'source-atop'
+          offCtx.fillStyle = layer.tintColor
+          offCtx.fillRect(0, 0, off.width, off.height)
+          ctx.drawImage(off, -iw / 2, -ih / 2, iw, ih)
+        } else {
+          ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih)
         }
       }
       ctx.restore()
@@ -809,7 +817,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                       {layer.text || 'Your Text'}
                     </div>
                   ) : (
-                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                    <div style={{ position: 'relative', width: '100%', height: '100%', isolation: 'isolate' }}>
                       <img src={layer.dataUrl} alt="artwork" className="w-full h-full object-contain" draggable={false}/>
                       {layer.tintColor && (
                         <div style={{ position: 'absolute', inset: 0, backgroundColor: layer.tintColor, mixBlendMode: 'multiply', pointerEvents: 'none' }}/>
