@@ -250,6 +250,7 @@ function App() {
       <ProjectsDashboard
         onNewProject={startNewProject}
         onOpenProject={openProject}
+        onBack={() => setView('studio')}
       />
     )
   }
@@ -336,6 +337,7 @@ function App() {
               state={state}
               onComplete={(logo) => advancePhase({ logo, currentPhase: 3 })}
               onSkip={() => advancePhase({ currentPhase: 3 })}
+              onBack={() => goToPhase(1)}
             />
           )}
           {section === 'design' && state.currentPhase === 3 && (

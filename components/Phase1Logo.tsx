@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, Upload, ImagePlus, X } from 'lucide-react'
+import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, ArrowLeft, Upload, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { fileToDataUrl } from '@/lib/fileToDataUrl'
 import { exportAsset } from '@/lib/export'
@@ -15,6 +15,7 @@ interface Props {
   state: AppState
   onComplete: (logo: AppState['logo']) => void
   onSkip: () => void
+  onBack: () => void
 }
 
 interface LogoResult {
@@ -31,7 +32,7 @@ const EXAMPLES = [
   'Athletic crest logo',
 ]
 
-export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
+export default function Phase1Logo({ state, onComplete, onSkip, onBack }: Props) {
   const credits = useAICredits()
   const [prompt, setPrompt] = useState(
     state.logo ? '' : 'Create a vintage athletic logo for my brand called GRACE. Make it minimal with an arrow element. Use forest green.'
@@ -146,10 +147,16 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
 
   return (
     <div className="p-6 w-full">
-      <div className="mb-5">
-        <p className="phase-header">Phase 2</p>
-        <h1 className="text-xl font-bold text-gray-900">AI Logo Generation</h1>
-        <p className="text-gray-500 text-sm mt-1">Describe your logo and let AI create it for you</p>
+      <div className="mb-5 flex items-start justify-between">
+        <div>
+          <p className="phase-header">Phase 2</p>
+          <h1 className="text-xl font-bold text-gray-900">AI Logo Generation</h1>
+          <p className="text-gray-500 text-sm mt-1">Describe your logo and let AI create it for you</p>
+        </div>
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
+          <ArrowLeft size={14}/>
+          Back
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] gap-4">

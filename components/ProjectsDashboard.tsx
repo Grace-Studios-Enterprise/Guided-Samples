@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, FolderOpen, LogOut, Sparkles } from 'lucide-react'
+import { Plus, Trash2, Loader2, FolderOpen, LogOut, Sparkles, ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { listProjects, deleteProject } from '@/lib/projects'
 import type { Project } from '@/lib/projects'
@@ -9,9 +9,10 @@ import type { Project } from '@/lib/projects'
 interface Props {
   onNewProject: () => void
   onOpenProject: (projectId: string) => void
+  onBack: () => void
 }
 
-export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props) {
+export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack }: Props) {
   const { user, signOut } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,6 +42,10 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500 hidden sm:block">{user?.name} · {user?.email}</span>
+            <button onClick={onBack}
+              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
+              <ArrowLeft size={13}/> Back
+            </button>
             <button onClick={signOut}
               className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
               <LogOut size={13}/> Sign Out
