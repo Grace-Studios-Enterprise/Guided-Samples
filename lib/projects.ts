@@ -93,10 +93,14 @@ export async function saveProject(
     persistImage(supabase, userId, id, 'garment', state.garment?.dataUrl),
     persistImage(supabase, userId, id, 'composite', state.design?.previewDataUrl),
     ...(state.preview?.images ?? []).map((img, i) => persistImage(supabase, userId, id, `preview_${i}`, img)),
+    ...(state.preview?.techImages ?? []).map((img, i) => persistImage(supabase, userId, id, `tech_${i}`, img)),
   ])
 
-  const [logoUrl, garmentUrl, compositeUrl, ...previewUrls] = uploads
-  const previews = previewUrls.filter((u): u is string => !!u)
+  const realCount = (state.preview?.images ?? []).length
+  const techCount = (state.preview?.techImages ?? []).length
+  const [logoUrl, garmentUrl, compositeUrl, ...rest] = uploads
+  const previews = rest.slice(0, realCount).filter((u): u is string => !!u)
+  const techPreviews = rest.slice(realCount, realCount + techCount).filter((u): u is string => !!u)
   const thumbnail = compositeUrl ?? garmentUrl ?? logoUrl
 
   // Per-view garment images (front/back/side) — uploaded so a restored project
@@ -118,7 +122,7 @@ export async function saveProject(
       mode: state.garment.mode, sport: state.garment.sport, uniformType: state.garment.uniformType,
     } : null,
     design: state.design ? { confirmed: state.design.confirmed, previewDataUrl: compositeUrl ?? '' } : null,
-    preview: previews.length ? { images: previews } : null,
+    preview: (previews.length || techPreviews.length) ? { images: previews, techImages: techPreviews.length ? techPreviews : undefined } : null,
   }
 
   // Update project with urls
