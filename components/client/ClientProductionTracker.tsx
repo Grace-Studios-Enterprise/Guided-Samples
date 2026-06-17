@@ -131,12 +131,15 @@ function paidContext(): { paid: boolean; label: string } {
   }
 }
 
+type TabId = 'sample' | 'production'
+
 export default function ClientProductionTracker({ userEmail, onSelectOrder, onSignOut }: Props) {
   const [orders,  setOrders]  = useState<ProductionOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
   const [paid]                = useState(paidContext)
   const [confirming, setConfirming] = useState(paid.paid)
+  const [activeTab, setActiveTab] = useState<TabId>('sample')
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = async () => {
@@ -151,10 +154,15 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
   useEffect(() => { load() }, [])
   useRealtimeOrderList(load)
 
-  // After a Stripe redirect the webhook may take a moment to create/update the
-  // order. Poll briefly until it shows up, then stop and clean the URL.
+  // After a Stripe redirect the webhook + verify fallback may take a moment.
+  // Poll for up to 45 seconds to give both paths time to complete.
   useEffect(() => {
     if (!paid.paid) return
+    // Auto-select the right tab based on payment type
+    const p = new URLSearchParams(window.location.search).get('payment') ?? ''
+    if (p === 'direct_success' || p === 'deposit_success') setActiveTab('production')
+    else setActiveTab('sample')
+
     let elapsed = 0
     pollRef.current = setInterval(async () => {
       elapsed += 2500
@@ -163,7 +171,7 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
         setOrders(data)
         setConfirming(false)
         if (pollRef.current) clearInterval(pollRef.current)
-      } else if (elapsed >= 20000) {
+      } else if (elapsed >= 45000) {
         setConfirming(false)
         if (pollRef.current) clearInterval(pollRef.current)
       }
@@ -171,13 +179,17 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [paid.paid])
 
-  const actionNeeded = orders.filter(o => clientActionNeeded(o.production_stage))
-  const inProgress   = orders.filter(o =>
+  const sampleOrders     = orders.filter(o => o.production_path === 'SAMPLE')
+  const productionOrders = orders.filter(o => o.production_path !== 'SAMPLE')
+  const tabOrders        = activeTab === 'sample' ? sampleOrders : productionOrders
+
+  const actionNeeded = tabOrders.filter(o => clientActionNeeded(o.production_stage))
+  const inProgress   = tabOrders.filter(o =>
     !clientActionNeeded(o.production_stage) &&
     o.production_stage !== 'DELIVERED' &&
     o.production_stage !== 'CANCELLED'
   )
-  const completed = orders.filter(o =>
+  const completed = tabOrders.filter(o =>
     o.production_stage === 'DELIVERED' || o.production_stage === 'CANCELLED'
   )
 
@@ -219,15 +231,35 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
       <div className="max-w-2xl mx-auto px-4 py-6">
 
         {/* Page heading */}
-        <div className="mb-5">
-          <h1 className="text-xl font-bold text-gray-900">Your Production Orders</h1>
-          {!loading && (
-            <p className="text-sm text-gray-500 mt-0.5">
-              {orders.length === 0
-                ? 'No orders yet'
-                : `${orders.length} order${orders.length !== 1 ? 's' : ''}`}
-            </p>
-          )}
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-gray-900">My Orders</h1>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-5">
+          {(['sample', 'production'] as TabId[]).map(tab => {
+            const count = tab === 'sample' ? sampleOrders.length : productionOrders.length
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                  activeTab === tab
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab === 'sample' ? 'Sample Orders' : 'Production Orders'}
+                {count > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    activeTab === tab ? 'bg-brand-green/10 text-brand-green' : 'bg-slate-200 text-gray-500'
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* Payment confirmation banner */}
@@ -262,14 +294,18 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
           </div>
         )}
 
-        {!loading && orders.length === 0 && !error && (
+        {!loading && tabOrders.length === 0 && !error && (
           <div className="bg-white rounded-2xl border border-slate-200 text-center py-16 px-6">
             <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3">
               <Package size={20} className="text-gray-300" />
             </div>
-            <p className="text-sm font-semibold text-gray-700">No production orders yet</p>
+            <p className="text-sm font-semibold text-gray-700">
+              {activeTab === 'sample' ? 'No sample orders yet' : 'No production orders yet'}
+            </p>
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-              Orders appear here after your tech pack is approved and payment is confirmed.
+              {activeTab === 'sample'
+                ? 'Sample orders appear here after payment is confirmed.'
+                : 'Production orders appear here once you skip or complete the sample phase.'}
             </p>
           </div>
         )}
