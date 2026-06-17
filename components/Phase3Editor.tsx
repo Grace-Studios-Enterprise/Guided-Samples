@@ -83,8 +83,11 @@ const COLOR_SWATCHES = [
   '#5E2D7B', '#808080', '#FF69B4', '#00CED1',
 ]
 
-const STORAGE_KEY = 'grace_design_layers_v2'
-const LEGACY_KEY  = 'grace_design_layers'
+// Module-level SPA cache — persists across phase back/forward navigation without
+// requiring localStorage. Call clearDesignCache() when starting a new project.
+let _cachedLayersByView: ViewLayers = {}
+let _cachedGarmentColor = ''
+export function clearDesignCache() { _cachedLayersByView = {}; _cachedGarmentColor = '' }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -162,11 +165,13 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
   const canvasRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(100)
   const [garmentScale, setGarmentScale] = useState(100)
-  const [garmentColor, setGarmentColor] = useState('')
+  // Restore garment color and layers from the module-level cache so back-navigation
+  // returns the canvas exactly as the user left it.
+  const [garmentColor, setGarmentColor] = useState(_cachedGarmentColor)
   const [leftTab, setLeftTab] = useState<'assets' | 'color' | 'text'>('assets')
 
-  // Per-view layer state
-  const [layersByView, setLayersByView] = useState<ViewLayers>({})
+  // Per-view layer state — restore from SPA cache on mount
+  const [layersByView, setLayersByView] = useState<ViewLayers>(_cachedLayersByView)
   const [activeEditorView, setActiveEditorView] = useState('front')
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -229,25 +234,26 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
     document.head.appendChild(link)
   }, [])
 
-  // Init: always start with a blank canvas — user applies logo via the Art tab
+  // Init: restore active view from available garment views. Don't reset layers —
+  // they are already initialised from the module-level cache above.
   useEffect(() => {
-    // Clear any stale localStorage so previous session layers don't appear
-    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY) } catch {}
     if (availableViews.length > 0) setActiveEditorView(availableViews[0])
     hydrated.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Autosave on layer changes
+  // Write to module-level SPA cache on every layer change so back-navigation restores state
   useEffect(() => {
     if (!hydrated.current) return
+    _cachedLayersByView = layersByView
     setSaveStatus('saving')
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layersByView)); setSaveStatus('saved') } catch {}
-    }, 800)
+    saveTimer.current = setTimeout(() => setSaveStatus('saved'), 400)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
   }, [layersByView])
+
+  // Keep garment color in sync with the cache
+  useEffect(() => { _cachedGarmentColor = garmentColor }, [garmentColor])
 
   const snapshot = useCallback(() => {
     setPast(p => [...p.slice(-49), layersByView])

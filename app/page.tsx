@@ -11,7 +11,7 @@ import AuthModal from '@/components/AuthModal'
 import ProjectsDashboard from '@/components/ProjectsDashboard'
 import Phase1Logo from '@/components/Phase1Logo'
 import Phase2Garment from '@/components/Phase2Garment'
-import Phase3Editor from '@/components/Phase3Editor'
+import Phase3Editor, { clearDesignCache } from '@/components/Phase3Editor'
 import Phase4Preview from '@/components/Phase4Preview'
 import Phase5TechPack from '@/components/Phase5TechPack'
 import Phase6Production from '@/components/Phase6Production'
@@ -182,6 +182,7 @@ function App() {
 
   const openProject = async (id: string) => {
     projectIdRef.current = id
+    clearDesignCache()
     const detail = await loadProject(id)
     if (detail) {
       setState(restoreState(detail))
@@ -201,6 +202,7 @@ function App() {
 
   const startNewProject = () => {
     projectIdRef.current = undefined
+    clearDesignCache()
     setState(EMPTY_STATE)
     setTechPack(null)
     setSection('design')

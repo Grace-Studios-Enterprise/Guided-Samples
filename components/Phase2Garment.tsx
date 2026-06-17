@@ -27,14 +27,34 @@ const ALL_VIEWS: View[] = ['front', 'back', 'side']
 
 function ApparelFlow({ state, onComplete, onBack }: Props) {
   const credits = useAICredits()
-  const [mode, setMode] = useState<'upload' | 'generate' | 'library'>('generate')
+
+  // Detect how to restore the previously chosen garment (if any)
+  const existingGarment = state.garment
+  const libraryMatch = existingGarment
+    ? GARMENT_LIBRARY.find(g => g.name === existingGarment.type)
+    : null
+  const hasExistingViews = existingGarment &&
+    (existingGarment.views.front || existingGarment.views.back || existingGarment.views.side)
+
+  // Pre-select the mode based on existing garment
+  const initialMode = (() => {
+    if (!existingGarment) return 'generate' as const
+    if (libraryMatch) return 'library' as const
+    return 'generate' as const  // works for both generated and uploaded (they populate viewResults)
+  })()
+
+  const [mode, setMode] = useState<'upload' | 'generate' | 'library'>(initialMode)
   const [prompt, setPrompt] = useState(
     'Oversized unisex hoodie, 450gsm, french terry cotton, drop shoulder, double layered hood, ribbed cuffs and hem.'
   )
 
   // Library mode: a curated blank garment chosen from the GRACE garment library
-  const [libraryViews, setLibraryViews] = useState<Partial<Record<View, string>>>({})
-  const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(null)
+  const [libraryViews, setLibraryViews] = useState<Partial<Record<View, string>>>(
+    libraryMatch ? (libraryMatch.views as Partial<Record<View, string>>) : {}
+  )
+  const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
+    libraryMatch?.id ?? null
+  )
 
   const selectLibraryGarment = (g: LibraryGarment) => {
     setSelectedGarmentId(g.id)
@@ -46,11 +66,31 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
       setActiveView(available[0])
     }
   }
-  const [selectedViews, setSelectedViews] = useState<View[]>(['front'])
-  const [activeView, setActiveView] = useState<View>('front')
 
-  // Generate mode: one image per view
-  const [viewResults, setViewResults] = useState<Partial<Record<View, string>>>({})
+  // Restore previously active views from existing garment
+  const restoredViews: View[] = hasExistingViews
+    ? ALL_VIEWS.filter(v => existingGarment!.views[v])
+    : ['front']
+
+  const [selectedViews, setSelectedViews] = useState<View[]>(
+    libraryMatch
+      ? ALL_VIEWS.filter(v => (libraryMatch.views as Partial<Record<View, string>>)[v])
+      : restoredViews
+  )
+  const [activeView, setActiveView] = useState<View>(
+    (restoredViews[0] as View) ?? 'front'
+  )
+
+  // Generate mode: one image per view — pre-populate from existing non-library garment
+  const initialViewResults: Partial<Record<View, string>> = (() => {
+    if (!existingGarment || libraryMatch) return {}
+    const r: Partial<Record<View, string>> = {}
+    ALL_VIEWS.forEach(v => { if (existingGarment.views[v]) r[v] = existingGarment.views[v] })
+    if (!r.front && existingGarment.dataUrl) r.front = existingGarment.dataUrl
+    return r
+  })()
+
+  const [viewResults, setViewResults] = useState<Partial<Record<View, string>>>(initialViewResults)
   const [loadingView, setLoadingView] = useState<View | null>(null)
   const [statusMsg, setStatusMsg] = useState('')
   const [errors, setErrors] = useState<Partial<Record<View, string>>>({})

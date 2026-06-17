@@ -44,7 +44,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
   const [transparentBg, setTransparentBg] = useState(true)
   const [exporting, setExporting] = useState<string | null>(null)
   const [referenceImage, setReferenceImage] = useState<string | null>(null)
-  const [uploadedLogo, setUploadedLogo] = useState<AppState['logo']>(null)
+  const [uploadedLogo, setUploadedLogo] = useState<AppState['logo']>(state.logo ?? null)
   const referenceInputRef = useRef<HTMLInputElement>(null)
 
   const currentImage = result ? result.images[selectedVariant] : null
