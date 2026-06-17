@@ -10,15 +10,20 @@ function supabase() {
 export async function listClientOrders(): Promise<ProductionOrder[] | null> {
   const client = supabase()
   if (!client) return null
-  const { data, error } = await client
-    .from('production_orders')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) {
-    console.error('listClientOrders', error)
+  // Get auth token for the API call
+  const { data: { session } } = await client.auth.getSession()
+  if (!session) return []
+  try {
+    const res = await fetch('/api/orders', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json()
+    return json.orders as ProductionOrder[]
+  } catch (e) {
+    console.error('listClientOrders', e)
     return null
   }
-  return data as ProductionOrder[]
 }
 
 export async function getClientOrder(orderId: string): Promise<ProductionOrder | null> {

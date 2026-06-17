@@ -75,8 +75,9 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
 
   // Sample fee is double the per-piece production price (one sample piece).
   const sampleFee = garmentPrice * 2
-  // Sample path: no MOQ — 1+ pieces, broken down by size
-  const sampleQty = Math.max(1, sumBreakdown(sampleBreakdown))
+  // Sample path: no MOQ but at least 1 piece must be explicitly selected
+  const sampleRawQty = sumBreakdown(sampleBreakdown)
+  const sampleQty = Math.max(1, sampleRawQty)
   const sampleTotal = ACTIVATION_FEE + sampleFee * sampleQty + logoFeeTotal * sampleQty
 
   // DIRECT path: MOQ enforced, size breakdown drives quantity
@@ -367,11 +368,11 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
 
                 <button
                   onClick={handleSampleCheckout}
-                  disabled={sampleLoading || directLoading || sampleQty < 1}
+                  disabled={sampleLoading || directLoading || sampleRawQty < 1}
                   className="btn-primary mt-auto w-full flex items-center justify-center gap-2 text-xs py-2.5"
                 >
                   {sampleLoading ? <Loader2 size={13} className="animate-spin"/> : <CreditCard size={13}/>}
-                  {sampleLoading ? 'Redirecting…' : `Order ${sampleQty} Sample${sampleQty > 1 ? 's' : ''}`}
+                  {sampleLoading ? 'Redirecting…' : sampleRawQty < 1 ? 'Select sizes to continue' : `Order ${sampleQty} Sample${sampleQty > 1 ? 's' : ''}`}
                 </button>
               </div>
 
