@@ -120,6 +120,42 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
+// Auto-crop transparent padding so front/back/side views render at consistent sizes
+async function cropPadding(src: string, pad = 6): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = img.width; c.height = img.height
+        const ctx = c.getContext('2d')!
+        ctx.drawImage(img, 0, 0)
+        const d = ctx.getImageData(0, 0, img.width, img.height).data
+        let x0 = img.width, y0 = img.height, x1 = 0, y1 = 0
+        for (let y = 0; y < img.height; y++) {
+          for (let x = 0; x < img.width; x++) {
+            if (d[(y * img.width + x) * 4 + 3] > 6) {
+              if (x < x0) x0 = x; if (y < y0) y0 = y
+              if (x > x1) x1 = x; if (y > y1) y1 = y
+            }
+          }
+        }
+        if (x1 <= x0 || y1 <= y0) { resolve(src); return }
+        const sx = Math.max(0, x0 - pad), sy = Math.max(0, y0 - pad)
+        const sw = Math.min(img.width - sx, x1 - sx + pad + 1)
+        const sh = Math.min(img.height - sy, y1 - sy + pad + 1)
+        const out = document.createElement('canvas')
+        out.width = sw; out.height = sh
+        out.getContext('2d')!.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+        resolve(out.toDataURL('image/png'))
+      } catch { resolve(src) }
+    }
+    img.onerror = () => resolve(src)
+    img.src = src
+  })
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }: Props) {
@@ -140,6 +176,8 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const hydrated = useRef(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const croppedCache = useRef<Record<string, string>>({})
+  const [displaySrcs, setDisplaySrcs] = useState<Record<string, string>>({})
 
   // Derived
   const layers: LogoLayer[] = layersByView[activeEditorView] ?? []
@@ -165,6 +203,21 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
 
   const garmentSrcForView = (view: string) =>
     state.garment?.views?.[view as 'front' | 'back' | 'side'] ?? state.garment?.dataUrl ?? ''
+
+  // Crop transparent padding from garment assets per view for size normalisation
+  useEffect(() => {
+    const src = garmentSrcForView(activeEditorView)
+    if (!src) return
+    if (croppedCache.current[src]) {
+      setDisplaySrcs(prev => ({ ...prev, [activeEditorView]: croppedCache.current[src] }))
+      return
+    }
+    cropPadding(src).then(cropped => {
+      croppedCache.current[src] = cropped
+      setDisplaySrcs(prev => ({ ...prev, [activeEditorView]: cropped }))
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEditorView, state.garment])
 
   // Load Google Fonts once
   useEffect(() => {
@@ -676,38 +729,52 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
             <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center', position: 'relative', width: 380, height: 460 }}>
 
               {/* Garment */}
-              {garmentSrcForView(activeEditorView) ? (
+              {(() => {
+                const garmentDisplaySrc = displaySrcs[activeEditorView] || garmentSrcForView(activeEditorView)
+                return garmentSrcForView(activeEditorView) ? (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
                   style={{ transform: `scale(${garmentScale / 100})`, transformOrigin: 'center center' }}>
-                  {/* Fixed display box — normalises all view sizes */}
-                  <div style={{ position: 'relative', width: GARMENT_DISPLAY_W, height: GARMENT_DISPLAY_H, flexShrink: 0 }}>
+                  {/* isolation:isolate scopes mix-blend-mode to this container only */}
+                  <div style={{
+                    position: 'relative', width: GARMENT_DISPLAY_W, height: GARMENT_DISPLAY_H, flexShrink: 0,
+                    isolation: garmentColor ? 'isolate' : undefined,
+                  }}>
                     {garmentColor && (
-                      // Color fill masked to garment silhouette via PNG alpha — never covers the canvas background
+                      // Color fill clipped to garment alpha silhouette
                       <div style={{
                         position: 'absolute', inset: 0,
                         backgroundColor: garmentColor,
-                        WebkitMaskImage: `url("${garmentSrcForView(activeEditorView)}")`,
+                        WebkitMaskImage: `url("${garmentDisplaySrc}")`,
                         WebkitMaskSize: 'contain',
                         WebkitMaskRepeat: 'no-repeat',
                         WebkitMaskPosition: 'center',
-                        maskImage: `url("${garmentSrcForView(activeEditorView)}")`,
+                        maskImage: `url("${garmentDisplaySrc}")`,
                         maskSize: 'contain',
                         maskRepeat: 'no-repeat',
                         maskPosition: 'center',
                         pointerEvents: 'none',
                       } as React.CSSProperties}/>
                     )}
-                    {/* Garment texture sits above the color layer */}
-                    <img src={garmentSrcForView(activeEditorView)} alt="garment" draggable={false}
-                      style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain' }}/>
+                    {/* Garment texture — multiply blend makes white pixels transparent,
+                        preserving seams, shadows, and highlights over the color fill */}
+                    <img src={garmentDisplaySrc} alt="garment" draggable={false}
+                      style={{
+                        position: 'relative', width: '100%', height: '100%', objectFit: 'contain',
+                        mixBlendMode: garmentColor ? 'multiply' : 'normal',
+                      } as React.CSSProperties}/>
                   </div>
                 </div>
-              ) : state.garment?.svg ? (
+                ) : null
+              })()}
+              {/* SVG garment fallback */}
+              {!garmentSrcForView(activeEditorView) && state.garment?.svg && (
                 <div className="absolute inset-0 pointer-events-none"
                   style={{ transform: `scale(${garmentScale / 100})`, transformOrigin: 'center center' }}
                   dangerouslySetInnerHTML={{ __html: state.garment.svg }}
                 />
-              ) : (
+              )}
+              {/* No garment — upload prompt */}
+              {!garmentSrcForView(activeEditorView) && !state.garment?.svg && (
                 <label className="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-400 hover:text-gray-600 transition-colors">
                   <Upload size={28}/>
                   <span className="text-xs font-medium">Upload a garment</span>
