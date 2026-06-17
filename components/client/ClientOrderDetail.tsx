@@ -314,8 +314,8 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
             {stage === 'AWAITING_PRODUCTION_DEPOSIT' && (
               <DepositPaymentPanel
                 orderId={orderId}
-                unitPriceCents={order.pricing?.garment_price_cents ?? 0}
-                extraLogoFeeCents={order.pricing?.extra_logo_fee_cents ?? 0}
+                unitPriceCents={(order as unknown as Record<string,number>).garment_price_cents ?? 0}
+                extraLogoFeeCents={(order as unknown as Record<string,number>).extra_logo_fee_cents ?? 0}
                 initialQuantity={order.production_quantity ?? 1}
                 onSuccess={load}
               />
@@ -326,8 +326,8 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
               <AwaitingFinalPaymentPanel
                 orderId={orderId}
                 finalAmount={finalBalanceCents(bulkSubtotalCents(
-                  order.pricing?.garment_price_cents ?? 0,
-                  order.pricing?.extra_logo_fee_cents ?? 0,
+                  (order as unknown as Record<string,number>).garment_price_cents ?? 0,
+                  (order as unknown as Record<string,number>).extra_logo_fee_cents ?? 0,
                   order.production_quantity ?? 1,
                 ))}
                 quantity={order.production_quantity ?? 1}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
-import { MIN_PRODUCTION_QUANTITY, clampQuantity, bulkSubtotalCents, depositCents } from '@/lib/pricing'
+import { MIN_PRODUCTION_QUANTITY, clampQuantity, bulkSubtotalCents, depositCents, productionPriceCents } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
 
 export async function POST(req: NextRequest) {
@@ -16,11 +16,18 @@ export async function POST(req: NextRequest) {
 
   const { order_id, quantity, size_breakdown } = await req.json()
 
-  const { data: order, error: orderError } = await sb
+  // Use service-role to bypass RLS — same approach as /api/orders
+  const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+  const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+  const adminSb = sbUrl && sbKey
+    ? (await import('@supabase/supabase-js')).createClient(sbUrl, sbKey, { auth: { persistSession: false } })
+    : sb
+
+  const { data: order, error: orderError } = await adminSb
     .from('production_orders')
-    .select('id, user_id, production_stage, garment_price_cents, extra_logo_fee_cents, production_quantity, size_breakdown')
+    .select('id, user_id, user_email, production_stage, garment_price_cents, extra_logo_fee_cents, production_quantity, size_breakdown, tech_pack_snapshot')
     .eq('id', order_id)
-    .eq('user_id', user.id)
+    .or(`user_id.eq.${user.id},user_email.eq.${user.email ?? ''}`)
     .single()
 
   if (orderError || !order) {
@@ -48,8 +55,21 @@ export async function POST(req: NextRequest) {
     .update({ production_quantity: qty, size_breakdown: breakdown })
     .eq('id', order_id)
 
+  // If garment_price_cents is 0 (e.g. recovered orders with missing metadata),
+  // infer from the tech_pack_snapshot garment type stored on the order.
+  let unitPrice: number = order.garment_price_cents ?? 0
+  if (!unitPrice) {
+    const snap = order.tech_pack_snapshot as Record<string, unknown> | null
+    const garmentType = (snap?.style_info as Record<string,string> | null)?.garmentType ?? ''
+    unitPrice = productionPriceCents(garmentType)
+    // Persist so future calls don't need to re-infer
+    await adminSb.from('production_orders')
+      .update({ garment_price_cents: unitPrice })
+      .eq('id', order_id)
+  }
+
   const subtotal = bulkSubtotalCents(
-    order.garment_price_cents ?? 0,
+    unitPrice,
     order.extra_logo_fee_cents ?? 0,
     qty,
   )

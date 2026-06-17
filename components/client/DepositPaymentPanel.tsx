@@ -9,6 +9,7 @@ import {
   depositCents,
 } from '@/lib/pricing'
 import { emptyBreakdown, sumBreakdown, type SizeBreakdown } from '@/lib/sizes'
+import { createClient } from '@/lib/supabase'
 
 interface Props {
   orderId:           string
@@ -45,9 +46,14 @@ export default function DepositPaymentPanel({
     setLoading(true)
     setError('')
     try {
+      const sb = createClient()
+      const token = sb ? (await sb.auth.getSession()).data.session?.access_token : null
       const res = await fetch('/api/checkout/production-deposit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ order_id: orderId, size_breakdown: breakdown, quantity }),
       })
       const data = await res.json()
