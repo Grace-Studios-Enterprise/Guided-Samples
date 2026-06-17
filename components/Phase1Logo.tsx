@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { RefreshCw, Download, Loader2, Sparkles, ArrowRight, Upload, ImagePlus, X } from 'lucide-react'
 import { AppState } from '@/app/page'
+import { fileToDataUrl } from '@/lib/fileToDataUrl'
 import { exportAsset } from '@/lib/export'
 import { streamGenerate, PaywallError } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
@@ -127,31 +128,20 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
     onComplete(logo)
   }
 
-  const handleUploadLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = async ev => {
-      let dataUrl = ev.target?.result as string
-      try {
-        dataUrl = await removeWhiteBackground(dataUrl)
-      } catch (e) {
-        console.error('White background removal failed, using original', e)
-      }
-      const logo = {
-        svg: '',
-        dataUrl,
-        style: 'Uploaded',
-        color: '#0A0A0A',
-      }
-      // Load the upload into the preview and wait for the user to confirm with
-      // "Use This Logo" — don't jump straight to the next phase.
+    e.target.value = ''
+    try {
+      let dataUrl = await fileToDataUrl(file)
+      try { dataUrl = await removeWhiteBackground(dataUrl) } catch {}
+      const logo = { svg: '', dataUrl, style: 'Uploaded', color: '#0A0A0A' }
       setResult(null)
       setUploadedLogo(logo)
       setSavedLogo(logo)
+    } catch (err) {
+      console.error('Upload failed', err)
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
   return (
@@ -207,7 +197,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
                     ref={referenceInputRef}
                     type="file"
                     className="hidden"
-                    accept="image/*"
+                    accept="image/png,image/svg+xml,application/pdf,.png,.svg,.pdf"
                     onChange={e => {
                       const file = e.target.files?.[0]
                       if (!file) return
@@ -229,7 +219,7 @@ export default function Phase1Logo({ state, onComplete, onSkip }: Props) {
             <label className="btn-secondary w-full flex items-center justify-center gap-2 cursor-pointer">
               <Upload size={14}/>
               Upload Your Own Logo
-              <input type="file" className="hidden" accept="image/*" onChange={handleUploadLogo}/>
+              <input type="file" className="hidden" accept="image/png,image/svg+xml,application/pdf,.png,.svg,.pdf" onChange={handleUploadLogo}/>
             </label>
             <button
               onClick={onSkip}

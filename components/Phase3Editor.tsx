@@ -9,6 +9,7 @@ import { AppState } from '@/app/page'
 import { streamGenerate } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 import { removeWhiteBackground } from '@/lib/removeWhiteBg'
+import { fileToDataUrl } from '@/lib/fileToDataUrl'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -374,18 +375,19 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
     setLeftTab('assets')
   }
 
-  const handleUploadLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
-    const reader = new FileReader()
-    reader.onload = async ev => {
-      let dataUrl = ev.target?.result as string
+    e.target.value = ''
+    try {
+      let dataUrl = await fileToDataUrl(file)
       try { dataUrl = await removeWhiteBackground(dataUrl) } catch {}
       const id = crypto.randomUUID()
       snapshot()
       setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }])
       setSelectedId(id)
+    } catch (err) {
+      console.error('Upload failed', err)
     }
-    reader.readAsDataURL(file)
   }
 
   const handleUploadGarment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -553,7 +555,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
               <p className="text-xs font-medium text-gray-600">Artwork</p>
               <label className="btn-secondary w-full flex items-center justify-center gap-2 cursor-pointer">
                 <Upload size={13}/> Upload Image
-                <input type="file" className="hidden" accept="image/*" onChange={handleUploadLogo}/>
+                <input type="file" className="hidden" accept="image/png,image/svg+xml,application/pdf,.png,.svg,.pdf" onChange={handleUploadLogo}/>
               </label>
               {state.logo && (
                 <button
