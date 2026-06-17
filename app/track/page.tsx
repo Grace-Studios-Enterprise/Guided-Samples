@@ -20,15 +20,20 @@ export default function TrackPage() {
     const sessionId = params.get('session_id')
     const payment = params.get('payment')
     if (!sessionId || !payment?.endsWith('_success')) return
-    // Include the auth token so the verify endpoint can authenticate the request
+    // Include the auth token so the verify endpoint can authenticate the request.
+    // We await this before the tracker starts polling so the order is in the DB.
     ;(async () => {
       try {
         const sb = createClient()
         const token = sb ? (await sb.auth.getSession()).data.session?.access_token : null
-        await fetch(`/api/checkout/verify?session_id=${sessionId}`, {
+        const res = await fetch(`/api/checkout/verify?session_id=${sessionId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-      } catch { /* silent — webhook is the primary path */ }
+        const data = await res.json()
+        console.log('[track] verify result:', data)
+      } catch (e) {
+        console.error('[track] verify failed:', e)
+      }
     })()
     // Clean up the URL so refreshing doesn't re-trigger
     window.history.replaceState({}, '', '/track')

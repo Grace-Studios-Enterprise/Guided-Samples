@@ -1,15 +1,26 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Package, Filter, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Package, Filter, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Loader2, CheckCircle2, XCircle, Plus } from 'lucide-react'
 import { listAllOrders, getOrderStageCounts, type StageCount } from '@/lib/adminPortal'
 import { STAGE_LABELS, type ProductionStage } from '@/types/productionStages'
 import type { ProductionOrder } from '@/types/production'
+import { createClient } from '@/lib/supabase'
 
 const NEEDS_ACTION_STAGES = new Set<ProductionStage>(['SAMPLE_SHIPPED', 'SAMPLE_DELIVERED', 'SHIPPED'])
 
 interface Props {
   onSelectOrder: (id: string) => void
+}
+
+interface RecoverResult {
+  status: string
+  order_id?: string
+  payment_type?: string
+  user_email?: string
+  error?: string
+  metadata?: Record<string, string>
+  note?: string
 }
 
 export default function AdminDashboard({ onSelectOrder }: Props) {
@@ -18,6 +29,42 @@ export default function AdminDashboard({ onSelectOrder }: Props) {
   const [stageFilter, setStageFilter] = useState<ProductionStage | ''>('')
   const [search,      setSearch]      = useState('')
   const [loading,     setLoading]     = useState(true)
+
+  // Recover missing orders
+  const [recoverOpen,    setRecoverOpen]    = useState(false)
+  const [sessionIds,     setSessionIds]     = useState('')
+  const [recoverLoading, setRecoverLoading] = useState(false)
+  const [recoverResults, setRecoverResults] = useState<{ id: string; result: RecoverResult }[]>([])
+
+  async function handleRecover() {
+    const ids = sessionIds.split(/[\n,\s]+/).map(s => s.trim()).filter(Boolean)
+    if (!ids.length) return
+    setRecoverLoading(true)
+    setRecoverResults([])
+    const sb = createClient()
+    const token = sb ? (await sb.auth.getSession()).data.session?.access_token : null
+    const results: { id: string; result: RecoverResult }[] = []
+    for (const id of ids) {
+      try {
+        const res = await fetch('/api/admin/recover-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ session_id: id }),
+        })
+        const data: RecoverResult = await res.json()
+        results.push({ id, result: data })
+      } catch (e) {
+        results.push({ id, result: { status: 'error', error: String(e) } })
+      }
+    }
+    setRecoverResults(results)
+    setRecoverLoading(false)
+    // Refresh the order list if anything was created
+    if (results.some(r => r.result.status === 'created')) load()
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -47,6 +94,86 @@ export default function AdminDashboard({ onSelectOrder }: Props) {
 
   return (
     <div className="space-y-6">
+
+      {/* Recover missing orders */}
+      <div className="border border-amber-200 rounded-xl bg-amber-50 overflow-hidden">
+        <button
+          onClick={() => setRecoverOpen(o => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <Plus size={14} />
+            Recover missing paid orders
+          </span>
+          {recoverOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {recoverOpen && (
+          <div className="px-4 pb-4 space-y-3">
+            <p className="text-xs text-amber-700 leading-relaxed">
+              Paste one or more Stripe session IDs (cs_live_…) — one per line or comma-separated.
+              The API will re-fetch each session from Stripe and create the missing order.
+            </p>
+            <textarea
+              className="w-full text-xs font-mono rounded-lg border border-amber-200 bg-white px-3 py-2 focus:outline-none focus:border-amber-400 resize-none"
+              rows={4}
+              placeholder={"cs_live_abc123\ncs_live_def456"}
+              value={sessionIds}
+              onChange={e => setSessionIds(e.target.value)}
+            />
+            <button
+              onClick={handleRecover}
+              disabled={recoverLoading || !sessionIds.trim()}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-50 transition-colors"
+            >
+              {recoverLoading ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+              {recoverLoading ? 'Recovering…' : 'Recover Orders'}
+            </button>
+
+            {recoverResults.length > 0 && (
+              <div className="space-y-2">
+                {recoverResults.map(({ id, result }) => (
+                  <div
+                    key={id}
+                    className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
+                      result.status === 'created' ? 'bg-green-50 border border-green-200' :
+                      result.status === 'already_exists' ? 'bg-blue-50 border border-blue-200' :
+                      'bg-red-50 border border-red-200'
+                    }`}
+                  >
+                    {result.status === 'created'
+                      ? <CheckCircle2 size={13} className="text-green-600 shrink-0 mt-0.5" />
+                      : result.status === 'already_exists'
+                      ? <CheckCircle2 size={13} className="text-blue-500 shrink-0 mt-0.5" />
+                      : <XCircle size={13} className="text-red-500 shrink-0 mt-0.5" />}
+                    <div className="min-w-0">
+                      <p className="font-mono text-[10px] text-gray-500 truncate">{id}</p>
+                      <p className={`font-semibold ${
+                        result.status === 'created' ? 'text-green-700' :
+                        result.status === 'already_exists' ? 'text-blue-600' :
+                        'text-red-600'
+                      }`}>
+                        {result.status === 'created'
+                          ? `Created — ${result.payment_type} · ${result.user_email}`
+                          : result.status === 'already_exists'
+                          ? `Already exists (order ${result.order_id?.slice(0, 8)})`
+                          : result.error ?? result.status}
+                      </p>
+                      {result.status === 'unrecognized_payment_type' && (
+                        <p className="text-gray-500 mt-0.5">
+                          payment_type in metadata: <span className="font-mono">{String(result.payment_type ?? 'null')}</span>
+                          {result.note && ` — ${result.note}`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Stage stat pills */}
       <div className="flex flex-wrap gap-2">
         <button

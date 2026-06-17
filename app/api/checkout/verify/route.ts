@@ -17,37 +17,57 @@ export async function GET(req: NextRequest) {
   if (!secretKey) return NextResponse.json({ error: 'Not configured' }, { status: 500 })
 
   const { sb: clientSb, user } = await getRouteUser(req)
-  if (!clientSb || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!clientSb || !user) {
+    console.error('[verify] Unauthorized — no user from token')
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
-  // Use service-role client to bypass RLS for order inserts (same as webhook)
+  // Always use service-role so inserts bypass RLS (same as webhook)
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-  const sb = url && key ? createClient(url, key, { auth: { persistSession: false } }) : clientSb
+  if (!url || !key) {
+    console.error('[verify] Missing SUPABASE_SERVICE_ROLE_KEY — cannot create order')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  }
+  const sb = createClient(url, key, { auth: { persistSession: false } })
 
   const stripe = new Stripe(secretKey)
   let session: Stripe.Checkout.Session
   try {
     session = await stripe.checkout.sessions.retrieve(sessionId)
-  } catch {
+  } catch (e) {
+    console.error('[verify] Stripe session fetch failed:', e)
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   }
 
+  console.log('[verify] session', sessionId, 'payment_status:', session.payment_status, 'metadata:', session.metadata)
+
   if (session.payment_status !== 'paid') {
-    return NextResponse.json({ status: 'unpaid' })
+    return NextResponse.json({ status: 'unpaid', payment_status: session.payment_status })
   }
 
   const meta = session.metadata ?? {}
   const { payment_type, design_order_id, user_id, garment_type, is_uniform, is_reversible, extra_logos, size_breakdown } = meta
 
+  if (!payment_type) {
+    console.error('[verify] metadata missing payment_type — full metadata:', meta)
+    return NextResponse.json({ error: 'missing_payment_type', metadata: meta }, { status: 422 })
+  }
+
+  if (!design_order_id) {
+    console.error('[verify] metadata missing design_order_id')
+    return NextResponse.json({ error: 'missing_design_order_id', metadata: meta }, { status: 422 })
+  }
+
   // Check if the order already exists (webhook may have already created it)
   const { data: existing } = await sb
     .from('production_orders')
     .select('id')
-    .eq('design_order_id', design_order_id ?? '')
+    .eq('design_order_id', design_order_id)
     .limit(1)
 
   if (existing && existing.length > 0) {
-    return NextResponse.json({ status: 'ok', already_existed: true })
+    return NextResponse.json({ status: 'ok', already_existed: true, order_id: existing[0].id })
   }
 
   // Order doesn't exist yet — create it as a fallback
@@ -85,13 +105,16 @@ export async function GET(req: NextRequest) {
       tech_pack_snapshot: techPack ?? {},
       status: 'paid',
     })
-    if (!error) {
-      const aiSpendApplied = parseInt(meta.ai_spend_applied_cents ?? '0', 10)
-      if (design_order_id && (user_id ?? user.id)) {
-        await applyActivationUnlock(user_id ?? user.id, design_order_id, aiSpendApplied)
-      }
+    if (error) {
+      console.error('[verify] sample insert failed:', error)
+      return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
     }
-    return NextResponse.json({ status: error ? 'error' : 'created', error: error?.message })
+    const aiSpendApplied = parseInt(meta.ai_spend_applied_cents ?? '0', 10)
+    if (design_order_id && (user_id ?? user.id)) {
+      await applyActivationUnlock(user_id ?? user.id, design_order_id, aiSpendApplied)
+    }
+    console.log('[verify] sample order created for user', user_id ?? user.id)
+    return NextResponse.json({ status: 'created' })
   }
 
   if (payment_type === 'direct_deposit') {
