@@ -187,7 +187,7 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
       />
       <div className="mb-5 flex items-start justify-between">
         <div>
-          <p className="phase-header">Phase 6</p>
+          <p className="phase-header">Production</p>
           <h1 className="text-xl font-bold text-gray-900">Send to Production</h1>
           <p className="text-gray-500 text-sm mt-1">Choose your production path</p>
         </div>

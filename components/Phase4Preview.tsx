@@ -117,7 +117,7 @@ export default function Phase4Preview({ state, onSavePreview, onComplete, onBack
     <div className="p-6 w-full">
       <div className="mb-5 flex items-start justify-between">
         <div>
-          <p className="phase-header">Phase 4</p>
+          <p className="phase-header">Phase 3</p>
           <h1 className="text-xl font-bold text-gray-900">Preview in Reality</h1>
           <p className="text-gray-500 text-sm mt-1">See your design as a finished, lifelike product</p>
         </div>

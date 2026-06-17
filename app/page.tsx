@@ -9,12 +9,12 @@ import Sidebar from '@/components/Sidebar'
 import SignIn from '@/components/SignIn'
 import AuthModal from '@/components/AuthModal'
 import ProjectsDashboard from '@/components/ProjectsDashboard'
-import Phase1Logo from '@/components/Phase1Logo'
 import Phase2Garment from '@/components/Phase2Garment'
 import Phase3Editor, { clearDesignCache } from '@/components/Phase3Editor'
 import Phase4Preview from '@/components/Phase4Preview'
 import Phase5TechPack from '@/components/Phase5TechPack'
 import Phase6Production from '@/components/Phase6Production'
+import PhaseDesignStudio from '@/components/PhaseDesignStudio'
 import type { TechPackData } from '@/components/Phase6Production'
 import SectionView from '@/components/SectionView'
 import LandingPage from '@/components/LandingPage'
@@ -258,7 +258,7 @@ function App() {
   // Studio
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <AIPaywallModal onStartProduction={() => { setSection('design'); setState(s => ({ ...s, currentPhase: 6 })) }} />
+      <AIPaywallModal onStartProduction={() => { setSection('design'); setState(s => ({ ...s, currentPhase: 5 })) }} />
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/30 z-20 lg:hidden" onClick={() => setSidebarOpen(false)}/>
       )}
@@ -333,37 +333,29 @@ function App() {
             />
           )}
           {section === 'design' && state.currentPhase === 2 && (
-            <Phase1Logo
+            <PhaseDesignStudio
               state={state}
-              onComplete={(logo) => advancePhase({ logo, currentPhase: 3 })}
-              onSkip={() => advancePhase({ currentPhase: 3 })}
+              onComplete={(updates) => advancePhase({ ...updates, currentPhase: 3 })}
               onBack={() => goToPhase(1)}
               onLogoUpdate={(logo) => setState(s => ({ ...s, logo }))}
+              onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
             />
           )}
           {section === 'design' && state.currentPhase === 3 && (
-            <Phase3Editor
+            <Phase4Preview
               state={state}
-              onComplete={(design) => advancePhase({ design, currentPhase: 4 })}
-              onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
+              onSavePreview={(preview) => setState(s => { const next = { ...s, preview }; autoSave(next); return next })}
+              onComplete={(preview) => advancePhase({ preview, currentPhase: 4 })}
               onBack={() => goToPhase(2)}
             />
           )}
           {section === 'design' && state.currentPhase === 4 && (
-            <Phase4Preview
-              state={state}
-              onSavePreview={(preview) => setState(s => { const next = { ...s, preview }; autoSave(next); return next })}
-              onComplete={(preview) => advancePhase({ preview, currentPhase: 5 })}
-              onBack={() => goToPhase(3)}
-            />
-          )}
-          {section === 'design' && state.currentPhase === 5 && (
             <Phase5TechPack
               state={state}
-              onBack={() => goToPhase(4)}
+              onBack={() => goToPhase(3)}
               onSendToProduction={async (tp) => {
                 setTechPack(tp)
-                advancePhase({ currentPhase: 6 })
+                advancePhase({ currentPhase: 5 })
                 if (user && projectIdRef.current) {
                   await saveTechPack(projectIdRef.current, {
                     style_info: tp.styleInfo,
@@ -375,11 +367,11 @@ function App() {
               }}
             />
           )}
-          {section === 'design' && state.currentPhase === 6 && techPack && (
+          {section === 'design' && state.currentPhase === 5 && techPack && (
             <Phase6Production
               state={state}
               techPack={techPack}
-              onBack={() => goToPhase(5)}
+              onBack={() => goToPhase(4)}
               projectId={projectIdRef.current ?? null}
               onEnsureProject={ensureProject}
               onExpertHelp={() => { prevViewRef.current = 'studio'; setView('creative-direction') }}

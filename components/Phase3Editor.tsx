@@ -45,6 +45,7 @@ interface Props {
   onComplete: (design: AppState['design']) => void
   onSetGarment: (garment: AppState['garment']) => void
   onBack: () => void
+  hideHeader?: boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -163,7 +164,7 @@ async function cropPadding(src: string, pad = 6): Promise<string> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }: Props) {
+export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, hideHeader }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(100)
   const [garmentScale, setGarmentScale] = useState(100)
@@ -570,17 +571,19 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6 w-full">
-      <div className="mb-5 flex items-start justify-between">
-        <div>
-          <p className="phase-header">Phase 3</p>
-          <h1 className="text-xl font-bold text-gray-900">Apply Design to Garment</h1>
-          <p className="text-gray-500 text-sm mt-1">Place artwork, text, and adjust the garment color</p>
+    <div className={hideHeader ? 'px-6 pb-6 w-full' : 'p-6 w-full'}>
+      {!hideHeader && (
+        <div className="mb-5 flex items-start justify-between">
+          <div>
+            <p className="phase-header">Phase 2</p>
+            <h1 className="text-xl font-bold text-gray-900">Apply Design to Garment</h1>
+            <p className="text-gray-500 text-sm mt-1">Place artwork, text, and adjust the garment color</p>
+          </div>
+          <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
+            <ArrowLeft size={14}/> Back
+          </button>
         </div>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
-          <ArrowLeft size={14}/> Back
-        </button>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_240px] gap-4">
 

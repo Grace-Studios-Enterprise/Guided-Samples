@@ -21,11 +21,10 @@ interface Props {
 }
 
 const phases = [
-  { num: 1, label: 'Garment' },
-  { num: 2, label: 'Logo' },
-  { num: 3, label: 'Design' },
-  { num: 4, label: 'Preview' },
-  { num: 5, label: 'Tech Pack' },
+  { num: 1, label: 'Product Selection' },
+  { num: 2, label: 'Studio' },
+  { num: 3, label: 'Preview' },
+  { num: 4, label: 'Tech Pack' },
 ]
 
 function GraceMark({ size = 24 }: { size?: number }) {
@@ -45,9 +44,8 @@ export default function Sidebar({ section, onSectionChange, mobileOpen, onMobile
   const isPhaseComplete = (num: number): boolean => {
     if (!state) return false
     if (num === 1) return !!state.garment
-    if (num === 2) return !!state.logo
-    if (num === 3) return !!state.design
-    if (num === 4) return !!state.preview
+    if (num === 2) return !!state.design
+    if (num === 3) return !!state.preview
     return false
   }
 
