@@ -61,6 +61,9 @@ async function persistImage(
 ): Promise<string | null> {
   if (!img) return null
   if (/^https?:\/\//.test(img)) return img
+  // Built-in library garments are static public assets (e.g. /grace-garments/…).
+  // They live in the app bundle, so store the path as-is rather than uploading.
+  if (img.startsWith('/')) return img
   return uploadImage(supabase, userId, projectId, type, img)
 }
 

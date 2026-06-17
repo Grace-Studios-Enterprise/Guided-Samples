@@ -2,12 +2,13 @@
 
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, Cpu, Loader2, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X, CheckSquare, Square, Sparkles, Download } from 'lucide-react'
+import { Upload, Cpu, Loader2, ArrowRight, ArrowLeft, ImageIcon, ImagePlus, X, CheckSquare, Square, Sparkles, Download, Shirt } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { streamGenerate, PaywallError } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 import { useAICredits } from '@/lib/aiCreditsContext'
 import GenerationCounter from '@/components/GenerationCounter'
+import { GARMENT_LIBRARY, type LibraryGarment } from '@/lib/garmentLibrary'
 
 type View = 'front' | 'back' | 'side'
 
@@ -26,10 +27,25 @@ const ALL_VIEWS: View[] = ['front', 'back', 'side']
 
 function ApparelFlow({ state, onComplete, onBack }: Props) {
   const credits = useAICredits()
-  const [mode, setMode] = useState<'upload' | 'generate'>('generate')
+  const [mode, setMode] = useState<'upload' | 'generate' | 'library'>('generate')
   const [prompt, setPrompt] = useState(
     'Oversized unisex hoodie, 450gsm, french terry cotton, drop shoulder, double layered hood, ribbed cuffs and hem.'
   )
+
+  // Library mode: a curated blank garment chosen from the GRACE garment library
+  const [libraryViews, setLibraryViews] = useState<Partial<Record<View, string>>>({})
+  const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(null)
+
+  const selectLibraryGarment = (g: LibraryGarment) => {
+    setSelectedGarmentId(g.id)
+    const views = g.views as Partial<Record<View, string>>
+    setLibraryViews(views)
+    const available = ALL_VIEWS.filter(v => views[v])
+    if (available.length) {
+      setSelectedViews(available)
+      setActiveView(available[0])
+    }
+  }
   const [selectedViews, setSelectedViews] = useState<View[]>(['front'])
   const [activeView, setActiveView] = useState<View>('front')
 
@@ -131,6 +147,7 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
   // Active image: for generate mode show the selected quality variant, fallback to other
   const getActiveImage = (view: View): string | undefined => {
     if (mode === 'upload') return uploadedViews[view]
+    if (mode === 'library') return libraryViews[view]
     return viewResults[view]
   }
 
@@ -148,7 +165,8 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
       if (img) views[v] = img
     }
     const primary = views.front ?? views.back ?? views.side ?? ''
-    onComplete({ svg: '', dataUrl: primary, views, type: 'generated', color: 'custom' })
+    const libGarment = mode === 'library' ? GARMENT_LIBRARY.find(g => g.id === selectedGarmentId) : null
+    onComplete({ svg: '', dataUrl: primary, views, type: libGarment ? libGarment.name : 'generated', color: 'custom' })
   }
 
   return (
@@ -223,12 +241,46 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
                   <Upload size={14}/>
                   Upload Your Own
                 </button>
+                <button onClick={() => setMode('library')} className="btn-secondary w-full mt-2 flex items-center justify-center gap-2">
+                  <Shirt size={14}/>
+                  Choose from GRACE library
+                </button>
               </>
-            ) : (
+            ) : mode === 'upload' ? (
               <>
                 <p className="text-xs font-medium text-gray-600 mb-2">Add photos for each view</p>
                 <p className="text-[11px] text-gray-400 mb-3">Use the view tabs on the right to upload a photo for each angle.</p>
                 <button onClick={() => setMode('generate')} className="btn-secondary w-full flex items-center justify-center gap-2">
+                  <Cpu size={14}/>
+                  Generate with AI instead
+                </button>
+                <button onClick={() => setMode('library')} className="btn-secondary w-full mt-2 flex items-center justify-center gap-2">
+                  <Shirt size={14}/>
+                  Choose from GRACE library
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-medium text-gray-600 mb-2">GRACE garment library</p>
+                <p className="text-[11px] text-gray-400 mb-3">Pick a blank garment to customize in the editor.</p>
+                <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto pr-1">
+                  {GARMENT_LIBRARY.map(g => {
+                    const thumb = g.views.front ?? g.views.side ?? g.views.back ?? ''
+                    const selected = selectedGarmentId === g.id
+                    return (
+                      <button key={g.id} onClick={() => selectLibraryGarment(g)}
+                        className={`text-left rounded-lg border overflow-hidden transition-all flex flex-col ${
+                          selected ? 'border-brand-green ring-1 ring-brand-green' : 'border-slate-200 hover:border-slate-300'
+                        }`}>
+                        <div className="bg-white flex items-center justify-center" style={{ height: 80 }}>
+                          {thumb ? <img src={thumb} alt={g.name} className="max-h-full max-w-full object-contain p-1.5"/> : <ImageIcon size={20} className="text-gray-300"/>}
+                        </div>
+                        <span className="text-[10px] font-medium text-gray-700 px-2 py-1.5 leading-tight">{g.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <button onClick={() => setMode('generate')} className="btn-secondary w-full mt-3 flex items-center justify-center gap-2">
                   <Cpu size={14}/>
                   Generate with AI instead
                 </button>
@@ -276,7 +328,7 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
 
           </div>
 
-          {mode === 'generate' ? (
+          {mode !== 'upload' ? (
             <div>
               <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center" style={{ minHeight: 480 }}>
                 {loadingView === activeView ? (
@@ -290,9 +342,13 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
                 ) : (
                   <div className="flex flex-col items-center gap-3 py-20 text-center px-6">
                     <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-                      <Sparkles size={22} className="text-gray-400"/>
+                      {mode === 'library' ? <Shirt size={22} className="text-gray-400"/> : <Sparkles size={22} className="text-gray-400"/>}
                     </div>
-                    <p className="text-sm text-gray-500">Choose <strong>Clean</strong> for design placement or <strong>Realistic</strong> for a premium product preview</p>
+                    <p className="text-sm text-gray-500">
+                      {mode === 'library'
+                        ? 'Pick a blank garment from the GRACE library on the left to start customizing'
+                        : <>Choose <strong>Clean</strong> for design placement or <strong>Realistic</strong> for a premium product preview</>}
+                    </p>
                   </div>
                 )}
               </div>
