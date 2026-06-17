@@ -229,41 +229,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
     document.head.appendChild(link)
   }, [])
 
-  // Restore from localStorage
+  // Init: always start with a blank canvas — user applies logo via the Art tab
   useEffect(() => {
-    let restored = false
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        let viewLayers: ViewLayers
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Migrate legacy flat array → front view
-          viewLayers = { front: parsed.map((l: LogoLayer) => ({ ...l, type: l.type ?? 'image' } as LogoLayer)) }
-        } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          viewLayers = parsed as ViewLayers
-        } else {
-          viewLayers = {}
-        }
-        setLayersByView(viewLayers)
-        const firstView = Object.keys(viewLayers)[0]
-        if (firstView) {
-          setActiveEditorView(firstView)
-          const fl = viewLayers[firstView]
-          if (fl?.length) setSelectedId(fl[fl.length - 1].id)
-        }
-        setSaveStatus('saved')
-        restored = true
-      }
-    } catch {}
-
-    if (!restored && state.logo) {
-      const id = crypto.randomUUID()
-      const seedLayer: ImageLayer = { id, type: 'image', dataUrl: state.logo.dataUrl, x: 80, y: 100, width: 180, height: 90, rotation: 0 }
-      setLayersByView({ front: [seedLayer] })
-      setSelectedId(id)
-    }
-
+    // Clear any stale localStorage so previous session layers don't appear
+    try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(LEGACY_KEY) } catch {}
     if (availableViews.length > 0) setActiveEditorView(availableViews[0])
     hydrated.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps

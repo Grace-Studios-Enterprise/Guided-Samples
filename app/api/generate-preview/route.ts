@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
       await send({ type: 'status', message: 'Compositing your design...' })
 
       const basePrompt = logoImage
-        ? `Professional apparel product photography. Take this garment and realistically apply the provided logo to the ${placement || 'center chest'}. The logo should look printed or embroidered on the fabric. Studio lighting, white background, photorealistic, no model, no mannequin. Show the full garment.`
-        : `Professional apparel product photography of this exact garment design. The garment image includes a printed logo/graphic — keep that logo exactly as shown, in the same position, size, and colors, making it look realistically printed or embroidered on the fabric. Studio lighting, white background, photorealistic, no model, no mannequin. Show the full garment.`
+        ? `Professional apparel product photography. Take this garment and apply the provided logo to the ${placement || 'center chest'} so it looks physically embedded into the fabric — screen printed, heat transferred, or embroidered. The graphic must conform to the fabric texture, folds, and weave of the garment. Do NOT place the logo as a floating overlay or sticker. Studio lighting, white background, photorealistic, no model, no mannequin. Show the full garment.`
+        : `Professional apparel product photography of this exact garment design. The garment image includes a printed logo/graphic — keep that logo exactly as shown, in the same position, size, and colors. The graphic must look physically embedded into the fabric — screen printed, heat transferred, or embroidered — conforming to the fabric texture, folds, and weave. Do NOT render the graphic as a flat overlay or sticker on top of the fabric. Studio lighting, white background, photorealistic, no model, no mannequin. Show the full garment.`
       const prompt = extraPrompt ? `${basePrompt} Additional direction: ${extraPrompt}` : basePrompt
 
       const form = new FormData()

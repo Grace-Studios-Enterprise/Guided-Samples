@@ -22,7 +22,7 @@ function previewCacheKey(state: AppState, prompt = '') {
   return cacheKey('preview', designImageOf(state).slice(-40) + prompt.slice(0, 60))
 }
 
-const TECH_DRAWING_PROMPT = 'flat technical illustration, garment technical flat drawing, clean precise line art, front view, white background, no shading, fashion technical sketch, measurement callout lines, black and white'
+const TECH_DRAWING_PROMPT = 'flat technical illustration, garment technical flat drawing, clean precise line art, front and back view, white background, no shading, fashion technical sketch, black and white. Show only logo placement callout lines with approximate logo dimensions (width x height in inches). Do NOT include a size chart or body measurement table.'
 
 export default function Phase4Preview({ state, onComplete, onBack }: Props) {
   const [drawMode, setDrawMode] = useState<'realistic' | 'technical'>('realistic')
