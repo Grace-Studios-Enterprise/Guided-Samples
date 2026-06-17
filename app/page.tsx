@@ -25,6 +25,7 @@ import { Menu, Sparkles, Loader2, Check, AlertCircle } from 'lucide-react'
 
 export type AppState = {
   currentPhase: number
+  route?: 'apparel' | 'uniform'
   logo: {
     svg: string
     dataUrl: string
@@ -53,6 +54,7 @@ export type AppState = {
 
 const EMPTY_STATE: AppState = {
   currentPhase: 1,
+  route: undefined,
   logo: null,
   garment: null,
   design: null,
@@ -328,7 +330,7 @@ function App() {
           {section === 'design' && state.currentPhase === 1 && (
             <Phase2Garment
               state={state}
-              onComplete={(garment) => advancePhase({ garment, currentPhase: 2 })}
+              onComplete={(route) => advancePhase({ route, currentPhase: 2 })}
               onBack={() => goToPhase(1)}
             />
           )}
