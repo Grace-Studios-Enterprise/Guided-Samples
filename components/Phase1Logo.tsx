@@ -16,6 +16,7 @@ interface Props {
   onComplete: (logo: AppState['logo']) => void
   onSkip: () => void
   onBack: () => void
+  onLogoUpdate?: (logo: AppState['logo']) => void
 }
 
 interface LogoResult {
@@ -32,7 +33,7 @@ const EXAMPLES = [
   'Athletic crest logo',
 ]
 
-export default function Phase1Logo({ state, onComplete, onSkip, onBack }: Props) {
+export default function Phase1Logo({ state, onComplete, onSkip, onBack, onLogoUpdate }: Props) {
   const credits = useAICredits()
   const [prompt, setPrompt] = useState(
     state.logo ? '' : 'Create a vintage athletic logo for my brand called GRACE. Make it minimal with an arrow element. Use forest green.'
@@ -140,6 +141,7 @@ export default function Phase1Logo({ state, onComplete, onSkip, onBack }: Props)
       setResult(null)
       setUploadedLogo(logo)
       setSavedLogo(logo)
+      onLogoUpdate?.(logo)
     } catch (err) {
       console.error('Upload failed', err)
     }

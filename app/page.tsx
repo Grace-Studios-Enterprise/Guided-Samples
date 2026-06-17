@@ -338,6 +338,7 @@ function App() {
               onComplete={(logo) => advancePhase({ logo, currentPhase: 3 })}
               onSkip={() => advancePhase({ currentPhase: 3 })}
               onBack={() => goToPhase(1)}
+              onLogoUpdate={(logo) => setState(s => ({ ...s, logo }))}
             />
           )}
           {section === 'design' && state.currentPhase === 3 && (
