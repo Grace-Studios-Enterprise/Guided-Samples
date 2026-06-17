@@ -160,7 +160,7 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
     if (!paid.paid) return
     // Auto-select the right tab based on payment type
     const p = new URLSearchParams(window.location.search).get('payment') ?? ''
-    if (p === 'direct_success' || p === 'deposit_success') setActiveTab('production')
+    if (p === 'direct_success' || p === 'deposit_success' || p === 'final_success') setActiveTab('production')
     else setActiveTab('sample')
 
     let elapsed = 0
@@ -179,8 +179,26 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [paid.paid])
 
-  const sampleOrders     = orders.filter(o => o.production_path === 'SAMPLE')
-  const productionOrders = orders.filter(o => o.production_path !== 'SAMPLE')
+  // Stages where a SAMPLE-path order has graduated to bulk production.
+  // Once a client approves the sample and pays the deposit, the order
+  // leaves the sample phase and belongs in the Production tab.
+  const PRODUCTION_PHASE_STAGES = new Set([
+    'AWAITING_PRODUCTION_DEPOSIT',
+    'BULK_PRODUCTION',
+    'QUALITY_CHECK',
+    'AWAITING_FINAL_PAYMENT',
+    'READY_TO_SHIP',
+    'SHIPPED',
+    'DELIVERED',
+  ])
+
+  function isInProductionPhase(o: ProductionOrder) {
+    if (o.production_path !== 'SAMPLE') return true   // DIRECT always production
+    return !!o.production_stage && PRODUCTION_PHASE_STAGES.has(o.production_stage)
+  }
+
+  const sampleOrders     = orders.filter(o => !isInProductionPhase(o))
+  const productionOrders = orders.filter(o => isInProductionPhase(o))
   const tabOrders        = activeTab === 'sample' ? sampleOrders : productionOrders
 
   const actionNeeded = tabOrders.filter(o => clientActionNeeded(o.production_stage))
