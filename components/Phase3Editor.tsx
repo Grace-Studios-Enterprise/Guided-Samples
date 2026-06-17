@@ -435,8 +435,14 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
       gctx.globalCompositeOperation = 'source-atop' // paint color only inside alpha
       gctx.fillStyle = garmentColor
       gctx.fillRect(0, 0, gw, gh)
-      gctx.globalCompositeOperation = 'multiply'    // restore texture shading over color
+      // Layer 2: multiply — dark pixels (shadows/seams/stitching) absorb into the color
+      gctx.globalCompositeOperation = 'multiply'
       gctx.drawImage(g, 0, 0, gw, gh)
+      // Layer 3: soft-light — adds wrinkle highlights, fold depth, and fabric contrast
+      gctx.globalCompositeOperation = 'soft-light'
+      gctx.globalAlpha = 0.5
+      gctx.drawImage(g, 0, 0, gw, gh)
+      gctx.globalAlpha = 1.0
       gctx.globalCompositeOperation = 'source-over'
       // Composite the tinted garment onto the white main canvas
       ctx.drawImage(gc, 0, 0, gc.width, gc.height, gx, gy, gw, gh)
@@ -715,7 +721,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                     isolation: garmentColor ? 'isolate' : undefined,
                   }}>
                     {garmentColor && (
-                      // Color fill clipped to garment alpha silhouette
+                      // Layer 1 — color fill clipped to garment alpha silhouette
                       <div style={{
                         position: 'absolute', inset: 0,
                         backgroundColor: garmentColor,
@@ -730,13 +736,30 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack }
                         pointerEvents: 'none',
                       } as React.CSSProperties}/>
                     )}
-                    {/* Garment texture — multiply blend makes white pixels transparent,
-                        preserving seams, shadows, and highlights over the color fill */}
+                    {/* Layer 2 — multiply: white pixels become transparent, dark pixels
+                        (shadows, seams, stitching, zipper) darken the color fill */}
                     <img src={garmentDisplaySrc} alt="garment" draggable={false}
                       style={{
-                        position: 'relative', width: '100%', height: '100%', objectFit: 'contain',
+                        position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
                         mixBlendMode: garmentColor ? 'multiply' : 'normal',
+                        pointerEvents: 'none',
                       } as React.CSSProperties}/>
+                    {/* Layer 3 — soft-light texture overlay: adds midtone depth, fabric
+                        wrinkle highlights, fold contrast, and stitch/seam detail above the
+                        color. Opacity ~0.5 keeps the selected color vibrant. Only rendered
+                        when a garment color is active; does not affect the artwork layers
+                        above (they live outside this isolated container). */}
+                    {garmentColor && (
+                      <img src={garmentDisplaySrc} alt="" aria-hidden draggable={false}
+                        style={{
+                          position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
+                          mixBlendMode: 'soft-light',
+                          opacity: 0.5,
+                          pointerEvents: 'none',
+                        } as React.CSSProperties}/>
+                    )}
+                    {/* Invisible spacer keeps the container at the right height */}
+                    <div style={{ width: '100%', height: '100%' }}/>
                   </div>
                 </div>
                 ) : null
