@@ -35,6 +35,8 @@ interface TextLayer extends BaseLayer {
   fontFamily: string
   fontSize: number
   color: string
+  fontWeight?: 'normal' | 'bold'
+  fontStyle?: 'normal' | 'italic'
 }
 
 type LogoLayer = ImageLayer | TextLayer
@@ -56,7 +58,7 @@ const GARMENT_DISPLAY_W = 320
 const GARMENT_DISPLAY_H = 400
 
 const GOOGLE_FONTS_URL =
-  'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Anton&family=Oswald:wght@400;700&family=Barlow+Condensed:wght@400;700&family=Montserrat:wght@400;700&family=Raleway:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Pacifico&family=Racing+Sans+One&display=swap'
+  'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Anton&family=Oswald:wght@400;700&family=Barlow+Condensed:wght@400;700&family=Montserrat:wght@400;700&family=Pacifico&family=Racing+Sans+One&family=Space+Grotesk:wght@400;700&family=Unbounded:wght@400;700&family=Righteous&family=Orbitron:wght@400;700&family=Permanent+Marker&family=Black+Ops+One&family=Graduate&family=Bungee&family=Archivo+Black&display=swap'
 
 const FONT_LIBRARY = [
   { name: 'Bebas Neue',        label: 'BEBAS NEUE'     },
@@ -65,12 +67,16 @@ const FONT_LIBRARY = [
   { name: 'Oswald',            label: 'Oswald'          },
   { name: 'Barlow Condensed',  label: 'Barlow'          },
   { name: 'Montserrat',        label: 'Montserrat'      },
-  { name: 'Raleway',           label: 'Raleway'         },
-  { name: 'Playfair Display',  label: 'Playfair'        },
   { name: 'Pacifico',          label: 'Pacifico'        },
-  { name: 'serif',             label: 'Serif'           },
-  { name: 'sans-serif',        label: 'Sans-Serif'      },
-  { name: 'monospace',         label: 'Monospace'       },
+  { name: 'Space Grotesk',     label: 'Space Grotesk'   },
+  { name: 'Unbounded',         label: 'Unbounded'       },
+  { name: 'Righteous',         label: 'Righteous'       },
+  { name: 'Orbitron',          label: 'Orbitron'        },
+  { name: 'Permanent Marker',  label: 'Marker'          },
+  { name: 'Black Ops One',     label: 'Black Ops'       },
+  { name: 'Graduate',          label: 'Graduate'        },
+  { name: 'Bungee',            label: 'Bungee'          },
+  { name: 'Archivo Black',     label: 'Archivo Black'   },
 ]
 
 const GARMENT_COLORS = [
@@ -452,7 +458,9 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
     // Ensure custom fonts are loaded before rendering text
     for (const layer of layers) {
       if (layer.type === 'text') {
-        try { await document.fonts.load(`bold ${layer.fontSize}px "${layer.fontFamily}"`) } catch {}
+        const fw = (layer as TextLayer).fontWeight ?? 'bold'
+        const fi = (layer as TextLayer).fontStyle ?? 'normal'
+        try { await document.fonts.load(`${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`) } catch {}
       }
     }
     const W = 380, H = 460, SCALE = 2
@@ -501,7 +509,9 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
       ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2)
       ctx.rotate((layer.rotation * Math.PI) / 180)
       if (layer.type === 'text') {
-        ctx.font = `bold ${layer.fontSize}px "${layer.fontFamily}"`
+        const fw = (layer as TextLayer).fontWeight ?? 'bold'
+        const fi = (layer as TextLayer).fontStyle ?? 'normal'
+        ctx.font = `${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`
         ctx.fillStyle = layer.color
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -861,6 +871,8 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                       fontFamily: `"${layer.fontFamily}", sans-serif`,
                       fontSize: layer.fontSize,
                       color: layer.color,
+                      fontWeight: (layer as TextLayer).fontWeight ?? 'bold',
+                      fontStyle: (layer as TextLayer).fontStyle ?? 'normal',
                       whiteSpace: 'nowrap', overflow: 'hidden',
                       pointerEvents: 'none',
                     }}>
@@ -929,6 +941,22 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Bold / Italic */}
+                  <div className="flex gap-1.5 mb-2">
+                    <button
+                      onClick={() => updateSelected({ fontWeight: (selected as TextLayer).fontWeight === 'bold' ? 'normal' : 'bold' })}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                        (selected as TextLayer).fontWeight !== 'normal' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
+                      }`}
+                    >B</button>
+                    <button
+                      onClick={() => updateSelected({ fontStyle: (selected as TextLayer).fontStyle === 'italic' ? 'normal' : 'italic' })}
+                      className={`flex-1 py-1.5 rounded-lg border text-xs italic transition-all ${
+                        (selected as TextLayer).fontStyle === 'italic' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
+                      }`}
+                    >I</button>
                   </div>
 
                   <ControlRow
