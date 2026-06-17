@@ -330,7 +330,7 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
 
           {mode !== 'upload' ? (
             <div>
-              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center" style={{ minHeight: 480 }}>
+              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center" style={{ height: 480 }}>
                 {loadingView === activeView ? (
                   <div className="flex flex-col items-center gap-3 text-gray-400 py-16">
                     <Loader2 size={32} className="animate-spin text-brand-green"/>
@@ -338,7 +338,7 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
                     <span className="text-xs text-gray-400">This can take 15–30 seconds</span>
                   </div>
                 ) : activeImage ? (
-                  <img src={activeImage} alt={`${activeView} view`} className="w-full object-contain p-4"/>
+                  <img src={activeImage} alt={`${activeView} view`} className="max-h-full max-w-full object-contain p-4"/>
                 ) : (
                   <div className="flex flex-col items-center gap-3 py-20 text-center px-6">
                     <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
@@ -385,10 +385,10 @@ function ApparelFlow({ state, onComplete, onBack }: Props) {
           ) : (
             /* Upload mode — same large canvas as generate mode */
             <div>
-              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center relative" style={{ minHeight: 480 }}>
+              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center relative" style={{ height: 480 }}>
                 {uploadedViews[activeView] ? (
                   <>
-                    <img src={uploadedViews[activeView]} alt={`${activeView} view`} className="w-full object-contain p-4"/>
+                    <img src={uploadedViews[activeView]} alt={`${activeView} view`} className="max-h-full max-w-full object-contain p-4"/>
                     <button
                       onClick={() => setUploadedViews(prev => { const n = {...prev}; delete n[activeView]; return n })}
                       className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow"
@@ -772,7 +772,7 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
 
           {mode === 'generate' ? (
             <div>
-              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center" style={{ minHeight: 480 }}>
+              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center" style={{ height: 480 }}>
                 {loadingView === activeView ? (
                   <div className="flex flex-col items-center gap-3 text-gray-400 py-16">
                     <Loader2 size={32} className="animate-spin text-brand-green"/>
@@ -780,7 +780,7 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
                     <span className="text-xs text-gray-400">This can take 15–30 seconds</span>
                   </div>
                 ) : activeImage ? (
-                  <img src={activeImage} alt={`${activeView} view`} className="w-full object-contain p-4"/>
+                  <img src={activeImage} alt={`${activeView} view`} className="max-h-full max-w-full object-contain p-4"/>
                 ) : (
                   <div className="flex flex-col items-center gap-3 py-20 text-center px-6">
                     <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
@@ -809,10 +809,10 @@ function UniformFlow({ onComplete, onBack }: { onComplete: (garment: AppState['g
             </div>
           ) : (
             <div>
-              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center relative" style={{ minHeight: 480 }}>
+              <div className="bg-white border border-slate-100 rounded-xl flex items-center justify-center relative" style={{ height: 480 }}>
                 {uploadedViews[activeView] ? (
                   <>
-                    <img src={uploadedViews[activeView]} alt={`${activeView} view`} className="w-full object-contain p-4"/>
+                    <img src={uploadedViews[activeView]} alt={`${activeView} view`} className="max-h-full max-w-full object-contain p-4"/>
                     <button onClick={() => setUploadedViews(prev => { const n = {...prev}; delete n[activeView]; return n })} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center text-gray-600 hover:text-red-500 shadow"><X size={13}/></button>
                   </>
                 ) : (
