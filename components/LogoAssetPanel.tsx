@@ -163,14 +163,6 @@ export default function LogoAssetPanel({ state, onLogoUpdate }: Props) {
           <input type="file" className="hidden" accept="image/png,image/svg+xml,application/pdf,.png,.svg,.pdf" onChange={handleUpload}/>
         </label>
         <p className="text-[10px] text-gray-400 text-center">PNG, SVG, or PDF — transparent backgrounds work best</p>
-        {state.logo && (
-          <div className="rounded-lg border border-brand-green/30 overflow-hidden">
-            <div className="bg-white flex items-center justify-center" style={{ height: 80 }}>
-              <img src={state.logo.dataUrl} alt="logo" className="max-h-full max-w-full object-contain p-2"/>
-            </div>
-            <p className="text-[10px] text-brand-green text-center py-1">Applied to canvas</p>
-          </div>
-        )}
       </div>
     )
   }

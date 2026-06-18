@@ -40,7 +40,20 @@ export default function PhaseDesignStudio({ state, onComplete, onBack, onLogoUpd
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="px-6 pt-5 pb-4 border-b border-slate-200 bg-white shrink-0 flex items-start justify-between">
+        <div>
+          <p className="phase-header">Phase 2</p>
+          <h1 className="text-xl font-bold text-gray-900">Design Studio</h1>
+          <p className="text-gray-500 text-sm mt-1">Build your garment, logo, and artwork on one canvas</p>
+        </div>
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
+          <ChevronLeft size={14}/> Back
+        </button>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
       {/* Asset panel */}
       {panelOpen ? (
         <div className="flex flex-col border-r border-slate-200 bg-white overflow-y-auto shrink-0" style={{ width: 280 }}>
@@ -126,6 +139,7 @@ export default function PhaseDesignStudio({ state, onComplete, onBack, onLogoUpd
           onArtworkConsumed={() => setPendingArtwork(null)}
         />
       </div>
+    </div>
     </div>
   )
 }

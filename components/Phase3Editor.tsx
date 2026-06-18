@@ -653,28 +653,53 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
 
           {/* Color tab */}
           {leftTab === 'color' && (
-            <div className="card space-y-3">
-              <p className="text-xs font-medium text-gray-600">Garment Color</p>
-              <div className="grid grid-cols-4 gap-2">
-                {GARMENT_COLORS.map(c => (
-                  <button key={c} onClick={() => setGarmentColor(c === garmentColor ? '' : c)}
-                    title={c}
-                    style={{ backgroundColor: c }}
-                    className={`w-full aspect-square rounded-lg border-2 transition-all ${
-                      garmentColor === c ? 'border-grace-ink scale-110 shadow-md' : 'border-transparent hover:border-slate-300'
-                    } ${c === '#FFFFFF' || c === '#F5F5F5' ? 'border-slate-200' : ''}`}
-                  />
-                ))}
+            <div className="space-y-3">
+              <div className="card space-y-3">
+                <p className="text-xs font-medium text-gray-600">Garment Color</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {GARMENT_COLORS.map(c => (
+                    <button key={c} onClick={() => setGarmentColor(c === garmentColor ? '' : c)}
+                      title={c}
+                      style={{ backgroundColor: c }}
+                      className={`w-full aspect-square rounded-lg border-2 transition-all ${
+                        garmentColor === c ? 'border-grace-ink scale-110 shadow-md' : 'border-transparent hover:border-slate-300'
+                      } ${c === '#FFFFFF' || c === '#F5F5F5' ? 'border-slate-200' : ''}`}
+                    />
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-500">
+                  <span className="flex-1">Custom</span>
+                  <input type="color" value={garmentColor || '#FFFFFF'} onChange={e => setGarmentColor(e.target.value)}
+                    className="w-8 h-7 rounded cursor-pointer border border-slate-200"/>
+                </label>
+                {garmentColor && (
+                  <button onClick={() => setGarmentColor('')} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
+                    Clear color
+                  </button>
+                )}
               </div>
-              <label className="flex items-center gap-2 text-xs text-gray-500">
-                <span className="flex-1">Custom</span>
-                <input type="color" value={garmentColor || '#FFFFFF'} onChange={e => setGarmentColor(e.target.value)}
-                  className="w-8 h-7 rounded cursor-pointer border border-slate-200"/>
-              </label>
-              {garmentColor && (
-                <button onClick={() => setGarmentColor('')} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                  Clear color
-                </button>
+
+              {/* Recolor Artwork — only when an image layer is selected */}
+              {selected?.type === 'image' && (
+                <div className="card space-y-2">
+                  <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {COLOR_SWATCHES.map(c => (
+                      <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
+                        style={{ backgroundColor: c }}
+                        className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
+                      />
+                    ))}
+                  </div>
+                  <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
+                    onChange={e => updateSelected({ tintColor: e.target.value })}
+                    className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
+                  {(selected as ImageLayer).tintColor && (
+                    <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
+                      Clear tint
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -801,29 +826,6 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                       onChange={e => updateSelected({ color: e.target.value })}
                       className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
                   </div>
-                </div>
-              )}
-
-              {/* Artwork recolor */}
-              {selected.type === 'image' && (
-                <div className="card space-y-2">
-                  <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {COLOR_SWATCHES.map(c => (
-                      <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
-                        style={{ backgroundColor: c }}
-                        className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                      />
-                    ))}
-                  </div>
-                  <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
-                    onChange={e => updateSelected({ tintColor: e.target.value })}
-                    className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
-                  {(selected as ImageLayer).tintColor && (
-                    <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                      Clear tint
-                    </button>
-                  )}
                 </div>
               )}
 
