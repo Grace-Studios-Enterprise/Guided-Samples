@@ -40,6 +40,7 @@ interface TextLayer extends BaseLayer {
   fontStyle?: 'normal' | 'italic'
   strokeColor?: string
   strokeWidth?: number
+  archAmount?: number  // -100 to 100, 0 = flat, positive = arch up, negative = arch down
 }
 
 type LogoLayer = ImageLayer | TextLayer
@@ -173,6 +174,64 @@ async function cropPadding(src: string, pad = 6): Promise<string> {
     img.onerror = () => resolve(src)
     img.src = src
   })
+}
+
+// Escape text for safe embedding inside an SVG node
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// Build an SVG string that renders the text layer, optionally arched along an arc.
+// archAmount: -100..100 (0 = flat). Positive curves the text upward, negative downward.
+function archTextSvg(layer: TextLayer, w: number, h: number): string {
+  const arch = layer.archAmount ?? 0
+  const text = escapeXml(layer.text || 'Your Text')
+  const fw = layer.fontWeight ?? 'bold'
+  const fi = layer.fontStyle ?? 'normal'
+  const sw = layer.strokeWidth ?? 0
+  const strokeAttr = sw > 0
+    ? `stroke="${layer.strokeColor ?? '#000000'}" stroke-width="${sw}" paint-order="stroke" stroke-linejoin="round"`
+    : ''
+  const fontAttr = `font-family="${layer.fontFamily}, sans-serif" font-size="${layer.fontSize}" fill="${layer.color}" font-weight="${fw}" font-style="${fi}"`
+
+  if (!arch) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" dominant-baseline="middle" ${fontAttr} ${strokeAttr}>${text}</text></svg>`
+  }
+
+  // Chord = width; sagitta (arc height) scales with arch magnitude.
+  const lift = Math.max(1, (Math.abs(arch) / 100) * h * 0.7)
+  const r = (w * w / 4 + lift * lift) / (2 * lift)
+  const baseY = arch > 0 ? h * 0.72 : h * 0.28
+  const sweep = arch > 0 ? 1 : 0  // 1 = arc bulges up, 0 = bulges down
+  const pathD = `M 0,${baseY} A ${r},${r} 0 0,${sweep} ${w},${baseY}`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs><path id="archpath" d="${pathD}"/></defs><text ${fontAttr} ${strokeAttr} text-anchor="middle"><textPath href="#archpath" startOffset="50%">${text}</textPath></text></svg>`
+}
+
+// Rasterize an arched text layer to a transparent PNG data URL (for canvas export).
+async function archTextToDataUrl(layer: TextLayer, w: number, h: number): Promise<string> {
+  const svg = archTextSvg(layer, w, h)
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  const img = await loadImage(url)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil(w * 2))
+  canvas.height = Math.max(1, Math.ceil(h * 2))
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(2, 2)
+  ctx.drawImage(img, 0, 0, w, h)
+  return canvas.toDataURL('image/png')
+}
+
+// Live canvas preview of an arched text layer (renders the SVG as an <img>).
+function ArchTextPreview({ layer }: { layer: TextLayer }) {
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    const svg = archTextSvg(layer, layer.width, layer.height)
+    setSrc(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
+  }, [layer.text, layer.fontFamily, layer.fontSize, layer.color, layer.fontWeight,
+      layer.fontStyle, layer.strokeWidth, layer.strokeColor, layer.archAmount,
+      layer.width, layer.height])
+  if (!src) return null
+  return <img src={src} alt={layer.text} className="w-full h-full object-contain" draggable={false} style={{ pointerEvents: 'none' }}/>
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -590,20 +649,27 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
       ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2)
       ctx.rotate((layer.rotation * Math.PI) / 180)
       if (layer.type === 'text') {
-        const fw = (layer as TextLayer).fontWeight ?? 'bold'
-        const fi = (layer as TextLayer).fontStyle ?? 'normal'
+        const tl = layer as TextLayer
+        if (tl.archAmount) {
+          const pngUrl = await archTextToDataUrl(tl, layer.width, layer.height)
+          const aimg = await loadImage(pngUrl)
+          ctx.drawImage(aimg, -layer.width / 2, -layer.height / 2, layer.width, layer.height)
+        } else {
+        const fw = tl.fontWeight ?? 'bold'
+        const fi = tl.fontStyle ?? 'normal'
         ctx.font = `${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        const sw = (layer as TextLayer).strokeWidth ?? 0
+        const sw = tl.strokeWidth ?? 0
         if (sw > 0) {
           ctx.lineWidth = sw
-          ctx.strokeStyle = (layer as TextLayer).strokeColor ?? '#000000'
+          ctx.strokeStyle = tl.strokeColor ?? '#000000'
           ctx.lineJoin = 'round'
           ctx.strokeText(layer.text, 0, 0)
         }
         ctx.fillStyle = layer.color
         ctx.fillText(layer.text, 0, 0)
+        }
       } else {
         const img = await loadImage(layer.dataUrl)
         const lf = Math.min(layer.width / img.width, layer.height / img.height)
@@ -650,6 +716,11 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
       const fw = layer.fontWeight ?? 'bold'
       const fi = layer.fontStyle ?? 'normal'
       try { await document.fonts.load(`${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`) } catch {}
+      if (layer.archAmount) {
+        const pngUrl = await archTextToDataUrl(layer, layer.width, layer.height)
+        const aimg = await loadImage(pngUrl)
+        ctx.drawImage(aimg, -layer.width / 2, -layer.height / 2, layer.width, layer.height)
+      } else {
       ctx.font = `${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -662,6 +733,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
       }
       ctx.fillStyle = layer.color
       ctx.fillText(layer.text, 0, 0)
+      }
     } else {
       const img = await loadImage(layer.dataUrl)
       const lf = Math.min(layer.width / img.width, layer.height / img.height)
@@ -1083,6 +1155,22 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                           className="w-full h-7 rounded cursor-pointer border border-slate-200 mt-2"/>
                       )}
                     </div>
+
+                    {/* Arch / curve */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-500">Arch</span>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => updateSelected({ archAmount: Math.max(-100, ((selected as TextLayer).archAmount ?? 0) - 10) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).archAmount ?? 0}</span>
+                          <button onClick={() => updateSelected({ archAmount: Math.min(100, ((selected as TextLayer).archAmount ?? 0) + 10) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                        </div>
+                      </div>
+                      <input type="range" min={-100} max={100} value={(selected as TextLayer).archAmount ?? 0}
+                        onChange={e => updateSelected({ archAmount: parseInt(e.target.value) })}
+                        className="w-full accent-brand-green"/>
+                      <p className="text-[11px] text-gray-400 mt-1">Positive curves up, negative curves down.</p>
+                    </div>
                   </div>
                   {transformCard(selected)}
                   {layerControlsCard()}
@@ -1307,6 +1395,9 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                     userSelect: 'none', touchAction: 'none',
                   }}>
                   {layer.type === 'text' ? (
+                    (layer as TextLayer).archAmount ? (
+                      <ArchTextPreview layer={layer as TextLayer} />
+                    ) : (
                     <div style={{
                       width: '100%', height: '100%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1323,6 +1414,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                     } as React.CSSProperties}>
                       {layer.text || 'Your Text'}
                     </div>
+                    )
                   ) : (
                     <img
                       src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl}

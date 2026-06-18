@@ -353,7 +353,7 @@ function App() {
               onBack={() => goToPhase(1)}
               onLogoUpdate={(logo) => setState(s => ({ ...s, logo }))}
               onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
-              onStudioStateChange={(studioState) => setState(s => ({ ...s, studioState }))}
+              onStudioStateChange={(studioState) => setState(s => { const next = { ...s, studioState }; autoSave(next); return next })}
             />
           )}
           {section === 'design' && state.currentPhase === 3 && (
