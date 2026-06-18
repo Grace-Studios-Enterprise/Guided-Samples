@@ -361,9 +361,16 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const logoGalleryRef = useRef(logoGallery)
   const artworkGalleryRef = useRef(artworkGallery)
   const onStudioStateChangeRef = useRef(onStudioStateChange)
-  // Holds the latest renderDesign so debounced/memoized callbacks never capture a
-  // stale closure with empty layers (which produced blank-garment thumbnails).
+  // Always points at the latest renderDesign closure so async thumbnail captures
+  // don't use a stale first-render snapshot with empty layers.
   const renderDesignRef = useRef<((opts?: { includeLayers?: boolean; includeGarment?: boolean; transparent?: boolean }) => Promise<string>) | null>(null)
+  // Mirrors displaySrcs in a ref so renderDesign uses the cropped garment source
+  // even when called from a memoized callback (avoids the padded fallback that
+  // makes the garment render tiny relative to logo layers).
+  const displaySrcsRef = useRef<Record<string, string>>({})
+  // Last successfully rendered thumbnail — re-used on every emit so garmentColor/
+  // gallery saves don't accidentally overwrite it with a bare-garment fallback.
+  const lastThumbRef = useRef<string | undefined>(undefined)
   useEffect(() => { layersByViewRef.current = layersByView }, [layersByView])
   useEffect(() => { garmentColorRef.current = garmentColor }, [garmentColor])
   useEffect(() => { logoGalleryRef.current = logoGallery }, [logoGallery])
@@ -371,20 +378,23 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   useEffect(() => { onStudioStateChangeRef.current = onStudioStateChange }, [onStudioStateChange])
 
   // Bundle the full studio state from refs so every emit captures the latest values.
-  // Also captures a low-res thumbnail of the current canvas for the project card.
+  // Always sends the last known thumbnail so garmentColor/gallery saves don't
+  // overwrite a good thumbnail with a bare-garment fallback.
   const emitStudioState = useCallback((thumbnailDataUrl?: string) => {
+    const thumb = thumbnailDataUrl ?? lastThumbRef.current
     onStudioStateChangeRef.current?.({
       layersByView: layersByViewRef.current,
       garmentColor: garmentColorRef.current,
       logoGallery: logoGalleryRef.current,
       artworkGallery: artworkGalleryRef.current,
-      thumbnailDataUrl,
+      thumbnailDataUrl: thumb,
     })
   }, [])
 
   const emitStudioStateWithThumb = useCallback(async () => {
     try {
       const thumb = await renderDesignRef.current?.({})
+      if (thumb) lastThumbRef.current = thumb
       emitStudioState(thumb || undefined)
     } catch {
       emitStudioState()
@@ -403,6 +413,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   }, [])
   const croppedCache = useRef<Record<string, string>>({})
   const [displaySrcs, setDisplaySrcs] = useState<Record<string, string>>({})
+  useEffect(() => { displaySrcsRef.current = displaySrcs }, [displaySrcs])
   const [tintedDataUrls, setTintedDataUrls] = useState<Record<string, string>>({})
   // Derived
   const layers: LogoLayer[] = layersByView[activeEditorView] ?? []
@@ -765,9 +776,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     transparent?: boolean
   } = {}): Promise<string> => {
     const { includeLayers = true, includeGarment = true, transparent = false } = opts
-    // Use the same cropped (padding-removed) source the canvas displays so the
-    // download matches exactly what the user sees on screen.
-    const garmentSrc = displaySrcs[activeEditorView] || garmentSrcForView(activeEditorView)
+    // Use the cropped (padding-removed) garment source — same as the live canvas.
+    // Read from the ref so this works correctly when called from memoized/async
+    // contexts where the displaySrcs closure would be stale.
+    const garmentSrc = displaySrcsRef.current[activeEditorView] || garmentSrcForView(activeEditorView)
     if (!garmentSrc) return ''
     // Ensure custom fonts are loaded before rendering text
     for (const layer of layers) {

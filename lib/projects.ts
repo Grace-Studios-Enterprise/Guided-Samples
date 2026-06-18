@@ -210,8 +210,15 @@ export async function loadProject(projectId: string): Promise<ProjectDetail | nu
 
 // Aggregate all logos, artwork, garments, and previews across every project the
 // user has ever saved. Used by the Library section.
-// Garments that come from the GRACE built-in library (path starts with "/") are
-// excluded — the user only wants things they uploaded or AI-generated.
+//
+// Deduplication: the same image may appear as both a base64 dataUrl (in the
+// studioState gallery) and as a Supabase storage URL (in logo_url/garment_url) —
+// both added naively would show the same image twice. We fingerprint each entry:
+//  - http(s) URLs:  the storage path after the bucket (the unique portion)
+//  - data URLs:     first 500 chars of the base64 payload (enough to distinguish images)
+// Two entries with the same fingerprint are the same image; only the first is kept.
+//
+// Garments from the GRACE built-in library (path starts with "/") are excluded.
 export async function listAllUserAssets(userId: string): Promise<{
   logos: string[]
   artworks: string[]
@@ -227,42 +234,47 @@ export async function listAllUserAssets(userId: string): Promise<{
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
 
-  const logos = new Set<string>()
-  const artworks = new Set<string>()
-  const garments = new Set<string>()
-  const previews = new Set<string>()
+  const fingerprint = (url: string): string => {
+    if (url.startsWith('data:')) return url.slice(0, 500)
+    // For Supabase public URLs, the unique key is the storage path after '/object/public/'
+    const m = url.match(/\/object\/public\/(.+)$/)
+    return m ? m[1] : url
+  }
+
+  const seen = new Set<string>()
+  const logos: string[] = []
+  const artworks: string[] = []
+  const garments: string[] = []
+  const previews: string[] = []
+
+  const add = (arr: string[], url: string) => {
+    if (!url) return
+    const fp = fingerprint(url)
+    if (seen.has(fp)) return
+    seen.add(fp)
+    arr.push(url)
+  }
 
   for (const row of data ?? []) {
     const ds = row.design_state as AppState | null
 
-    // Logo gallery stored in studioState (includes every generated + uploaded logo)
-    for (const url of ds?.studioState?.logoGallery ?? []) {
-      if (url) logos.add(url)
-    }
-    // Fall back to the dedicated logo_url column for older projects
-    if (row.logo_url) logos.add(row.logo_url)
+    // Logo gallery stored in studioState (generated + uploaded logos, newest project first)
+    for (const url of ds?.studioState?.logoGallery ?? []) add(logos, url)
+    // Fall back to the dedicated logo_url column for older projects saved before galleries existed
+    if (row.logo_url) add(logos, row.logo_url)
 
     // Artwork uploads
-    for (const url of ds?.studioState?.artworkGallery ?? []) {
-      if (url) artworks.add(url)
-    }
+    for (const url of ds?.studioState?.artworkGallery ?? []) add(artworks, url)
 
-    // Garments — skip built-in library assets (start with "/")
+    // Garments — skip GRACE built-in library assets (paths starting with "/")
     const garmentUrl = ds?.garment?.dataUrl ?? row.garment_url
-    if (garmentUrl && !garmentUrl.startsWith('/')) garments.add(garmentUrl)
+    if (garmentUrl && !garmentUrl.startsWith('/')) add(garments, garmentUrl)
 
     // Preview images
-    for (const url of (row.preview_urls as string[] | null) ?? []) {
-      if (url) previews.add(url)
-    }
+    for (const url of (row.preview_urls as string[] | null) ?? []) add(previews, url)
   }
 
-  return {
-    logos: Array.from(logos),
-    artworks: Array.from(artworks),
-    garments: Array.from(garments),
-    previews: Array.from(previews),
-  }
+  return { logos, artworks, garments, previews }
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
