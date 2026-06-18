@@ -38,6 +38,8 @@ interface TextLayer extends BaseLayer {
   color: string
   fontWeight?: 'normal' | 'bold'
   fontStyle?: 'normal' | 'italic'
+  strokeColor?: string
+  strokeWidth?: number
 }
 
 type LogoLayer = ImageLayer | TextLayer
@@ -182,7 +184,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
   // Restore garment color and layers from the module-level cache so back-navigation
   // returns the canvas exactly as the user left it.
   const [garmentColor, setGarmentColor] = useState(_cachedGarmentColor)
-  const [leftTab, setLeftTab] = useState<'assets' | 'color' | 'text'>('assets')
+  const [leftTab, setLeftTab] = useState<'logoart' | 'garment' | 'text'>('logoart')
 
   // Per-view layer state — restore from SPA cache on mount
   const [layersByView, setLayersByView] = useState<ViewLayers>(_cachedLayersByView)
@@ -359,8 +361,9 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
   // Drag handlers
   const handlePointerDown = (e: React.MouseEvent | React.TouchEvent, id: string) => {
     e.stopPropagation()
-    setSelectedId(id)
     const layer = layers.find(l => l.id === id)
+    setSelectedId(id)
+    if (layer) setLeftTab(layer.type === 'text' ? 'text' : 'logoart')
     if (!layer) return
     snapshot()
     const p = 'touches' in e
@@ -468,7 +471,14 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
     const newLayer: TextLayer = { id, type: 'text', text: 'YOUR TEXT', fontFamily: 'Bebas Neue', fontSize: 36, color: '#0A0A0A', x: 80, y: 180, width: 220, height: 60, rotation: 0 }
     setLayers(ls => [...ls, newLayer])
     setSelectedId(id)
-    setLeftTab('assets')
+    setLeftTab('text')
+  }
+
+  // Select a layer and switch to the tab that controls it
+  const selectLayer = (id: string) => {
+    setSelectedId(id)
+    const layer = layers.find(l => l.id === id)
+    if (layer) setLeftTab(layer.type === 'text' ? 'text' : 'logoart')
   }
 
   const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -568,9 +578,16 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
         const fw = (layer as TextLayer).fontWeight ?? 'bold'
         const fi = (layer as TextLayer).fontStyle ?? 'normal'
         ctx.font = `${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`
-        ctx.fillStyle = layer.color
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
+        const sw = (layer as TextLayer).strokeWidth ?? 0
+        if (sw > 0) {
+          ctx.lineWidth = sw
+          ctx.strokeStyle = (layer as TextLayer).strokeColor ?? '#000000'
+          ctx.lineJoin = 'round'
+          ctx.strokeText(layer.text, 0, 0)
+        }
+        ctx.fillStyle = layer.color
         ctx.fillText(layer.text, 0, 0)
       } else {
         const img = await loadImage(layer.dataUrl)
@@ -619,9 +636,16 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
       const fi = layer.fontStyle ?? 'normal'
       try { await document.fonts.load(`${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`) } catch {}
       ctx.font = `${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`
-      ctx.fillStyle = layer.color
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
+      const sw = layer.strokeWidth ?? 0
+      if (sw > 0) {
+        ctx.lineWidth = sw
+        ctx.strokeStyle = layer.strokeColor ?? '#000000'
+        ctx.lineJoin = 'round'
+        ctx.strokeText(layer.text, 0, 0)
+      }
+      ctx.fillStyle = layer.color
       ctx.fillText(layer.text, 0, 0)
     } else {
       const img = await loadImage(layer.dataUrl)
@@ -734,6 +758,61 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
     setSelectedId(null)
   }
 
+  // ─── Reusable control cards ────────────────────────────────────────────────
+  const transformCard = (sel: LogoLayer) => (
+    <div className="card">
+      <p className="text-xs font-medium text-gray-600 mb-3">Scale &amp; Position</p>
+      <div className="space-y-3">
+        <ControlRow
+          label="Scale"
+          value={Math.round((sel.width / 160) * 100)}
+          unit="%"
+          onDecrement={() => updateSelected({ width: Math.max(40, sel.width - 10), height: Math.max(20, sel.height - 5) })}
+          onIncrement={() => updateSelected({ width: sel.width + 10, height: sel.height + 5 })}
+        />
+        <div>
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-xs text-gray-500">Rotate</span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => updateSelected({ rotation: sel.rotation - 15 })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+              <span className="text-xs text-gray-700 w-10 text-center">{sel.rotation}°</span>
+              <button onClick={() => updateSelected({ rotation: sel.rotation + 15 })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+            </div>
+          </div>
+          <input type="range" min={-180} max={180} value={sel.rotation}
+            onChange={e => updateSelected({ rotation: parseInt(e.target.value) })}
+            className="w-full accent-brand-green"/>
+        </div>
+        <div>
+          <span className="text-xs text-gray-500 block mb-2">Position</span>
+          <div className="grid grid-cols-3 gap-1">
+            <div/>
+            <button onClick={() => updateSelected({ y: sel.y - 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ChevronUp size={12}/></button>
+            <div/>
+            <button onClick={() => updateSelected({ x: sel.x - 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ArrowLeft size={12}/></button>
+            <div className="w-6 h-6 rounded-full bg-slate-200 mx-auto self-center"/>
+            <button onClick={() => updateSelected({ x: sel.x + 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ArrowRight size={12}/></button>
+            <div/>
+            <button onClick={() => updateSelected({ y: sel.y + 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ChevronDown size={12}/></button>
+            <div/>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const layerControlsCard = () => (
+    <div className="card">
+      <p className="text-xs font-medium text-gray-600 mb-2">Layer Controls</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button onClick={() => moveLayer('up')} className="btn-secondary flex items-center justify-center gap-1 text-xs py-2"><ChevronUp size={12}/> Bring Fwd</button>
+        <button onClick={() => moveLayer('down')} className="btn-secondary flex items-center justify-center gap-1 text-xs py-2"><ChevronDown size={12}/> Send Bkwd</button>
+        <button onClick={duplicateSelected} className="btn-secondary flex items-center justify-center gap-1 text-xs py-2"><Copy size={12}/> Duplicate</button>
+        <button onClick={deleteSelected} className="flex items-center justify-center gap-1 text-xs py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 transition-colors"><Trash2 size={12}/> Delete</button>
+      </div>
+    </div>
+  )
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -758,9 +837,9 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
           {/* Tab bar */}
           <div className="flex rounded-lg border border-slate-200 overflow-hidden">
             {([
-              { id: 'assets', label: 'Art',   icon: <Upload  size={11}/> },
-              { id: 'color',  label: 'Color', icon: <Palette size={11}/> },
-              { id: 'text',   label: 'Text',  icon: <Type    size={11}/> },
+              { id: 'logoart', label: 'Logo/Art', icon: <Upload  size={11}/> },
+              { id: 'garment', label: 'Garment',  icon: <Palette size={11}/> },
+              { id: 'text',    label: 'Text',     icon: <Type    size={11}/> },
             ] as const).map(tab => (
               <button key={tab.id} onClick={() => setLeftTab(tab.id)}
                 className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
@@ -771,32 +850,71 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
             ))}
           </div>
 
-          {/* Art tab */}
-          {leftTab === 'assets' && (
-            <div className="card space-y-3">
-              <p className="text-xs font-medium text-gray-600">Artwork</p>
-              {state.logo && (
-                <button
-                  onClick={() => {
-                    const id = crypto.randomUUID()
-                    snapshot()
-                    const newLayer: ImageLayer = { id, type: 'image', isLogo: true, dataUrl: state.logo!.dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }
-                    setLayers(ls => [...ls, newLayer])
-                    setSelectedId(id)
-                  }}
-                  className="w-full bg-slate-50 hover:bg-slate-100 rounded-lg overflow-hidden transition-colors">
-                  <div className="checkerboard rounded-t-lg" style={{ height: 64 }}>
-                    <img src={state.logo.dataUrl} alt="logo" className="w-full h-full object-contain p-2"/>
+          {/* ── Logo / Art tab ── */}
+          {leftTab === 'logoart' && (
+            <>
+              <div className="card space-y-3">
+                <p className="text-xs font-medium text-gray-600">Logo &amp; Artwork</p>
+                {state.logo ? (
+                  <button
+                    onClick={() => {
+                      const id = crypto.randomUUID()
+                      snapshot()
+                      const newLayer: ImageLayer = { id, type: 'image', isLogo: true, dataUrl: state.logo!.dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }
+                      setLayers(ls => [...ls, newLayer])
+                      setSelectedId(id)
+                    }}
+                    className="w-full bg-slate-50 hover:bg-slate-100 rounded-lg overflow-hidden transition-colors">
+                    <div className="checkerboard rounded-t-lg" style={{ height: 64 }}>
+                      <img src={state.logo.dataUrl} alt="logo" className="w-full h-full object-contain p-2"/>
+                    </div>
+                    <p className="text-[11px] text-gray-500 py-1.5 px-2 text-left">Add logo to canvas</p>
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-gray-400 leading-relaxed">Add a logo or upload artwork from the panel on the left, then select it here to recolor, scale, and position it.</p>
+                )}
+              </div>
+
+              {selected?.type === 'image' ? (
+                <>
+                  {/* Recolor artwork */}
+                  <div className="card space-y-2">
+                    <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
+                    <div className="grid grid-cols-6 gap-1.5">
+                      {COLOR_SWATCHES.map(c => (
+                        <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
+                          style={{ backgroundColor: c }}
+                          className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
+                        />
+                      ))}
+                    </div>
+                    <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
+                      onChange={e => updateSelected({ tintColor: e.target.value })}
+                      className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
+                    {(selected as ImageLayer).tintColor && (
+                      <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
+                        Clear tint
+                      </button>
+                    )}
                   </div>
-                  <p className="text-[11px] text-gray-500 py-1.5 px-2 text-left">Add logo to canvas</p>
-                </button>
+                  {transformCard(selected)}
+                  {layerControlsCard()}
+                </>
+              ) : (
+                <div className="card">
+                  <div className="text-center py-6">
+                    <Layers size={22} className="mx-auto text-gray-300 mb-2"/>
+                    <p className="text-xs text-gray-400">Select a logo or artwork layer</p>
+                    <p className="text-[11px] text-gray-300 mt-1">to recolor, scale &amp; position it</p>
+                  </div>
+                </div>
               )}
-            </div>
+            </>
           )}
 
-          {/* Color tab */}
-          {leftTab === 'color' && (
-            <div className="space-y-3">
+          {/* ── Garment tab ── */}
+          {leftTab === 'garment' && (
+            <>
               <div className="card space-y-3">
                 <p className="text-xs font-medium text-gray-600">Garment Color</p>
                 <div className="grid grid-cols-4 gap-2">
@@ -822,42 +940,148 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                 )}
               </div>
 
-              {/* Recolor Artwork — only when an image layer is selected */}
-              {selected?.type === 'image' && (
-                <div className="card space-y-2">
-                  <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {COLOR_SWATCHES.map(c => (
-                      <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
-                        style={{ backgroundColor: c }}
-                        className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                      />
-                    ))}
+              {state.garment && (
+                <div className="card">
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-xs font-medium text-gray-600">Garment Fit</p>
+                    <span className="text-xs text-gray-700">{garmentScale}%</span>
                   </div>
-                  <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
-                    onChange={e => updateSelected({ tintColor: e.target.value })}
-                    className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
-                  {(selected as ImageLayer).tintColor && (
-                    <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                      Clear tint
-                    </button>
-                  )}
+                  <input type="range" min={25} max={200} value={garmentScale}
+                    onChange={e => setGarmentScale(parseInt(e.target.value))}
+                    className="w-full accent-brand-green"/>
+                  <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">Drag the garment on the canvas to reposition it.</p>
+                  <button onClick={() => { setGarmentScale(100); setGarmentOffset({ x: 0, y: 0 }) }} className="mt-1.5 text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
+                    Reset size &amp; position
+                  </button>
                 </div>
               )}
-            </div>
+            </>
           )}
 
-          {/* Text tab */}
+          {/* ── Text tab ── */}
           {leftTab === 'text' && (
-            <div className="card space-y-3">
-              <p className="text-xs font-medium text-gray-600">Add Text</p>
-              <button onClick={addTextLayer} className="btn-primary w-full flex items-center justify-center gap-2">
-                <Type size={13}/> Add Text Layer
-              </button>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                Adds a draggable text layer. Select it to change font, size, and color.
-              </p>
-            </div>
+            <>
+              <div className="card space-y-3">
+                <p className="text-xs font-medium text-gray-600">Add Text</p>
+                <button onClick={addTextLayer} className="btn-primary w-full flex items-center justify-center gap-2">
+                  <Type size={13}/> Add Text Layer
+                </button>
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  Adds a draggable text layer. Select it to change font, size, color, and border.
+                </p>
+              </div>
+
+              {selected?.type === 'text' ? (
+                <>
+                  <div className="card space-y-3">
+                    <p className="text-xs font-medium text-gray-600">Text</p>
+                    <textarea
+                      value={selected.text}
+                      onChange={e => updateSelected({ text: e.target.value })}
+                      className="textarea-field text-sm resize-none"
+                      rows={2}
+                      placeholder="Your text here"
+                    />
+
+                    <div>
+                      <p className="text-[11px] text-gray-500 mb-1.5">Font Library</p>
+                      <div className="grid grid-cols-2 gap-1 max-h-44 overflow-y-auto pr-0.5">
+                        {FONT_LIBRARY.map(f => (
+                          <button key={f.name} onClick={() => updateSelected({ fontFamily: f.name })}
+                            style={{ fontFamily: `"${f.name}", sans-serif` }}
+                            className={`px-2 py-1.5 rounded border text-xs truncate transition-all text-left ${
+                              (selected as TextLayer).fontFamily === f.name
+                                ? 'border-grace-ink bg-grace-ink text-white'
+                                : 'border-slate-200 hover:border-slate-300 text-gray-700'
+                            }`}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Bold / Italic */}
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => updateSelected({ fontWeight: (selected as TextLayer).fontWeight === 'bold' ? 'normal' : 'bold' })}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                          (selected as TextLayer).fontWeight !== 'normal' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
+                        }`}
+                      >B</button>
+                      <button
+                        onClick={() => updateSelected({ fontStyle: (selected as TextLayer).fontStyle === 'italic' ? 'normal' : 'italic' })}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs italic transition-all ${
+                          (selected as TextLayer).fontStyle === 'italic' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
+                        }`}
+                      >I</button>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-500">Size</span>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => updateSelected({ fontSize: Math.max(8, (selected as TextLayer).fontSize - 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).fontSize}px</span>
+                          <button onClick={() => updateSelected({ fontSize: Math.min(120, (selected as TextLayer).fontSize + 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[11px] text-gray-500 mb-1.5">Color</p>
+                      <div className="grid grid-cols-6 gap-1.5 mb-2">
+                        {COLOR_SWATCHES.map(c => (
+                          <button key={c} onClick={() => updateSelected({ color: c })}
+                            style={{ backgroundColor: c }}
+                            className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).color === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
+                          />
+                        ))}
+                      </div>
+                      <input type="color" value={(selected as TextLayer).color}
+                        onChange={e => updateSelected({ color: e.target.value })}
+                        className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
+                    </div>
+
+                    {/* Border / outline */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-500">Border</span>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => updateSelected({ strokeWidth: Math.max(0, ((selected as TextLayer).strokeWidth ?? 0) - 1) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).strokeWidth ?? 0}px</span>
+                          <button onClick={() => updateSelected({ strokeWidth: Math.min(20, ((selected as TextLayer).strokeWidth ?? 0) + 1), strokeColor: (selected as TextLayer).strokeColor ?? '#000000' })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                        </div>
+                      </div>
+                      {((selected as TextLayer).strokeWidth ?? 0) > 0 && (
+                        <div className="grid grid-cols-6 gap-1.5 mt-2">
+                          {COLOR_SWATCHES.map(c => (
+                            <button key={c} onClick={() => updateSelected({ strokeColor: c })}
+                              style={{ backgroundColor: c }}
+                              className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).strokeColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {((selected as TextLayer).strokeWidth ?? 0) > 0 && (
+                        <input type="color" value={(selected as TextLayer).strokeColor || '#000000'}
+                          onChange={e => updateSelected({ strokeColor: e.target.value })}
+                          className="w-full h-7 rounded cursor-pointer border border-slate-200 mt-2"/>
+                      )}
+                    </div>
+                  </div>
+                  {transformCard(selected)}
+                  {layerControlsCard()}
+                </>
+              ) : (
+                <div className="card">
+                  <div className="text-center py-6">
+                    <Type size={22} className="mx-auto text-gray-300 mb-2"/>
+                    <p className="text-xs text-gray-400">Select a text layer</p>
+                    <p className="text-[11px] text-gray-300 mt-1">to edit font, color &amp; border</p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Layers list */}
@@ -866,170 +1090,16 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
               <p className="text-xs font-medium text-gray-600 mb-2">Layers</p>
               <div className="space-y-1">
                 {[...layers].reverse().map((layer, i) => (
-                  <button key={layer.id} onClick={() => setSelectedId(layer.id)}
+                  <button key={layer.id} onClick={() => selectLayer(layer.id)}
                     className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
                       selectedId === layer.id ? 'bg-brand-green/10 text-gray-900' : 'hover:bg-slate-100 text-gray-500'
                     }`}>
                     {layer.type === 'text' ? <Type size={11}/> : <Layers size={11}/>}
                     <span className="truncate flex-1 text-left">
-                      {layer.type === 'text' ? (layer.text.slice(0, 16) || 'Text') : `Artwork ${layers.length - i}`}
+                      {layer.type === 'text' ? (layer.text.slice(0, 16) || 'Text') : ((layer as ImageLayer).isLogo ? 'Logo' : `Artwork ${layers.length - i}`)}
                     </span>
                   </button>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* Garment fit */}
-          {state.garment && (
-            <div className="card">
-              <div className="flex justify-between items-center mb-2">
-                <p className="text-xs font-medium text-gray-600">Garment Fit</p>
-                <span className="text-xs text-gray-700">{garmentScale}%</span>
-              </div>
-              <input type="range" min={25} max={200} value={garmentScale}
-                onChange={e => setGarmentScale(parseInt(e.target.value))}
-                className="w-full accent-brand-green"/>
-              <button onClick={() => { setGarmentScale(100); setGarmentOffset({ x: 0, y: 0 }) }} className="mt-1.5 text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                Reset size &amp; position
-              </button>
-            </div>
-          )}
-
-          {/* ── Layer controls (moved from right panel) ── */}
-          {selected ? (
-            <>
-              {/* Text controls */}
-              {selected.type === 'text' && (
-                <div className="card space-y-3">
-                  <p className="text-xs font-medium text-gray-600">Text</p>
-                  <textarea
-                    value={selected.text}
-                    onChange={e => updateSelected({ text: e.target.value })}
-                    className="textarea-field text-sm resize-none"
-                    rows={2}
-                    placeholder="Your text here"
-                  />
-
-                  <div>
-                    <p className="text-[11px] text-gray-500 mb-1.5">Font Library</p>
-                    <div className="grid grid-cols-2 gap-1 max-h-44 overflow-y-auto pr-0.5">
-                      {FONT_LIBRARY.map(f => (
-                        <button key={f.name} onClick={() => updateSelected({ fontFamily: f.name })}
-                          style={{ fontFamily: `"${f.name}", sans-serif` }}
-                          className={`px-2 py-1.5 rounded border text-xs truncate transition-all text-left ${
-                            (selected as TextLayer).fontFamily === f.name
-                              ? 'border-grace-ink bg-grace-ink text-white'
-                              : 'border-slate-200 hover:border-slate-300 text-gray-700'
-                          }`}>
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Bold / Italic */}
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => updateSelected({ fontWeight: (selected as TextLayer).fontWeight === 'bold' ? 'normal' : 'bold' })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                        (selected as TextLayer).fontWeight !== 'normal' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
-                      }`}
-                    >B</button>
-                    <button
-                      onClick={() => updateSelected({ fontStyle: (selected as TextLayer).fontStyle === 'italic' ? 'normal' : 'italic' })}
-                      className={`flex-1 py-1.5 rounded-lg border text-xs italic transition-all ${
-                        (selected as TextLayer).fontStyle === 'italic' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
-                      }`}
-                    >I</button>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-xs text-gray-500">Size</span>
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => updateSelected({ fontSize: Math.max(8, (selected as TextLayer).fontSize - 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
-                        <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).fontSize}px</span>
-                        <button onClick={() => updateSelected({ fontSize: Math.min(120, (selected as TextLayer).fontSize + 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[11px] text-gray-500 mb-1.5">Color</p>
-                    <div className="grid grid-cols-6 gap-1.5 mb-2">
-                      {COLOR_SWATCHES.map(c => (
-                        <button key={c} onClick={() => updateSelected({ color: c })}
-                          style={{ backgroundColor: c }}
-                          className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).color === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                        />
-                      ))}
-                    </div>
-                    <input type="color" value={(selected as TextLayer).color}
-                      onChange={e => updateSelected({ color: e.target.value })}
-                      className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
-                  </div>
-                </div>
-              )}
-
-              {/* Transform */}
-              <div className="card">
-                <p className="text-xs font-medium text-gray-600 mb-3">Transform</p>
-                <div className="space-y-3">
-                  <ControlRow
-                    label="Scale"
-                    value={Math.round((selected.width / 160) * 100)}
-                    unit="%"
-                    onDecrement={() => updateSelected({ width: Math.max(40, selected.width - 10), height: Math.max(20, selected.height - 5) })}
-                    onIncrement={() => updateSelected({ width: selected.width + 10, height: selected.height + 5 })}
-                  />
-                  <div>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="text-xs text-gray-500">Rotate</span>
-                      <div className="flex items-center gap-1.5">
-                        <button onClick={() => updateSelected({ rotation: selected.rotation - 15 })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
-                        <span className="text-xs text-gray-700 w-10 text-center">{selected.rotation}°</span>
-                        <button onClick={() => updateSelected({ rotation: selected.rotation + 15 })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
-                      </div>
-                    </div>
-                    <input type="range" min={-180} max={180} value={selected.rotation}
-                      onChange={e => updateSelected({ rotation: parseInt(e.target.value) })}
-                      className="w-full accent-brand-green"/>
-                  </div>
-                  <div>
-                    <span className="text-xs text-gray-500 block mb-2">Position</span>
-                    <div className="grid grid-cols-3 gap-1">
-                      <div/>
-                      <button onClick={() => updateSelected({ y: selected.y - 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ChevronUp size={12}/></button>
-                      <div/>
-                      <button onClick={() => updateSelected({ x: selected.x - 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ArrowLeft size={12}/></button>
-                      <div className="w-6 h-6 rounded-full bg-slate-200 mx-auto self-center"/>
-                      <button onClick={() => updateSelected({ x: selected.x + 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ArrowRight size={12}/></button>
-                      <div/>
-                      <button onClick={() => updateSelected({ y: selected.y + 10 })} className="btn-secondary py-1.5 flex items-center justify-center"><ChevronDown size={12}/></button>
-                      <div/>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Layer order */}
-              <div className="card">
-                <p className="text-xs font-medium text-gray-600 mb-2">Layer Controls</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button onClick={() => moveLayer('up')} className="btn-secondary flex items-center justify-center gap-1 text-xs py-2"><ChevronUp size={12}/> Bring Fwd</button>
-                  <button onClick={() => moveLayer('down')} className="btn-secondary flex items-center justify-center gap-1 text-xs py-2"><ChevronDown size={12}/> Send Bkwd</button>
-                  <button onClick={duplicateSelected} className="btn-secondary flex items-center justify-center gap-1 text-xs py-2"><Copy size={12}/> Duplicate</button>
-                  <button onClick={deleteSelected} className="flex items-center justify-center gap-1 text-xs py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 transition-colors"><Trash2 size={12}/> Delete</button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="card">
-              <div className="text-center py-6">
-                <Layers size={22} className="mx-auto text-gray-300 mb-2"/>
-                <p className="text-xs text-gray-400">Select a layer to edit</p>
-                <p className="text-[11px] text-gray-300 mt-1">or add artwork / text from above</p>
               </div>
             </div>
           )}
@@ -1230,9 +1300,12 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
                       color: layer.color,
                       fontWeight: (layer as TextLayer).fontWeight ?? 'bold',
                       fontStyle: (layer as TextLayer).fontStyle ?? 'normal',
+                      WebkitTextStrokeWidth: (layer as TextLayer).strokeWidth ? `${(layer as TextLayer).strokeWidth}px` : undefined,
+                      WebkitTextStrokeColor: (layer as TextLayer).strokeColor ?? '#000000',
+                      paintOrder: 'stroke fill',
                       whiteSpace: 'nowrap', overflow: 'hidden',
                       pointerEvents: 'none',
-                    }}>
+                    } as React.CSSProperties}>
                       {layer.text || 'Your Text'}
                     </div>
                   ) : (
