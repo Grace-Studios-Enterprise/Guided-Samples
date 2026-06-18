@@ -11,6 +11,8 @@ import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
 import { removeWhiteBackground } from '@/lib/removeWhiteBg'
 import { fileToDataUrl } from '@/lib/fileToDataUrl'
 import { downloadDataUrl, downloadAssetsZip } from '@/lib/downloadAssets'
+import GarmentAssetPanel from './GarmentAssetPanel'
+import LogoAssetPanel from './LogoAssetPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,9 +52,9 @@ interface Props {
   state: AppState
   onComplete: (design: AppState['design']) => void
   onSetGarment: (garment: AppState['garment']) => void
+  onLogoUpdate?: (logo: AppState['logo']) => void
   onBack: () => void
   hideHeader?: boolean
-  hideSidebar?: boolean
   pendingArtwork?: string | null
   onArtworkConsumed?: () => void
   onStudioStateChange?: (s: { layersByView: ViewLayers; garmentColor: string }) => void
@@ -241,7 +243,7 @@ function ArchTextPreview({ layer }: { layer: TextLayer }) {
   return <img src={src} alt={layer.text} className="w-full h-full object-contain" draggable={false} style={{ pointerEvents: 'none' }}/>
 }
 
-export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, hideHeader, hideSidebar, pendingArtwork, onArtworkConsumed, onStudioStateChange }: Props) {
+export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUpdate, onBack, hideHeader, pendingArtwork, onArtworkConsumed, onStudioStateChange }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(100)
   const [garmentScale, setGarmentScale] = useState(100)
@@ -253,6 +255,13 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
     state.studioState?.garmentColor ?? _cachedGarmentColor
   )
   const [leftTab, setLeftTab] = useState<'logoart' | 'garment' | 'text'>('logoart')
+  const [localLogo, setLocalLogo] = useState<AppState['logo']>(state.logo)
+  const artworkFileRef = useRef<HTMLInputElement>(null)
+
+  const handleLogoUpdate = (logo: AppState['logo']) => {
+    setLocalLogo(logo)
+    onLogoUpdate?.(logo)
+  }
 
   // Per-view layer state — prefer persisted studioState, fall back to SPA cache
   const [layersByView, setLayersByView] = useState<ViewLayers>(
@@ -427,6 +436,20 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
       setLayersByView(next)
       return f.slice(1)
     })
+  }
+
+  const handleArtworkFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      let dataUrl = await fileToDataUrl(file)
+      try { dataUrl = await removeWhiteBackground(dataUrl) } catch {}
+      const id = crypto.randomUUID()
+      snapshot()
+      setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }])
+      setSelectedId(id)
+    } catch (err) { console.error('Artwork upload failed', err) }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -907,13 +930,13 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className={hideHeader ? (hideSidebar ? 'w-full' : 'px-6 pb-6 w-full') : 'p-6 w-full'}>
+    <div className={hideHeader ? 'px-6 pb-6 w-full' : 'p-6 w-full'}>
       {!hideHeader && (
         <div className="mb-5 flex items-start justify-between">
           <div>
             <p className="phase-header">Phase 2</p>
-            <h1 className="text-xl font-bold text-gray-900">Apply Design to Garment</h1>
-            <p className="text-gray-500 text-sm mt-1">Place artwork, text, and adjust the garment color</p>
+            <h1 className="text-xl font-bold text-gray-900">Design Studio</h1>
+            <p className="text-gray-500 text-sm mt-1">Select a garment, add your logo and artwork, style text</p>
           </div>
           <button onClick={onBack} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors mt-1">
             <ArrowLeft size={14}/> Back
@@ -921,10 +944,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
         </div>
       )}
 
-      <div className={hideSidebar ? '' : 'grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4'}>
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
 
         {/* ── Left panel ── */}
-        {!hideSidebar && <div className="space-y-3">
+        <div className="space-y-3">
           {/* Tab bar */}
           <div className="flex rounded-lg border border-slate-200 overflow-hidden">
             {([
@@ -944,25 +967,44 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
           {/* ── Logo / Art tab ── */}
           {leftTab === 'logoart' && (
             <>
+              {/* Logo generator / uploader */}
+              <div className="card p-0 overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-200">
+                  <p className="text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">Logo</p>
+                </div>
+                <LogoAssetPanel state={{ ...state, logo: localLogo }} onLogoUpdate={handleLogoUpdate} />
+              </div>
+
+              {/* Artwork upload */}
+              <div className="card space-y-2">
+                <p className="text-xs font-medium text-gray-600">Artwork</p>
+                <label className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-green cursor-pointer transition-colors text-xs text-gray-500 hover:text-gray-700">
+                  <Upload size={13}/> Upload Artwork
+                  <input ref={artworkFileRef} type="file" className="hidden"
+                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
+                    onChange={handleArtworkFile}/>
+                </label>
+              </div>
+
               <div className="card space-y-3">
-                <p className="text-xs font-medium text-gray-600">Logo &amp; Artwork</p>
-                {state.logo ? (
+                <p className="text-xs font-medium text-gray-600">Add to Canvas</p>
+                {localLogo ? (
                   <button
                     onClick={() => {
                       const id = crypto.randomUUID()
                       snapshot()
-                      const newLayer: ImageLayer = { id, type: 'image', isLogo: true, dataUrl: state.logo!.dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }
+                      const newLayer: ImageLayer = { id, type: 'image', isLogo: true, dataUrl: localLogo!.dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }
                       setLayers(ls => [...ls, newLayer])
                       setSelectedId(id)
                     }}
                     className="w-full bg-slate-50 hover:bg-slate-100 rounded-lg overflow-hidden transition-colors">
                     <div className="checkerboard rounded-t-lg" style={{ height: 64 }}>
-                      <img src={state.logo.dataUrl} alt="logo" className="w-full h-full object-contain p-2"/>
+                      <img src={localLogo.dataUrl} alt="logo" className="w-full h-full object-contain p-2"/>
                     </div>
                     <p className="text-[11px] text-gray-500 py-1.5 px-2 text-left">Add logo to canvas</p>
                   </button>
                 ) : (
-                  <p className="text-[11px] text-gray-400 leading-relaxed">Add a logo or upload artwork from the panel on the left, then select it here to recolor, scale, and position it.</p>
+                  <p className="text-[11px] text-gray-400 leading-relaxed">Generate or upload a logo above, then click here to place it on the canvas.</p>
                 )}
               </div>
 
@@ -1006,6 +1048,14 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
           {/* ── Garment tab ── */}
           {leftTab === 'garment' && (
             <>
+              {/* Garment selector */}
+              <div className="card p-0 overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-200">
+                  <p className="text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">Garment</p>
+                </div>
+                <GarmentAssetPanel route={state.route ?? 'apparel'} state={state} onSetGarment={onSetGarment} />
+              </div>
+
               <div className="card space-y-3">
                 <p className="text-xs font-medium text-gray-600">Garment Color</p>
                 <div className="grid grid-cols-4 gap-2">
@@ -1247,10 +1297,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onBack, 
               </button>
             </div>
           )}
-        </div>}
+        </div>
 
         {/* ── Canvas ── */}
-        <div className={`card p-0 overflow-hidden${hideSidebar ? ' h-full' : ''}`}>
+        <div className="card p-0 overflow-hidden">
           {/* Toolbar */}
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 gap-2">
             <div className="flex items-center gap-1">
