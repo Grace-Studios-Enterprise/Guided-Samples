@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  LayoutDashboard, FolderOpen, Package, ShoppingCart, Library, Settings, Plus, ArrowRight, Save, KeyRound, LogOut, Sparkles
+  LayoutDashboard, FolderOpen, Package, ShoppingCart, Library, Settings, Plus, ArrowRight, Save, KeyRound, LogOut, Sparkles, Loader2
 } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
 import { useAICredits } from '@/lib/aiCreditsContext'
+import { listAllUserAssets } from '@/lib/projects'
 import SizeGuide from '@/components/SizeGuide'
 import TechnicalDrawing from '@/components/TechnicalDrawing'
 import type { SizeGuideOverrides } from '@/lib/fitBlocks/sizeGuide'
@@ -150,16 +151,22 @@ function Orders() {
   )
 }
 
-function LibraryView({ state }: { state: AppState }) {
+function LibraryView({ state: _state }: { state: AppState }) {
+  const { user } = useAuth()
   const [tab, setTab] = useState<'logos' | 'artwork' | 'garments' | 'previews'>('logos')
+  const [assets, setAssets] = useState<{ logos: string[]; artworks: string[]; garments: string[]; previews: string[] } | null>(null)
+  const [loadingAssets, setLoadingAssets] = useState(true)
 
-  const logos: string[] = [
-    ...(state.studioState?.logoGallery ?? []),
-    ...(state.logo?.dataUrl && !(state.studioState?.logoGallery ?? []).includes(state.logo.dataUrl) ? [state.logo.dataUrl] : []),
-  ]
-  const artworks: string[] = state.studioState?.artworkGallery ?? []
-  const garments: string[] = state.garment?.dataUrl ? [state.garment.dataUrl] : []
-  const previews: string[] = state.preview?.images ?? []
+  useEffect(() => {
+    if (!user) return
+    setLoadingAssets(true)
+    listAllUserAssets(user.id).then(a => { setAssets(a); setLoadingAssets(false) })
+  }, [user])
+
+  const logos = assets?.logos ?? []
+  const artworks = assets?.artworks ?? []
+  const garments = assets?.garments ?? []
+  const previews = assets?.previews ?? []
 
   const tabs = [
     { key: 'logos' as const, label: 'Logos', count: logos.length },
@@ -183,7 +190,7 @@ function LibraryView({ state }: { state: AppState }) {
 
   return (
     <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
-      <Header icon={<Library size={20} />} title="Library" subtitle="Your AI-generated and uploaded assets" />
+      <Header icon={<Library size={20} />} title="Library" subtitle="All your AI-generated and uploaded assets" />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-grace-border">
@@ -205,14 +212,19 @@ function LibraryView({ state }: { state: AppState }) {
         ))}
       </div>
 
-      {currentAssets.length > 0 ? (
+      {loadingAssets ? (
+        <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-brand-green"/>
+          <span className="text-sm">Loading library…</span>
+        </div>
+      ) : currentAssets.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {currentAssets.map((src, i) => (
-            <div key={i} className="card group relative">
+            <div key={src} className="card group relative">
               <div className="checkerboard rounded-lg h-28 flex items-center justify-center mb-2 overflow-hidden">
                 <img src={src} alt={`${tab} ${i + 1}`} className="w-full h-full object-contain p-2" />
               </div>
-              <p className="text-[11px] text-gray-500">{tab.slice(0, -1).charAt(0).toUpperCase() + tab.slice(1, -1)} {i + 1}</p>
+              <p className="text-[11px] text-gray-500 capitalize">{tab.slice(0, -1)} {i + 1}</p>
               <button
                 onClick={() => handleDownload(src, i)}
                 className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity px-2 py-1 bg-white/90 rounded text-[10px] text-gray-600 border border-grace-border hover:bg-grace-mist"
@@ -228,7 +240,7 @@ function LibraryView({ state }: { state: AppState }) {
           title={`No ${tab} yet`}
           subtitle={tab === 'logos' ? 'Generate or upload a logo in the Design Studio.' :
                     tab === 'artwork' ? 'Upload artwork in the Design Studio.' :
-                    tab === 'garments' ? 'Select a garment in the Design Studio.' :
+                    tab === 'garments' ? 'Upload or AI-generate a garment in the Design Studio.' :
                     'Generate a preview in the Preview in Reality phase.'}
         />
       )}

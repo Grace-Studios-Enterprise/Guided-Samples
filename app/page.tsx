@@ -63,6 +63,7 @@ export type AppState = {
     garmentColor: string
     logoGallery?: string[]
     artworkGallery?: string[]
+    thumbnailDataUrl?: string
   }
 }
 
@@ -202,7 +203,11 @@ function App() {
     clearDesignCache()
     const detail = await loadProject(id)
     if (detail) {
-      setState(restoreState(detail))
+      const restored = restoreState(detail)
+      // Never drop back to the route-picker (Phase 1) when reopening an existing
+      // project — the garment/sport choice is a new-project-only step.
+      if (restored.currentPhase < 2) restored.currentPhase = 2
+      setState(restored)
       setTechPack(detail.tech_pack ? {
         styleInfo: detail.tech_pack.style_info,
         measurements: detail.tech_pack.measurements,

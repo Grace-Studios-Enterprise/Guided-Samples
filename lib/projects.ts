@@ -105,7 +105,11 @@ export async function saveProject(
   const [logoUrl, garmentUrl, compositeUrl, ...rest] = uploads
   const previews = rest.slice(0, realCount).filter((u): u is string => !!u)
   const techPreviews = rest.slice(realCount, realCount + techCount).filter((u): u is string => !!u)
-  const thumbnail = compositeUrl ?? garmentUrl ?? logoUrl
+  // Best thumbnail: confirmed composite > studio canvas snapshot > garment > logo
+  const studioThumbUrl = await persistImage(
+    supabase, userId, id, 'studio_thumb', state.studioState?.thumbnailDataUrl
+  )
+  const thumbnail = compositeUrl ?? studioThumbUrl ?? garmentUrl ?? logoUrl
 
   // Per-view garment images (front/back/side) — uploaded so a restored project
   // keeps every angle, not just the primary view.
@@ -199,6 +203,63 @@ export async function loadProject(projectId: string): Promise<ProjectDetail | nu
       pantones: tp.pantones,
       placements: tp.placements,
     } : null,
+  }
+}
+
+// Aggregate all logos, artwork, garments, and previews across every project the
+// user has ever saved. Used by the Library section.
+// Garments that come from the GRACE built-in library (path starts with "/") are
+// excluded — the user only wants things they uploaded or AI-generated.
+export async function listAllUserAssets(userId: string): Promise<{
+  logos: string[]
+  artworks: string[]
+  garments: string[]
+  previews: string[]
+}> {
+  const supabase = createClient()
+  if (!supabase) return { logos: [], artworks: [], garments: [], previews: [] }
+
+  const { data } = await supabase
+    .from('projects')
+    .select('design_state, logo_url, garment_url, preview_urls')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+
+  const logos = new Set<string>()
+  const artworks = new Set<string>()
+  const garments = new Set<string>()
+  const previews = new Set<string>()
+
+  for (const row of data ?? []) {
+    const ds = row.design_state as AppState | null
+
+    // Logo gallery stored in studioState (includes every generated + uploaded logo)
+    for (const url of ds?.studioState?.logoGallery ?? []) {
+      if (url) logos.add(url)
+    }
+    // Fall back to the dedicated logo_url column for older projects
+    if (row.logo_url) logos.add(row.logo_url)
+
+    // Artwork uploads
+    for (const url of ds?.studioState?.artworkGallery ?? []) {
+      if (url) artworks.add(url)
+    }
+
+    // Garments — skip built-in library assets (start with "/")
+    const garmentUrl = ds?.garment?.dataUrl ?? row.garment_url
+    if (garmentUrl && !garmentUrl.startsWith('/')) garments.add(garmentUrl)
+
+    // Preview images
+    for (const url of (row.preview_urls as string[] | null) ?? []) {
+      if (url) previews.add(url)
+    }
+  }
+
+  return {
+    logos: Array.from(logos),
+    artworks: Array.from(artworks),
+    garments: Array.from(garments),
+    previews: Array.from(previews),
   }
 }
 

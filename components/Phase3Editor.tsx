@@ -57,7 +57,7 @@ interface Props {
   hideHeader?: boolean
   pendingArtwork?: string | null
   onArtworkConsumed?: () => void
-  onStudioStateChange?: (s: { layersByView: ViewLayers; garmentColor: string; logoGallery: string[]; artworkGallery: string[] }) => void
+  onStudioStateChange?: (s: { layersByView: ViewLayers; garmentColor: string; logoGallery: string[]; artworkGallery: string[]; thumbnailDataUrl?: string }) => void
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -344,14 +344,26 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   useEffect(() => { onStudioStateChangeRef.current = onStudioStateChange }, [onStudioStateChange])
 
   // Bundle the full studio state from refs so every emit captures the latest values.
-  const emitStudioState = useCallback(() => {
+  // Also captures a low-res thumbnail of the current canvas for the project card.
+  const emitStudioState = useCallback((thumbnailDataUrl?: string) => {
     onStudioStateChangeRef.current?.({
       layersByView: layersByViewRef.current,
       garmentColor: garmentColorRef.current,
       logoGallery: logoGalleryRef.current,
       artworkGallery: artworkGalleryRef.current,
+      thumbnailDataUrl,
     })
   }, [])
+
+  const emitStudioStateWithThumb = useCallback(async () => {
+    try {
+      const thumb = await renderDesign({})
+      emitStudioState(thumb)
+    } catch {
+      emitStudioState()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emitStudioState])
 
   // Flush on unmount — the 800ms debounce cleanup would otherwise cancel the
   // save if the user navigates away before the timer fires.
@@ -473,7 +485,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       setSaveStatus('saved')
-      emitStudioState()
+      emitStudioStateWithThumb()
     }, 800)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -925,12 +937,12 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
 
   // Explicit save — flushes the debounce and pushes the full studio snapshot to
   // the parent (which writes it to Supabase). Complements the 800ms autosave.
-  const handleManualSave = () => {
+  const handleManualSave = async () => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
     setSaveStatus('saving')
-    emitStudioState()
     if (garmentColor && state.garment) onSetGarment({ ...state.garment, color: garmentColor })
-    setTimeout(() => setSaveStatus('saved'), 300)
+    await emitStudioStateWithThumb()
+    setSaveStatus('saved')
   }
 
   const handleConfirm = async () => {
