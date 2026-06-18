@@ -180,74 +180,113 @@ async function cropPadding(src: string, pad = 6): Promise<string> {
 
 // ─── Arch/curve text helpers ──────────────────────────────────────────────────
 
-// Escape text for safe embedding inside an SVG node (handles &, <, > in user input)
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function archTextSvg(layer: TextLayer, w: number, h: number): string {
+// Rasterize arched text to a PNG using canvas arc-path drawing so page fonts apply.
+async function archTextToDataUrl(layer: TextLayer, w: number, h: number): Promise<string> {
+  const SCALE = 2
   const arch = layer.archAmount ?? 0
-  const text = escapeXml(layer.text || 'Your Text')
   const fw = layer.fontWeight ?? 'bold'
   const fi = layer.fontStyle ?? 'normal'
-  const sw = layer.strokeWidth ?? 0
-  const strokeAttr = sw > 0
-    ? `stroke="${layer.strokeColor ?? '#000000'}" stroke-width="${sw * 2}" paint-order="stroke fill" stroke-linejoin="round"`
-    : ''
+  const fontStr = `${fi} ${fw} ${layer.fontSize}px "${layer.fontFamily}"`
+  try { await document.fonts.load(fontStr) } catch {}
 
-  const fontAttr = `font-family="${layer.fontFamily}, sans-serif" font-size="${layer.fontSize}" fill="${layer.color}" font-weight="${fw}" font-style="${fi}"`
+  const canvas = document.createElement('canvas')
+  canvas.width = w * SCALE; canvas.height = h * SCALE
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(SCALE, SCALE)
 
   if (!arch) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><text x="${w/2}" y="${h/2}" text-anchor="middle" dominant-baseline="middle" ${fontAttr} ${strokeAttr}>${text}</text></svg>`
+    ctx.font = fontStr
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const sw = layer.strokeWidth ?? 0
+    if (sw > 0) { ctx.lineWidth = sw * 2; ctx.strokeStyle = layer.strokeColor ?? '#000000'; ctx.lineJoin = 'round'; ctx.strokeText(layer.text, w / 2, h / 2) }
+    ctx.fillStyle = layer.color; ctx.fillText(layer.text, w / 2, h / 2)
+    return canvas.toDataURL('image/png')
   }
 
-  // Approximate glyph extents above/below the baseline so the whole arched
-  // word stays inside the [0,h] box (otherwise the peak gets clipped).
-  const cap = layer.fontSize * 0.78   // ascent above baseline
-  const desc = layer.fontSize * 0.24  // descent below baseline
+  // Draw text character-by-character along the arc
+  const cap = layer.fontSize * 0.78
+  const desc = layer.fontSize * 0.24
   const maxLift = Math.max(2, h - cap - desc)
   const lift = Math.min(maxLift, Math.max(2, (Math.abs(arch) / 100) * maxLift))
   const r = (w * w / 4 + lift * lift) / (2 * lift)
-  // Arch up: baseline sits near the bottom, arc bulges upward.
-  // Arch down: baseline sits near the top, arc bulges downward.
   const baseY = arch > 0 ? h - desc : cap
-  const sweep = arch > 0 ? 1 : 0
+  // Centre of the arc circle
+  const cy = arch > 0 ? baseY - r : baseY + r
 
-  const pathD = `M 0,${baseY} A ${r},${r} 0 0,${sweep} ${w},${baseY}`
-  const pid = 'ap'
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" overflow="visible"><defs><path id="${pid}" d="${pathD}"/></defs><text ${fontAttr} ${strokeAttr} text-anchor="middle"><textPath href="#${pid}" startOffset="50%">${text}</textPath></text></svg>`
-}
+  ctx.font = fontStr
+  ctx.textAlign = 'center'
+  ctx.textBaseline = arch > 0 ? 'alphabetic' : 'alphabetic'
+  const sw = layer.strokeWidth ?? 0
 
-async function archTextToDataUrl(layer: TextLayer, w: number, h: number): Promise<string> {
-  const svg = archTextSvg(layer, w, h)
-  const blob = new Blob([svg], { type: 'image/svg+xml' })
-  const url = URL.createObjectURL(blob)
-  try {
-    const img = await loadImage(url)
-    const canvas = document.createElement('canvas')
-    canvas.width = w * 2; canvas.height = h * 2
-    const ctx = canvas.getContext('2d')!
-    ctx.scale(2, 2)
-    ctx.drawImage(img, 0, 0, w, h)
-    return canvas.toDataURL('image/png')
-  } finally {
-    URL.revokeObjectURL(url)
+  const text = layer.text || 'Your Text'
+  // Measure total width to centre the string
+  const totalWidth = ctx.measureText(text).width
+  let cursor = -totalWidth / 2
+
+  for (const char of text) {
+    const cw = ctx.measureText(char).width
+    const charCenter = cursor + cw / 2
+    // angle along arc: 0 at midpoint of chord, positive = right
+    const angle = Math.asin(Math.max(-1, Math.min(1, charCenter / r)))
+    const finalAngle = arch > 0 ? -Math.PI / 2 + angle : Math.PI / 2 - angle
+    const cx2 = w / 2 + r * Math.cos(finalAngle)
+    const cy2 = cy + r * Math.sin(finalAngle)
+    const rotate = arch > 0 ? angle : -angle
+
+    ctx.save()
+    ctx.translate(cx2, cy2)
+    ctx.rotate(rotate)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = arch > 0 ? 'alphabetic' : 'alphabetic'
+    if (sw > 0) { ctx.lineWidth = sw * 2; ctx.strokeStyle = layer.strokeColor ?? '#000000'; ctx.lineJoin = 'round'; ctx.strokeText(char, 0, 0) }
+    ctx.fillStyle = layer.color; ctx.fillText(char, 0, 0)
+    ctx.restore()
+    cursor += cw
   }
+  return canvas.toDataURL('image/png')
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+// Renders arched text as an INLINE SVG so the page's Google Fonts CSS applies.
+// (An <img src={svgDataUrl}> runs sandboxed and cannot use @font-face from the
+// parent page, causing every arched font to fall back to sans-serif.)
 function ArchTextPreview({ layer }: { layer: TextLayer }) {
-  const [src, setSrc] = useState('')
-  useEffect(() => {
-    const svg = archTextSvg(layer, layer.width, layer.height)
-    const blob = new Blob([svg], { type: 'image/svg+xml' })
-    const url = URL.createObjectURL(blob)
-    setSrc(url)
-    return () => URL.revokeObjectURL(url)
-  }, [layer.text, layer.fontFamily, layer.fontSize, layer.color, layer.fontWeight, layer.fontStyle, layer.strokeWidth, layer.strokeColor, layer.archAmount, layer.width, layer.height])
-  if (!src) return null
-  return <img src={src} alt={layer.text} className="w-full h-full object-contain" draggable={false} style={{ pointerEvents: 'none' }}/>
+  const w = layer.width
+  const h = layer.height
+  const arch = layer.archAmount ?? 0
+  const fw = layer.fontWeight ?? 'bold'
+  const fi = layer.fontStyle ?? 'normal'
+  const sw = layer.strokeWidth ?? 0
+  const strokeProps = sw > 0 ? { stroke: layer.strokeColor ?? '#000000', strokeWidth: sw * 2, paintOrder: 'stroke fill' as const, strokeLinejoin: 'round' as const } : {}
+  const textProps = { fontFamily: `"${layer.fontFamily}", sans-serif`, fontSize: layer.fontSize, fill: layer.color, fontWeight: fw, fontStyle: fi, ...strokeProps }
+
+  if (!arch) {
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" width={w} height={h} style={{ width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <text x={w / 2} y={h / 2} textAnchor="middle" dominantBaseline="middle" {...textProps}>{layer.text || 'Your Text'}</text>
+      </svg>
+    )
+  }
+
+  const cap = layer.fontSize * 0.78
+  const desc = layer.fontSize * 0.24
+  const maxLift = Math.max(2, h - cap - desc)
+  const lift = Math.min(maxLift, Math.max(2, (Math.abs(arch) / 100) * maxLift))
+  const r = (w * w / 4 + lift * lift) / (2 * lift)
+  const baseY = arch > 0 ? h - desc : cap
+  const sweep = arch > 0 ? 1 : 0
+  const pathD = `M 0,${baseY} A ${r},${r} 0 0,${sweep} ${w},${baseY}`
+
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={w} height={h} overflow="visible" style={{ width: '100%', height: '100%', pointerEvents: 'none' }}>
+      <defs><path id="ap" d={pathD}/></defs>
+      <text {...textProps} textAnchor="middle">
+        <textPath href="#ap" startOffset="50%">{layer.text || 'Your Text'}</textPath>
+      </text>
+    </svg>
+  )
 }
 
 export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUpdate, onBack, hideHeader, pendingArtwork, onArtworkConsumed, onStudioStateChange }: Props) {
@@ -297,19 +336,30 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const garmentColorRef = useRef(garmentColor)
   const logoGalleryRef = useRef(logoGallery)
   const artworkGalleryRef = useRef(artworkGallery)
+  const onStudioStateChangeRef = useRef(onStudioStateChange)
   useEffect(() => { layersByViewRef.current = layersByView }, [layersByView])
   useEffect(() => { garmentColorRef.current = garmentColor }, [garmentColor])
   useEffect(() => { logoGalleryRef.current = logoGallery }, [logoGallery])
   useEffect(() => { artworkGalleryRef.current = artworkGallery }, [artworkGallery])
+  useEffect(() => { onStudioStateChangeRef.current = onStudioStateChange }, [onStudioStateChange])
 
   // Bundle the full studio state from refs so every emit captures the latest values.
   const emitStudioState = useCallback(() => {
-    onStudioStateChange?.({
+    onStudioStateChangeRef.current?.({
       layersByView: layersByViewRef.current,
       garmentColor: garmentColorRef.current,
       logoGallery: logoGalleryRef.current,
       artworkGallery: artworkGalleryRef.current,
     })
+  }, [])
+
+  // Flush on unmount — the 800ms debounce cleanup would otherwise cancel the
+  // save if the user navigates away before the timer fires.
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+      emitStudioState()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const croppedCache = useRef<Record<string, string>>({})
@@ -1062,26 +1112,6 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
 
               {selected?.type === 'image' ? (
                 <>
-                  {/* Recolor artwork */}
-                  <div className="card space-y-2">
-                    <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
-                    <div className="grid grid-cols-6 gap-1.5">
-                      {COLOR_SWATCHES.map(c => (
-                        <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
-                          style={{ backgroundColor: c }}
-                          className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                        />
-                      ))}
-                    </div>
-                    <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
-                      onChange={e => updateSelected({ tintColor: e.target.value })}
-                      className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
-                    {(selected as ImageLayer).tintColor && (
-                      <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                        Clear tint
-                      </button>
-                    )}
-                  </div>
                   {transformCard(selected)}
                   {layerControlsCard()}
                 </>
@@ -1090,7 +1120,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                   <div className="text-center py-6">
                     <Layers size={22} className="mx-auto text-gray-300 mb-2"/>
                     <p className="text-xs text-gray-400">Select a logo or artwork layer</p>
-                    <p className="text-[11px] text-gray-300 mt-1">to recolor, scale &amp; position it</p>
+                    <p className="text-[11px] text-gray-300 mt-1">to scale, position &amp; recolor it</p>
                   </div>
                 </div>
               )}
@@ -1132,6 +1162,29 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                   </button>
                 )}
               </div>
+
+              {/* Recolor Artwork — shows when an image layer is selected */}
+              {selected?.type === 'image' && (
+                <div className="card space-y-2">
+                  <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {COLOR_SWATCHES.map(c => (
+                      <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
+                        style={{ backgroundColor: c }}
+                        className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
+                      />
+                    ))}
+                  </div>
+                  <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
+                    onChange={e => updateSelected({ tintColor: e.target.value })}
+                    className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
+                  {(selected as ImageLayer).tintColor && (
+                    <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
+                      Clear tint
+                    </button>
+                  )}
+                </div>
+              )}
 
               {state.garment && (
                 <div className="card">
