@@ -130,11 +130,11 @@ export default function LogoAssetPanel({ state, onLogoUpdate }: Props) {
           <button
             onClick={handleCleanBackground}
             disabled={cleaning}
-            className="mb-3 w-full flex items-center justify-center gap-1.5 p-2.5 rounded-lg border border-slate-200 text-[11px] text-gray-600 hover:text-grace-ink hover:border-grace-ink disabled:opacity-50 transition-colors"
+            className="mb-3 w-full flex items-center justify-center gap-1.5 p-2.5 rounded-lg bg-gray-900 text-white text-[11px] hover:bg-black disabled:opacity-50 transition-colors"
             title="Uses AI to remove the background for a cleaner cutout (counts as one AI generation)"
           >
             {cleaning ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
-            {cleaning ? 'Cleaning…' : 'Clean background (AI)'}
+            {cleaning ? 'Removing…' : 'Remove Background'}
             <AIUsageHint />
           </button>
         )}
