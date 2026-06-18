@@ -9,7 +9,7 @@ import type { NextRequest } from 'next/server'
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Total free generations granted to every new user (3 logo + 3 garment + 3 edit). */
-export const FREE_GENERATION_LIMIT = 9
+export const FREE_GENERATION_LIMIT = 3
 
 export const CREDIT_PACKS = [
   { id: 'pack_25',  generations: 25,  price_cents: 900,  label: '25 Generations', price_label: '$9' },

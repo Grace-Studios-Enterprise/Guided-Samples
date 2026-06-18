@@ -127,10 +127,70 @@ export default function Phase4Preview({ state, onSavePreview, onComplete, onBack
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr_220px] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
 
-        {/* Left: Design summary */}
+        {/* Left: Actions + Design summary */}
         <div className="space-y-3">
+
+          {/* Primary actions (moved from right panel) */}
+          <div className="card">
+            <p className="text-xs font-medium text-gray-600 mb-3">Preview Status</p>
+            <div className="space-y-2 mb-4">
+              {[
+                { label: 'Design confirmed', done: !!state.design },
+                { label: 'Realistic preview', done: generated && images.length > 0 },
+                { label: 'Technical drawing', done: techGenerated && techImages.length > 0 },
+              ].map(({ label, done }) => (
+                <div key={label} className="flex items-center gap-2 text-xs">
+                  <CheckCircle2 size={13} className={done ? 'text-brand-green' : 'text-gray-300'}/>
+                  <span className={done ? 'text-gray-700' : 'text-gray-400'}>{label}</span>
+                </div>
+              ))}
+            </div>
+
+            {drawMode === 'realistic' && !generated && (
+              <button onClick={handleGenerate} disabled={loading}
+                className="btn-primary w-full flex items-center justify-center gap-2 mb-2">
+                {loading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
+                {loading ? (statusMsg || 'Generating…') : 'Generate Preview'}
+              </button>
+            )}
+            {drawMode === 'technical' && !techGenerated && (
+              <button onClick={handleGenerate} disabled={loading}
+                className="btn-primary w-full flex items-center justify-center gap-2 mb-2">
+                {loading ? <Loader2 size={14} className="animate-spin"/> : <Ruler size={14}/>}
+                {loading ? (statusMsg || 'Generating…') : 'Generate Drawing'}
+              </button>
+            )}
+            {((drawMode === 'realistic' && generated) || (drawMode === 'technical' && techGenerated)) && (
+              <button onClick={handleRegenerate} disabled={loading}
+                className="btn-secondary w-full flex items-center justify-center gap-2 mb-2">
+                {loading ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>}
+                {loading ? (statusMsg || 'Generating…') : 'Regenerate'}
+              </button>
+            )}
+            {drawMode === 'realistic' && generated && images.length > 0 && (
+              <button onClick={() => images.forEach((img, i) => { const a = document.createElement('a'); a.href = img; a.download = `preview_${i+1}.png`; a.click() })}
+                className="btn-secondary w-full flex items-center justify-center gap-2 mb-2">
+                <Download size={13}/> Download Previews
+              </button>
+            )}
+            {drawMode === 'technical' && techGenerated && techImages.length > 0 && (
+              <button onClick={() => techImages.forEach((img, i) => { const a = document.createElement('a'); a.href = img; a.download = `technical_drawing_${i+1}.png`; a.click() })}
+                className="btn-secondary w-full flex items-center justify-center gap-2 mb-2">
+                <Download size={13}/> Download Drawing
+              </button>
+            )}
+
+            <button onClick={handleProceed}
+              className="w-full flex items-center justify-center gap-2 font-medium py-3 px-4 rounded-xl transition-colors text-sm bg-brand-green hover:bg-brand-green-light text-white">
+              Proceed to Tech Pack <ArrowRight size={15}/>
+            </button>
+            {!generated && (
+              <p className="text-center text-[11px] text-gray-400 mt-2">Preview is optional — you can proceed directly</p>
+            )}
+          </div>
+
           <div className="card">
             <p className="text-xs font-medium text-gray-600 mb-3">Your Design</p>
 
@@ -328,100 +388,6 @@ export default function Phase4Preview({ state, onSavePreview, onComplete, onBack
                 </div>
               )}
             </>
-          )}
-        </div>
-
-        {/* Right: Actions */}
-        <div className="space-y-3">
-          <div className="card">
-            <p className="text-xs font-medium text-gray-600 mb-3">Preview Status</p>
-            <div className="space-y-2">
-              {[
-                { label: 'Design confirmed', done: !!state.design },
-                { label: 'Realistic preview', done: generated && images.length > 0 },
-                { label: 'Technical drawing', done: techGenerated && techImages.length > 0 },
-              ].map(({ label, done }) => (
-                <div key={label} className="flex items-center gap-2 text-xs">
-                  <CheckCircle2 size={13} className={done ? 'text-brand-green' : 'text-gray-300'}/>
-                  <span className={done ? 'text-gray-700' : 'text-gray-400'}>{label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {drawMode === 'realistic' && !generated && (
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
-              {loading ? (statusMsg || 'Generating…') : 'Generate Preview'}
-            </button>
-          )}
-
-          {drawMode === 'technical' && !techGenerated && (
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 size={14} className="animate-spin"/> : <Ruler size={14}/>}
-              {loading ? (statusMsg || 'Generating…') : 'Generate Drawing'}
-            </button>
-          )}
-
-          {drawMode === 'realistic' && generated && images.length > 0 && (
-            <button
-              onClick={() => images.forEach((img, i) => {
-                const a = document.createElement('a')
-                a.href = img
-                a.download = `preview_${i + 1}.png`
-                a.click()
-              })}
-              className="btn-secondary w-full flex items-center justify-center gap-2"
-            >
-              <Download size={13}/> Download Previews
-            </button>
-          )}
-
-          {drawMode === 'technical' && techGenerated && techImages.length > 0 && (
-            <button
-              onClick={() => techImages.forEach((img, i) => {
-                const a = document.createElement('a')
-                a.href = img
-                a.download = `technical_drawing_${i + 1}.png`
-                a.click()
-              })}
-              className="btn-secondary w-full flex items-center justify-center gap-2"
-            >
-              <Download size={13}/> Download Drawing
-            </button>
-          )}
-
-          {((drawMode === 'realistic' && generated) || (drawMode === 'technical' && techGenerated)) && (
-            <button
-              onClick={handleRegenerate}
-              disabled={loading}
-              className="btn-secondary w-full flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 size={14} className="animate-spin"/> : <RefreshCw size={14}/>}
-              {loading ? (statusMsg || 'Generating…') : 'Regenerate'}
-            </button>
-          )}
-
-          <button
-            onClick={handleProceed}
-            className="w-full flex items-center justify-center gap-2 font-medium py-3 px-4 rounded-xl transition-colors text-sm bg-brand-green hover:bg-brand-green-light text-white"
-          >
-            Proceed to Tech Pack
-            <ArrowRight size={15}/>
-          </button>
-
-          {!generated && (
-            <p className="text-center text-[11px] text-gray-400">
-              Preview is optional — you can proceed directly
-            </p>
           )}
         </div>
 
