@@ -105,11 +105,13 @@ export async function saveProject(
   const [logoUrl, garmentUrl, compositeUrl, ...rest] = uploads
   const previews = rest.slice(0, realCount).filter((u): u is string => !!u)
   const techPreviews = rest.slice(realCount, realCount + techCount).filter((u): u is string => !!u)
-  // Best thumbnail: confirmed composite > studio canvas snapshot > garment > logo
+  // Best thumbnail: latest studio canvas snapshot > confirmed composite >
+  // garment > logo. The studio snapshot reflects the most recent edits, so it
+  // wins over a (possibly stale) confirmed composite.
   const studioThumbUrl = await persistImage(
     supabase, userId, id, 'studio_thumb', state.studioState?.thumbnailDataUrl
   )
-  const thumbnail = compositeUrl ?? studioThumbUrl ?? garmentUrl ?? logoUrl
+  const thumbnail = studioThumbUrl ?? compositeUrl ?? garmentUrl ?? logoUrl
 
   // Per-view garment images (front/back/side) — uploaded so a restored project
   // keeps every angle, not just the primary view.

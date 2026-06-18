@@ -195,11 +195,18 @@ function archGeometry(layer: TextLayer) {
   const maxLift = (w / 2) * 0.92
   const lift = Math.min(maxLift, Math.max(0, (Math.abs(arch) / 100) * maxLift))
   const r = lift > 0 ? (w * w / 4 + lift * lift) / (2 * lift) : 0
-  // Expand the render height to fit the full curve plus glyph asc/descent.
-  const RH = Math.max(h, lift + cap + desc + 4)
+  // Intrinsic height needed to contain the full curve plus glyph asc/descent.
+  // Independent of the current box height so the box can be sized to fit it
+  // (see archBoxHeight) and the text never spills outside its bounds.
+  const RH = lift + cap + desc + 4
   const baseY = arch > 0 ? RH - desc - 2 : cap + 2
   const cy = arch > 0 ? baseY - r : baseY + r
   return { w, h, cap, desc, arch, lift, r, RH, baseY, cy }
+}
+
+// The box height that fully contains a given arched text layer.
+function archBoxHeight(layer: TextLayer): number {
+  return Math.round(archGeometry(layer).RH)
 }
 
 // Rasterize arched text to a PNG using canvas arc-path drawing so page fonts apply.
@@ -354,6 +361,9 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const logoGalleryRef = useRef(logoGallery)
   const artworkGalleryRef = useRef(artworkGallery)
   const onStudioStateChangeRef = useRef(onStudioStateChange)
+  // Holds the latest renderDesign so debounced/memoized callbacks never capture a
+  // stale closure with empty layers (which produced blank-garment thumbnails).
+  const renderDesignRef = useRef<((opts?: { includeLayers?: boolean; includeGarment?: boolean; transparent?: boolean }) => Promise<string>) | null>(null)
   useEffect(() => { layersByViewRef.current = layersByView }, [layersByView])
   useEffect(() => { garmentColorRef.current = garmentColor }, [garmentColor])
   useEffect(() => { logoGalleryRef.current = logoGallery }, [logoGallery])
@@ -374,8 +384,8 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
 
   const emitStudioStateWithThumb = useCallback(async () => {
     try {
-      const thumb = await renderDesign({})
-      emitStudioState(thumb)
+      const thumb = await renderDesignRef.current?.({})
+      emitStudioState(thumb || undefined)
     } catch {
       emitStudioState()
     }
@@ -584,6 +594,18 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     if (!selectedId) return
     snapshot()
     setLayers(ls => ls.map(l => l.id === selectedId ? { ...l, ...updates } as LogoLayer : l))
+  }
+
+  // Set arch amount and grow/shrink the layer box so the curved text stays fully
+  // contained — preventing the text from spilling outside its bounding box.
+  const setArch = (amount: number) => {
+    if (!selected || selected.type !== 'text') return
+    const clamped = Math.max(-100, Math.min(100, amount))
+    const probe = { ...(selected as TextLayer), archAmount: clamped }
+    const newH = clamped === 0 ? Math.round(selected.fontSize * 1.6) : archBoxHeight(probe)
+    const dy = (newH - selected.height) / 2
+    // Keep the visual center fixed as the box grows by shifting y up by half the delta.
+    updateSelected({ archAmount: clamped, height: newH, y: Math.round(selected.y - dy) })
   }
 
   // Drag handlers
@@ -847,6 +869,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     }
     return canvas.toDataURL('image/png')
   }
+
+  // Keep the ref pointing at the current closure so async thumbnail captures use
+  // the latest layers/garment color rather than a stale first-render snapshot.
+  renderDesignRef.current = renderDesign
 
   // White-background composite used for the AI preview pipeline
   const compositeDesign = () => renderDesign({})
@@ -1359,13 +1385,13 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                       <div className="flex justify-between items-center mb-1.5">
                         <span className="text-xs text-gray-500">Arch</span>
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => updateSelected({ archAmount: Math.max(-100, ((selected as TextLayer).archAmount ?? 0) - 10) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                          <button onClick={() => setArch(((selected as TextLayer).archAmount ?? 0) - 10)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
                           <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).archAmount ?? 0}</span>
-                          <button onClick={() => updateSelected({ archAmount: Math.min(100, ((selected as TextLayer).archAmount ?? 0) + 10) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                          <button onClick={() => setArch(((selected as TextLayer).archAmount ?? 0) + 10)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
                         </div>
                       </div>
                       <input type="range" min={-100} max={100} value={(selected as TextLayer).archAmount ?? 0}
-                        onChange={e => updateSelected({ archAmount: parseInt(e.target.value) })}
+                        onChange={e => setArch(parseInt(e.target.value))}
                         className="w-full accent-brand-green"/>
                       <p className="text-[11px] text-gray-400 mt-1">Positive curves up, negative curves down.</p>
                     </div>
