@@ -1,18 +1,16 @@
-// Server-backed background removal: tries the rembg (U²-Net) cleanup pipeline via
-// /api/remove-bg first for proper edge/shadow-preserving alpha, then falls back to
-// the local flood-fill remover below if the service is unavailable or errors.
+// Background cleanup for uploaded logos and artwork.
+//
+// Uses the client-side BFS flood-fill exclusively. It only clears the OUTER
+// connected background region reachable from the image border, so every interior
+// pixel — including the multi-stroke outline borders on letters (e.g. the GRACE
+// gold+black double border) — is preserved.
+//
+// The Replicate/rembg (U²-Net) model is intentionally NOT used here: it is a
+// subject-segmentation model that treats those outline strokes as background and
+// strips them, which is exactly the border-loss the user reported. Flood-fill is
+// deterministic, so the same upload also produces identical bytes every time,
+// which lets the Library deduplicate repeats of the same logo.
 export async function cleanupBackground(dataUrl: string): Promise<string> {
-  try {
-    const res = await fetch('/api/remove-bg', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: dataUrl }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.image && data.removed) return data.image as string
-    }
-  } catch { /* fall through to local remover */ }
   try { return await removeWhiteBackground(dataUrl) } catch { return dataUrl }
 }
 

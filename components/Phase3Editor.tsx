@@ -833,6 +833,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     }
 
     if (includeLayers) for (const layer of layers) {
+      // Render each layer defensively — a single failing layer (e.g. a font/arch
+      // edge case) must not abort the whole composite, which would leave the
+      // thumbnail stuck on the previous (pre-edit) snapshot.
+      try {
       ctx.save()
       ctx.translate(layer.x + layer.width / 2, layer.y + layer.height / 2)
       ctx.rotate((layer.rotation * Math.PI) / 180)
@@ -878,6 +882,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
         }
       }
       ctx.restore()
+      } catch (e) { console.error('layer render failed', e); try { ctx.restore() } catch {} }
     }
     return canvas.toDataURL('image/png')
   }

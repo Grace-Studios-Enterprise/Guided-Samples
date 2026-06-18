@@ -63,13 +63,13 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack 
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-500 hidden sm:block">{user?.name} · {user?.email}</span>
-            <button onClick={onBack}
-              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
-              <ArrowLeft size={13}/> Back
-            </button>
             <button onClick={signOut}
               className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
               <LogOut size={13}/> Sign Out
+            </button>
+            <button onClick={onBack}
+              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 transition-colors">
+              <ArrowLeft size={13}/> Back
             </button>
           </div>
         </div>

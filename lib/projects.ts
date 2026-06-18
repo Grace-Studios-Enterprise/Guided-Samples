@@ -208,17 +208,61 @@ export async function loadProject(projectId: string): Promise<ProjectDetail | nu
   }
 }
 
+// Perceptual average-hash of an image's pixels. Two visually-identical logos
+// hash to the same string even if their bytes differ (re-encoded, run through a
+// different background remover, stored at a different URL, etc.) — which exact
+// string/path comparison can't catch. Returns null if the image can't be read
+// (e.g. CORS-tainted), in which case the caller falls back to the raw URL.
+async function perceptualHash(url: string): Promise<string | null> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    let settled = false
+    const done = (v: string | null) => { if (!settled) { settled = true; resolve(v) } }
+    img.onload = () => {
+      try {
+        const N = 16
+        const c = document.createElement('canvas'); c.width = N; c.height = N
+        const ctx = c.getContext('2d', { willReadFrequently: true })!
+        // Flatten onto white so transparent backgrounds hash consistently.
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, N, N)
+        ctx.drawImage(img, 0, 0, N, N)
+        const d = ctx.getImageData(0, 0, N, N).data
+        const gray: number[] = []
+        let sum = 0
+        for (let i = 0; i < d.length; i += 4) {
+          const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114
+          gray.push(g); sum += g
+        }
+        const avg = sum / gray.length
+        done(gray.map(g => (g > avg ? '1' : '0')).join(''))
+      } catch { done(null) }
+    }
+    img.onerror = () => done(null)
+    img.src = url
+    setTimeout(() => done(null), 5000)
+  })
+}
+
+// Collapse a list of image URLs to visually-unique entries (first occurrence
+// wins). Falls back to the raw URL as the key when an image can't be hashed.
+async function dedupeByPixels(urls: string[]): Promise<string[]> {
+  const hashes = await Promise.all(urls.map(u => perceptualHash(u)))
+  const seen = new Set<string>()
+  const out: string[] = []
+  urls.forEach((u, i) => {
+    const key = hashes[i] ?? `url:${u}`
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(u)
+  })
+  return out
+}
+
 // Aggregate all logos, artwork, garments, and previews across every project the
-// user has ever saved. Used by the Library section.
-//
-// Deduplication: the same image may appear as both a base64 dataUrl (in the
-// studioState gallery) and as a Supabase storage URL (in logo_url/garment_url) —
-// both added naively would show the same image twice. We fingerprint each entry:
-//  - http(s) URLs:  the storage path after the bucket (the unique portion)
-//  - data URLs:     first 500 chars of the base64 payload (enough to distinguish images)
-// Two entries with the same fingerprint are the same image; only the first is kept.
-//
-// Garments from the GRACE built-in library (path starts with "/") are excluded.
+// user has ever saved, deduplicated by visual content. Garments from the GRACE
+// built-in library (paths starting with "/") are excluded — the user only wants
+// things they uploaded or AI-generated.
 export async function listAllUserAssets(userId: string): Promise<{
   logos: string[]
   artworks: string[]
@@ -234,45 +278,34 @@ export async function listAllUserAssets(userId: string): Promise<{
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
 
-  const fingerprint = (url: string): string => {
-    if (url.startsWith('data:')) return url.slice(0, 500)
-    // For Supabase public URLs, the unique key is the storage path after '/object/public/'
-    const m = url.match(/\/object\/public\/(.+)$/)
-    return m ? m[1] : url
-  }
-
-  const seen = new Set<string>()
-  const logos: string[] = []
-  const artworks: string[] = []
-  const garments: string[] = []
-  const previews: string[] = []
-
-  const add = (arr: string[], url: string) => {
-    if (!url) return
-    const fp = fingerprint(url)
-    if (seen.has(fp)) return
-    seen.add(fp)
-    arr.push(url)
-  }
+  const rawLogos: string[] = []
+  const rawArtworks: string[] = []
+  const rawGarments: string[] = []
+  const rawPreviews: string[] = []
 
   for (const row of data ?? []) {
     const ds = row.design_state as AppState | null
+    const gallery = ds?.studioState?.logoGallery ?? []
 
-    // Logo gallery stored in studioState (generated + uploaded logos, newest project first)
-    for (const url of ds?.studioState?.logoGallery ?? []) add(logos, url)
-    // Fall back to the dedicated logo_url column for older projects saved before galleries existed
-    if (row.logo_url) add(logos, row.logo_url)
+    for (const url of gallery) { if (url) rawLogos.push(url) }
+    // Only fall back to the dedicated logo_url column when the project has no
+    // gallery (older projects) — otherwise it's a duplicate of a gallery entry.
+    if (!gallery.length && row.logo_url) rawLogos.push(row.logo_url)
 
-    // Artwork uploads
-    for (const url of ds?.studioState?.artworkGallery ?? []) add(artworks, url)
+    for (const url of ds?.studioState?.artworkGallery ?? []) { if (url) rawArtworks.push(url) }
 
-    // Garments — skip GRACE built-in library assets (paths starting with "/")
     const garmentUrl = ds?.garment?.dataUrl ?? row.garment_url
-    if (garmentUrl && !garmentUrl.startsWith('/')) add(garments, garmentUrl)
+    if (garmentUrl && !garmentUrl.startsWith('/')) rawGarments.push(garmentUrl)
 
-    // Preview images
-    for (const url of (row.preview_urls as string[] | null) ?? []) add(previews, url)
+    for (const url of (row.preview_urls as string[] | null) ?? []) { if (url) rawPreviews.push(url) }
   }
+
+  const [logos, artworks, garments, previews] = await Promise.all([
+    dedupeByPixels(rawLogos),
+    dedupeByPixels(rawArtworks),
+    dedupeByPixels(rawGarments),
+    dedupeByPixels(rawPreviews),
+  ])
 
   return { logos, artworks, garments, previews }
 }
