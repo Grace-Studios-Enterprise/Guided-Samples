@@ -61,6 +61,8 @@ export type AppState = {
   studioState?: {
     layersByView: StudioLayersByView
     garmentColor: string
+    logoGallery?: string[]
+    artworkGallery?: string[]
   }
 }
 

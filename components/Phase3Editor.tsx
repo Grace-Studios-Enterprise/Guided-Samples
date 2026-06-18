@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Undo2, Redo2, Minus, Plus, Upload, Layers, ArrowLeft, ArrowRight,
-  Trash2, Copy, ChevronUp, ChevronDown, Check, Loader2, Download, Type, Palette,
+  Trash2, Copy, ChevronUp, ChevronDown, Check, Loader2, Download, Type, Palette, X,
 } from 'lucide-react'
 import { AppState } from '@/app/page'
 import { streamGenerate } from '@/lib/streamGenerate'
@@ -57,7 +57,7 @@ interface Props {
   hideHeader?: boolean
   pendingArtwork?: string | null
   onArtworkConsumed?: () => void
-  onStudioStateChange?: (s: { layersByView: ViewLayers; garmentColor: string }) => void
+  onStudioStateChange?: (s: { layersByView: ViewLayers; garmentColor: string; logoGallery: string[]; artworkGallery: string[] }) => void
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -265,9 +265,18 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const [localLogo, setLocalLogo] = useState<AppState['logo']>(state.logo)
   const artworkFileRef = useRef<HTMLInputElement>(null)
 
+  // Galleries of available assets to drop on the canvas (support multiple of each).
+  const [logoGallery, setLogoGallery] = useState<string[]>(
+    state.studioState?.logoGallery ?? (state.logo?.dataUrl ? [state.logo.dataUrl] : [])
+  )
+  const [artworkGallery, setArtworkGallery] = useState<string[]>(
+    state.studioState?.artworkGallery ?? []
+  )
+
   const handleLogoUpdate = (logo: AppState['logo']) => {
     setLocalLogo(logo)
     onLogoUpdate?.(logo)
+    if (logo?.dataUrl) setLogoGallery(g => g.includes(logo.dataUrl) ? g : [...g, logo.dataUrl])
   }
 
   // Per-view layer state — prefer persisted studioState, fall back to SPA cache
@@ -286,8 +295,23 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   // Refs for fresh values in async callbacks / debounced effects
   const layersByViewRef = useRef(layersByView)
   const garmentColorRef = useRef(garmentColor)
+  const logoGalleryRef = useRef(logoGallery)
+  const artworkGalleryRef = useRef(artworkGallery)
   useEffect(() => { layersByViewRef.current = layersByView }, [layersByView])
   useEffect(() => { garmentColorRef.current = garmentColor }, [garmentColor])
+  useEffect(() => { logoGalleryRef.current = logoGallery }, [logoGallery])
+  useEffect(() => { artworkGalleryRef.current = artworkGallery }, [artworkGallery])
+
+  // Bundle the full studio state from refs so every emit captures the latest values.
+  const emitStudioState = useCallback(() => {
+    onStudioStateChange?.({
+      layersByView: layersByViewRef.current,
+      garmentColor: garmentColorRef.current,
+      logoGallery: logoGalleryRef.current,
+      artworkGallery: artworkGalleryRef.current,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const croppedCache = useRef<Record<string, string>>({})
   const [displaySrcs, setDisplaySrcs] = useState<Record<string, string>>({})
   const [tintedDataUrls, setTintedDataUrls] = useState<Record<string, string>>({})
@@ -401,7 +425,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       setSaveStatus('saved')
-      onStudioStateChange?.({ layersByView: layersByViewRef.current, garmentColor: garmentColorRef.current })
+      emitStudioState()
     }, 800)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -410,9 +434,15 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   // Keep garment color in sync with the cache and parent
   useEffect(() => {
     _cachedGarmentColor = garmentColor
-    if (hydrated.current) onStudioStateChange?.({ layersByView: layersByViewRef.current, garmentColor: garmentColorRef.current })
+    if (hydrated.current) emitStudioState()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [garmentColor])
+
+  // Persist gallery changes (new logo/artwork uploads)
+  useEffect(() => {
+    if (hydrated.current) emitStudioState()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logoGallery, artworkGallery])
 
   // Add artwork layer when parent passes a new image (from the asset panel upload)
   useEffect(() => {
@@ -450,18 +480,26 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     })
   }
 
+  // Upload one or more artwork files into the gallery (multiple supported).
   const handleArtworkFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
     e.target.value = ''
-    try {
-      let dataUrl = await fileToDataUrl(file)
-      try { dataUrl = await removeWhiteBackground(dataUrl) } catch {}
-      const id = crypto.randomUUID()
-      snapshot()
-      setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }])
-      setSelectedId(id)
-    } catch (err) { console.error('Artwork upload failed', err) }
+    for (const file of files) {
+      try {
+        let dataUrl = await fileToDataUrl(file)
+        try { dataUrl = await removeWhiteBackground(dataUrl) } catch {}
+        setArtworkGallery(g => g.includes(dataUrl) ? g : [...g, dataUrl])
+      } catch (err) { console.error('Artwork upload failed', err) }
+    }
+  }
+
+  // Drop a gallery asset onto the canvas as a new layer.
+  const addAssetToCanvas = (dataUrl: string, isLogo: boolean) => {
+    const id = crypto.randomUUID()
+    snapshot()
+    setLayers(ls => [...ls, { id, type: 'image', dataUrl, isLogo, x: 60, y: 80, width: 160, height: 80, rotation: 0 }])
+    setSelectedId(id)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -844,7 +882,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const handleConfirm = async () => {
     // Flush any pending debounced save so layers are persisted before phase advance
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
-    onStudioStateChange?.({ layersByView: layersByViewRef.current, garmentColor: garmentColorRef.current })
+    emitStudioState()
     let composite = ''
     try { composite = await compositeDesign() } catch (e) { console.error(e) }
     let assets
@@ -990,36 +1028,35 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                 <LogoAssetPanel state={{ ...state, logo: localLogo }} onLogoUpdate={handleLogoUpdate} />
               </div>
 
-              {/* Artwork upload */}
+              {/* Artwork upload (multiple) */}
               <div className="card space-y-2">
                 <p className="text-xs font-medium text-gray-600">Artwork</p>
                 <label className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-green cursor-pointer transition-colors text-xs text-gray-500 hover:text-gray-700">
                   <Upload size={13}/> Upload Artwork
-                  <input ref={artworkFileRef} type="file" className="hidden"
+                  <input ref={artworkFileRef} type="file" multiple className="hidden"
                     accept="image/png,image/svg+xml,image/jpeg,image/webp"
                     onChange={handleArtworkFile}/>
                 </label>
               </div>
 
+              {/* Add to Canvas — every uploaded/generated logo + artwork is a thumbnail */}
               <div className="card space-y-3">
                 <p className="text-xs font-medium text-gray-600">Add to Canvas</p>
-                {localLogo ? (
-                  <button
-                    onClick={() => {
-                      const id = crypto.randomUUID()
-                      snapshot()
-                      const newLayer: ImageLayer = { id, type: 'image', isLogo: true, dataUrl: localLogo!.dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }
-                      setLayers(ls => [...ls, newLayer])
-                      setSelectedId(id)
-                    }}
-                    className="w-full bg-slate-50 hover:bg-slate-100 rounded-lg overflow-hidden transition-colors">
-                    <div className="checkerboard rounded-t-lg" style={{ height: 64 }}>
-                      <img src={localLogo.dataUrl} alt="logo" className="w-full h-full object-contain p-2"/>
-                    </div>
-                    <p className="text-[11px] text-gray-500 py-1.5 px-2 text-left">Add logo to canvas</p>
-                  </button>
+                {logoGallery.length === 0 && artworkGallery.length === 0 ? (
+                  <p className="text-[11px] text-gray-400 leading-relaxed">Generate or upload a logo, or upload artwork above. Each appears here — click to place it on the canvas.</p>
                 ) : (
-                  <p className="text-[11px] text-gray-400 leading-relaxed">Generate or upload a logo above, then click here to place it on the canvas.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {logoGallery.map((src, i) => (
+                      <AssetThumb key={`logo-${i}`} src={src} label="Logo"
+                        onAdd={() => addAssetToCanvas(src, true)}
+                        onRemove={() => setLogoGallery(g => g.filter(s => s !== src))}/>
+                    ))}
+                    {artworkGallery.map((src, i) => (
+                      <AssetThumb key={`art-${i}`} src={src} label="Artwork"
+                        onAdd={() => addAssetToCanvas(src, false)}
+                        onRemove={() => setArtworkGallery(g => g.filter(s => s !== src))}/>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -1517,6 +1554,28 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
         </div>
 
       </div>
+    </div>
+  )
+}
+
+// A clickable gallery thumbnail that adds its asset to the canvas, with a
+// hover remove button to drop it from the gallery.
+function AssetThumb({ src, label, onAdd, onRemove }: {
+  src: string; label: string; onAdd: () => void; onRemove: () => void
+}) {
+  return (
+    <div className="relative group">
+      <button onClick={onAdd}
+        className="w-full bg-slate-50 hover:bg-slate-100 rounded-lg overflow-hidden transition-colors border border-slate-200">
+        <div className="checkerboard rounded-t-lg" style={{ height: 56 }}>
+          <img src={src} alt={label} className="w-full h-full object-contain p-1.5"/>
+        </div>
+        <p className="text-[10px] text-gray-500 py-1 px-1.5 text-left truncate">{label}</p>
+      </button>
+      <button onClick={onRemove} title="Remove"
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 opacity-0 group-hover:opacity-100 transition-opacity">
+        <X size={11}/>
+      </button>
     </div>
   )
 }
