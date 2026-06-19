@@ -1132,9 +1132,433 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
       )}
 
       {/* ─────────────────────────────────────────────────────────────────────
+          Main layout — responsive wrapper
+          Mobile:  single column, canvas on top, accordion below
+          Desktop: sidebar left + canvas right
+      ───────────────────────────────────────────────────────────────────── */}
+      <div className={`transition-all duration-300 ${sidebarCollapsed ? 'lg:grid lg:grid-cols-[1fr]' : 'lg:grid lg:grid-cols-[280px_1fr]'} lg:gap-4`}>
+
+        {/* Desktop sidebar (hidden on mobile) */}
+        <div className={`hidden lg:block space-y-3 transition-all duration-300 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
+          {/* Tab bar */}
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            {([
+              { id: 'garment', label: 'Garment',  icon: <Palette size={11}/> },
+              { id: 'logoart', label: 'Logo/Art', icon: <Upload  size={11}/> },
+              { id: 'text',    label: 'Text',     icon: <Type    size={11}/> },
+            ] as const).map(tab => (
+              <button key={tab.id} onClick={() => setLeftTab(tab.id)}
+                className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  leftTab === tab.id ? 'bg-grace-ink text-white' : 'text-grace-stone hover:bg-grace-mist'
+                }`}>
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+          </div>
+          {/* ── Logo / Art tab ── */}
+          {leftTab === 'logoart' && (
+            <>
+              <div className="card p-0 overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-200">
+                  <p className="text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">Logo</p>
+                </div>
+                <LogoAssetPanel state={{ ...state, logo: localLogo }} onLogoUpdate={handleLogoUpdate} />
+              </div>
+              <div className="card space-y-2">
+                <p className="text-xs font-medium text-gray-600">Artwork</p>
+                <label className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-green cursor-pointer transition-colors text-xs text-gray-500 hover:text-gray-700">
+                  <Upload size={13}/> Upload Artwork
+                  <input ref={artworkFileRef} type="file" multiple className="hidden"
+                    accept="image/png,image/svg+xml,image/jpeg,image/webp" onChange={handleArtworkFile}/>
+                </label>
+              </div>
+              <div className="card space-y-3">
+                <p className="text-xs font-medium text-gray-600">Add to Canvas</p>
+                {logoGallery.length === 0 && artworkGallery.length === 0 ? (
+                  <p className="text-[11px] text-gray-400 leading-relaxed">Generate or upload a logo, or upload artwork above. Each appears here — click to place it on the canvas.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {logoGallery.map((src, i) => (
+                      <AssetThumb key={`logo-${i}`} src={src} label="Logo"
+                        onAdd={() => addAssetToCanvas(src, true)}
+                        onRemove={() => setLogoGallery(g => g.filter(s => s !== src))}/>
+                    ))}
+                    {artworkGallery.map((src, i) => (
+                      <AssetThumb key={`art-${i}`} src={src} label="Artwork"
+                        onAdd={() => addAssetToCanvas(src, false)}
+                        onRemove={() => setArtworkGallery(g => g.filter(s => s !== src))}/>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {selected?.type === 'image' ? (
+                <>{transformCard(selected)}{layerControlsCard()}</>
+              ) : (
+                <div className="card"><div className="text-center py-6">
+                  <Layers size={22} className="mx-auto text-gray-300 mb-2"/>
+                  <p className="text-xs text-gray-400">Select a logo or artwork layer</p>
+                  <p className="text-[11px] text-gray-300 mt-1">to scale, position &amp; recolor it</p>
+                </div></div>
+              )}
+            </>
+          )}
+
+          {/* ── Garment tab ── */}
+          {leftTab === 'garment' && (
+            <>
+              <div className="card p-0 overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-200">
+                  <p className="text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">Garment</p>
+                </div>
+                <GarmentAssetPanel route={state.route ?? 'apparel'} state={state} onSetGarment={onSetGarment} />
+              </div>
+              <div className="card space-y-3">
+                <p className="text-xs font-medium text-gray-600">Garment Color</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {GARMENT_COLORS.map(c => (
+                    <button key={c} onClick={() => setGarmentColor(c === garmentColor ? '' : c)}
+                      title={c} style={{ backgroundColor: c }}
+                      className={`w-full aspect-square rounded-lg border-2 transition-all ${garmentColor === c ? 'border-grace-ink scale-110 shadow-md' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' || c === '#F5F5F5' ? 'border-slate-200' : ''}`}
+                    />
+                  ))}
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-500">
+                  <span className="flex-1">Custom</span>
+                  <input type="color" value={garmentColor || '#FFFFFF'} onChange={e => setGarmentColor(e.target.value)}
+                    className="w-8 h-7 rounded cursor-pointer border border-slate-200"/>
+                </label>
+                {garmentColor && <button onClick={() => setGarmentColor('')} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">Clear color</button>}
+              </div>
+              {selected?.type === 'image' && (
+                <div className="card space-y-2">
+                  <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {COLOR_SWATCHES.map(c => (
+                      <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
+                        style={{ backgroundColor: c }}
+                        className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
+                      />
+                    ))}
+                  </div>
+                  <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
+                    onChange={e => updateSelected({ tintColor: e.target.value })}
+                    className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
+                  {(selected as ImageLayer).tintColor && <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">Clear tint</button>}
+                </div>
+              )}
+              {state.garment && (
+                <div className="card">
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-xs font-medium text-gray-600">Garment Fit</p>
+                    <span className="text-xs text-gray-700">{garmentScale}%</span>
+                  </div>
+                  <input type="range" min={25} max={200} value={garmentScale}
+                    onChange={e => setGarmentScale(parseInt(e.target.value))} className="w-full accent-brand-green"/>
+                  <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">Drag the garment on the canvas to reposition it.</p>
+                  <button onClick={() => { setGarmentScale(100); setGarmentOffset({ x: 0, y: 0 }) }} className="mt-1.5 text-[11px] text-gray-400 hover:text-gray-700 transition-colors">Reset size &amp; position</button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Text tab ── */}
+          {leftTab === 'text' && (
+            <>
+              <div className="card space-y-3">
+                <p className="text-xs font-medium text-gray-600">Add Text</p>
+                <button onClick={addTextLayer} className="btn-primary w-full flex items-center justify-center gap-2">
+                  <Type size={13}/> Add Text Layer
+                </button>
+                <p className="text-[11px] text-gray-400 leading-relaxed">Adds a draggable text layer. Select it to change font, size, color, and border.</p>
+              </div>
+              {selected?.type === 'text' ? (
+                <>
+                  <div className="card space-y-3">
+                    <p className="text-xs font-medium text-gray-600">Text</p>
+                    <textarea value={selected.text} onChange={e => updateSelected({ text: e.target.value })}
+                      className="textarea-field text-sm resize-none" rows={2} placeholder="Your text here"/>
+                    <div>
+                      <p className="text-[11px] text-gray-500 mb-1.5">Font Library</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {FONT_LIBRARY.map(f => (
+                          <button key={f.name} onClick={() => updateSelected({ fontFamily: f.name })}
+                            style={{ fontFamily: `"${f.name}", sans-serif` }}
+                            className={`px-2 py-1.5 rounded border text-xs truncate transition-all text-left ${(selected as TextLayer).fontFamily === f.name ? 'border-grace-ink bg-grace-ink text-white' : 'border-slate-200 hover:border-slate-300 text-gray-700'}`}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => updateSelected({ fontWeight: (selected as TextLayer).fontWeight === 'bold' ? 'normal' : 'bold' })}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${(selected as TextLayer).fontWeight !== 'normal' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'}`}>B</button>
+                      <button onClick={() => updateSelected({ fontStyle: (selected as TextLayer).fontStyle === 'italic' ? 'normal' : 'italic' })}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs italic transition-all ${(selected as TextLayer).fontStyle === 'italic' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'}`}>I</button>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-500">Size</span>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => updateSelected({ fontSize: Math.max(8, (selected as TextLayer).fontSize - 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                        <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).fontSize}px</span>
+                        <button onClick={() => updateSelected({ fontSize: Math.min(120, (selected as TextLayer).fontSize + 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-gray-500 mb-1.5">Color</p>
+                      <div className="grid grid-cols-6 gap-1.5 mb-2">
+                        {COLOR_SWATCHES.map(c => (
+                          <button key={c} onClick={() => updateSelected({ color: c })}
+                            style={{ backgroundColor: c }}
+                            className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).color === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}/>
+                        ))}
+                      </div>
+                      <input type="color" value={(selected as TextLayer).color} onChange={e => updateSelected({ color: e.target.value })} className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-500">Border</span>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => updateSelected({ strokeWidth: Math.max(0, ((selected as TextLayer).strokeWidth ?? 0) - 1) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).strokeWidth ?? 0}px</span>
+                          <button onClick={() => updateSelected({ strokeWidth: Math.min(20, ((selected as TextLayer).strokeWidth ?? 0) + 1), strokeColor: (selected as TextLayer).strokeColor ?? '#000000' })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                        </div>
+                      </div>
+                      {((selected as TextLayer).strokeWidth ?? 0) > 0 && (
+                        <>
+                          <div className="grid grid-cols-6 gap-1.5 mt-2">
+                            {COLOR_SWATCHES.map(c => (
+                              <button key={c} onClick={() => updateSelected({ strokeColor: c })}
+                                style={{ backgroundColor: c }}
+                                className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).strokeColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}/>
+                            ))}
+                          </div>
+                          <input type="color" value={(selected as TextLayer).strokeColor || '#000000'}
+                            onChange={e => updateSelected({ strokeColor: e.target.value })}
+                            className="w-full h-7 rounded cursor-pointer border border-slate-200 mt-2"/>
+                        </>
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-500">Arch</span>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => setArch(((selected as TextLayer).archAmount ?? 0) - 10)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
+                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).archAmount ?? 0}</span>
+                          <button onClick={() => setArch(((selected as TextLayer).archAmount ?? 0) + 10)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
+                        </div>
+                      </div>
+                      <input type="range" min={-100} max={100} value={(selected as TextLayer).archAmount ?? 0}
+                        onChange={e => setArch(parseInt(e.target.value))} className="w-full accent-brand-green"/>
+                      <p className="text-[11px] text-gray-400 mt-1">Positive curves up, negative curves down.</p>
+                    </div>
+                  </div>
+                  {transformCard(selected)}
+                  {layerControlsCard()}
+                </>
+              ) : (
+                <div className="card"><div className="text-center py-6">
+                  <Type size={22} className="mx-auto text-gray-300 mb-2"/>
+                  <p className="text-xs text-gray-400">Select a text layer</p>
+                  <p className="text-[11px] text-gray-300 mt-1">to edit font, color &amp; border</p>
+                </div></div>
+              )}
+            </>
+          )}
+
+          {/* Layers list */}
+          {layers.length > 0 && (
+            <div className="card">
+              <p className="text-xs font-medium text-gray-600 mb-2">Layers</p>
+              <div className="space-y-1">
+                {[...layers].reverse().map((layer, i) => (
+                  <button key={layer.id} onClick={() => selectLayer(layer.id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${selectedId === layer.id ? 'bg-brand-green/10 text-gray-900' : 'hover:bg-slate-100 text-gray-500'}`}>
+                    {layer.type === 'text' ? <Type size={11}/> : <Layers size={11}/>}
+                    <span className="truncate flex-1 text-left">
+                      {layer.type === 'text' ? (layer.text.slice(0, 16) || 'Text') : ((layer as ImageLayer).isLogo ? 'Logo' : `Artwork ${layers.length - i}`)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {garmentSrcForView(activeEditorView) && (
+            <div className="card space-y-2">
+              <p className="text-xs font-medium text-gray-600">Downloads</p>
+              <p className="text-[11px] text-gray-400 leading-relaxed">Each file exports as a transparent PNG with the background removed.</p>
+              <button onClick={async () => {
+                const png = await renderDesign({ transparent: true })
+                if (png) downloadDataUrl(png, `full-design-${activeEditorView}.png`)
+              }} className="btn-secondary w-full flex items-center justify-center gap-2 text-xs">
+                <Download size={13}/> Full Design
+              </button>
+              <button onClick={async () => {
+                let png = await renderDesign({ includeLayers: false, transparent: true })
+                if (!png) return
+                try { png = await removeWhiteBackground(png) } catch {}
+                png = await cropPadding(png)
+                downloadDataUrl(png, `garment-${activeEditorView}.png`)
+              }} className="btn-secondary w-full flex items-center justify-center gap-2 text-xs">
+                <Download size={13}/> Garment Only
+              </button>
+              {layers.map((layer, i) => {
+                const isLogo = layer.type === 'image' && (layer as ImageLayer).isLogo
+                const label = isLogo ? 'Logo' : layer.type === 'text' ? `Text ${i + 1}` : `Artwork ${i + 1}`
+                return (
+                  <button key={layer.id} onClick={async () => {
+                    const png = await renderLayerPng(layer)
+                    if (png) downloadDataUrl(png, `${label.toLowerCase().replace(/\s+/g, '-')}.png`)
+                  }} className="btn-secondary w-full flex items-center justify-center gap-2 text-xs">
+                    <Download size={13}/> {label}
+                  </button>
+                )
+              })}
+              <button onClick={downloadAll} className="btn-primary w-full flex items-center justify-center gap-2 text-xs">
+                <Download size={13}/> Download All (.zip)
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Canvas — always visible on both mobile and desktop */}
+        <div className="card p-0 overflow-hidden">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              {/* Sidebar collapse toggle (desktop only) */}
+              <button
+                onClick={() => setSidebarCollapsed(c => !c)}
+                title={sidebarCollapsed ? 'Show panel' : 'Hide panel'}
+                className="hidden lg:flex p-1.5 rounded hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors mr-1 items-center justify-center"
+              >
+                {sidebarCollapsed ? <ArrowRight size={14}/> : <ArrowLeft size={14}/>}
+              </button>
+              <button onClick={undo} disabled={past.length === 0} title="Undo"
+                className="p-1.5 rounded hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30">
+                <Undo2 size={14}/>
+              </button>
+              <button onClick={redo} disabled={future.length === 0} title="Redo"
+                className="p-1.5 rounded hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30">
+                <Redo2 size={14}/>
+              </button>
+              {availableViews.length > 1 && (
+                <div className="flex items-center gap-1 ml-3 border-l border-slate-200 pl-3">
+                  {availableViews.map(v => (
+                    <button key={v} onClick={() => { setActiveEditorView(v); setSelectedId(null) }}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize transition-colors ${activeEditorView === v ? 'bg-grace-ink text-white' : 'text-gray-500 hover:bg-slate-100'}`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <button onClick={() => setZoom(z => Math.max(25, z - 25))} className="p-1 rounded hover:bg-slate-100 hover:text-gray-700 transition-colors"><Minus size={12}/></button>
+              <span className="w-12 text-center">{zoom}%</span>
+              <button onClick={() => setZoom(z => Math.min(200, z + 25))} className="p-1 rounded hover:bg-slate-100 hover:text-gray-700 transition-colors"><Plus size={12}/></button>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                {saveStatus === 'saving' && <><Loader2 size={11} className="animate-spin"/> Saving…</>}
+                {saveStatus === 'saved'  && <><Check   size={11} className="text-brand-green"/> Saved</>}
+              </span>
+              <button onClick={handleManualSave} className="btn-secondary flex items-center gap-1.5">
+                <Save size={13}/> Save
+              </button>
+              <button onClick={handleConfirm} className="btn-primary flex items-center gap-1.5">
+                Confirm Design <ArrowRight size={13}/>
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas area */}
+          <div ref={canvasRef}
+            className="relative bg-white overflow-hidden flex items-center justify-center"
+            style={{ minHeight: 'calc(100vh - 200px)' }}
+            onClick={e => { if (e.target === e.currentTarget) setSelectedId(null) }}>
+            <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center', position: 'relative', width: 380, height: 460 }}>
+              {/* Garment */}
+              {(() => {
+                const garmentDisplaySrc = displaySrcs[activeEditorView] || garmentSrcForView(activeEditorView)
+                return garmentSrcForView(activeEditorView) ? (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                  style={{ transform: `translate(${garmentOffset.x}px, ${garmentOffset.y}px) scale(${garmentScale / 100})`, transformOrigin: 'center center' }}>
+                  <div onMouseDown={startGarmentDrag} onTouchStart={startGarmentDrag}
+                    style={{ position: 'relative', width: GARMENT_DISPLAY_W, height: GARMENT_DISPLAY_H, flexShrink: 0, isolation: garmentColor ? 'isolate' : undefined, pointerEvents: 'auto', cursor: garmentDragging ? 'grabbing' : 'grab' }}>
+                    {garmentColor && (
+                      <div style={{ position: 'absolute', inset: 0, backgroundColor: garmentColor, WebkitMaskImage: `url("${garmentDisplaySrc}")`, WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: `url("${garmentDisplaySrc}")`, maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center', pointerEvents: 'none' } as React.CSSProperties}/>
+                    )}
+                    <img src={garmentDisplaySrc} alt="garment" draggable={false}
+                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: garmentColor ? 'multiply' : 'normal', pointerEvents: 'none' } as React.CSSProperties}/>
+                    {garmentColor && (
+                      <img src={garmentDisplaySrc} alt="" aria-hidden draggable={false}
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', mixBlendMode: 'soft-light', opacity: 0.5, pointerEvents: 'none' } as React.CSSProperties}/>
+                    )}
+                    <div style={{ width: '100%', height: '100%' }}/>
+                  </div>
+                </div>
+                ) : null
+              })()}
+              {!garmentSrcForView(activeEditorView) && state.garment?.svg && (
+                <div className="absolute inset-0 pointer-events-none"
+                  style={{ transform: `scale(${garmentScale / 100})`, transformOrigin: 'center center' }}
+                  dangerouslySetInnerHTML={{ __html: state.garment.svg }}
+                />
+              )}
+              {!garmentSrcForView(activeEditorView) && !state.garment?.svg && (
+                <label className="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-400 hover:text-gray-600 transition-colors">
+                  <Upload size={28}/>
+                  <span className="text-xs font-medium">Upload a garment</span>
+                  <span className="text-[11px] text-gray-400">or generate one in Phase 2</span>
+                  <input type="file" className="hidden" accept="image/*" onChange={handleUploadGarment}/>
+                </label>
+              )}
+              {/* Layers */}
+              {layers.map(layer => (
+                <div key={layer.id}
+                  onMouseDown={e => handlePointerDown(e, layer.id)}
+                  onTouchStart={e => handlePointerDown(e, layer.id)}
+                  style={{ position: 'absolute', left: layer.x, top: layer.y, width: layer.width, height: layer.height, transform: `rotate(${layer.rotation}deg)`, cursor: dragging?.id === layer.id ? 'grabbing' : 'grab', outline: selectedId === layer.id ? '2px solid #0A0A0A' : 'none', outlineOffset: 2, userSelect: 'none', touchAction: 'none' }}>
+                  {layer.type === 'text' ? (
+                    (layer as TextLayer).archAmount ? (
+                      <ArchTextPreview layer={layer as TextLayer} />
+                    ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: `"${layer.fontFamily}", sans-serif`, fontSize: layer.fontSize, color: layer.color, fontWeight: (layer as TextLayer).fontWeight ?? 'bold', fontStyle: (layer as TextLayer).fontStyle ?? 'normal', WebkitTextStrokeWidth: (layer as TextLayer).strokeWidth ? `${(layer as TextLayer).strokeWidth}px` : undefined, WebkitTextStrokeColor: (layer as TextLayer).strokeColor ?? '#000000', paintOrder: 'stroke fill', whiteSpace: 'nowrap', overflow: 'hidden', pointerEvents: 'none' } as React.CSSProperties}>
+                      {layer.text || 'Your Text'}
+                    </div>
+                    )
+                  ) : (
+                    <img src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl} alt="artwork" className="w-full h-full object-contain" draggable={false} style={{ pointerEvents: 'none' }}/>
+                  )}
+                  {selectedId === layer.id && (
+                    <>
+                      {([
+                        { cursor: 'nw-resize', top: -4, left: -4 },
+                        { cursor: 'ne-resize', top: -4, right: -4 },
+                        { cursor: 'sw-resize', bottom: -4, left: -4 },
+                        { cursor: 'se-resize', bottom: -4, right: -4 },
+                      ] as const).map((handle, i) => (
+                        <div key={i}
+                          style={{ position: 'absolute', width: 18, height: 18, background: 'white', border: '2px solid #0A0A0A', borderRadius: 3, touchAction: 'none', ...handle }}
+                          onMouseDown={e => startResize(e, layer, handle.cursor)}
+                          onTouchStart={e => startResize(e, layer, handle.cursor)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      </div>{/* end main layout */}
+
+      {/* ─────────────────────────────────────────────────────────────────────
           Mobile accordion (hidden on desktop lg+)
       ───────────────────────────────────────────────────────────────────── */}
-      <div className="lg:hidden space-y-2 mb-4">
+      <div className="lg:hidden space-y-2 mt-4">
 
         {/* Garment Source */}
         <AccordionSection title="Garment Source" defaultOpen>
@@ -1372,580 +1796,6 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
         )}
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────────────
-          Desktop layout (hidden on mobile)
-      ───────────────────────────────────────────────────────────────────── */}
-      <div className={`hidden lg:grid gap-4 transition-all duration-300 ${sidebarCollapsed ? 'lg:grid-cols-[0px_1fr]' : 'lg:grid-cols-[280px_1fr]'}`}>
-
-        {/* ── Left panel ── */}
-        <div className={`space-y-3 overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'w-0 opacity-0 pointer-events-none' : 'w-[280px] opacity-100'}`}>
-          {/* Tab bar */}
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden">
-            {([
-              { id: 'garment', label: 'Garment',  icon: <Palette size={11}/> },
-              { id: 'logoart', label: 'Logo/Art', icon: <Upload  size={11}/> },
-              { id: 'text',    label: 'Text',     icon: <Type    size={11}/> },
-            ] as const).map(tab => (
-              <button key={tab.id} onClick={() => setLeftTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
-                  leftTab === tab.id ? 'bg-grace-ink text-white' : 'text-grace-stone hover:bg-grace-mist'
-                }`}>
-                {tab.icon} {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── Logo / Art tab ── */}
-          {leftTab === 'logoart' && (
-            <>
-              {/* Logo generator / uploader */}
-              <div className="card p-0 overflow-hidden">
-                <div className="px-3 py-2 border-b border-slate-200">
-                  <p className="text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">Logo</p>
-                </div>
-                <LogoAssetPanel state={{ ...state, logo: localLogo }} onLogoUpdate={handleLogoUpdate} />
-              </div>
-
-              {/* Artwork upload (multiple) */}
-              <div className="card space-y-2">
-                <p className="text-xs font-medium text-gray-600">Artwork</p>
-                <label className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-dashed border-slate-300 hover:border-brand-green cursor-pointer transition-colors text-xs text-gray-500 hover:text-gray-700">
-                  <Upload size={13}/> Upload Artwork
-                  <input ref={artworkFileRef} type="file" multiple className="hidden"
-                    accept="image/png,image/svg+xml,image/jpeg,image/webp"
-                    onChange={handleArtworkFile}/>
-                </label>
-              </div>
-
-              {/* Add to Canvas — every uploaded/generated logo + artwork is a thumbnail */}
-              <div className="card space-y-3">
-                <p className="text-xs font-medium text-gray-600">Add to Canvas</p>
-                {logoGallery.length === 0 && artworkGallery.length === 0 ? (
-                  <p className="text-[11px] text-gray-400 leading-relaxed">Generate or upload a logo, or upload artwork above. Each appears here — click to place it on the canvas.</p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {logoGallery.map((src, i) => (
-                      <AssetThumb key={`logo-${i}`} src={src} label="Logo"
-                        onAdd={() => addAssetToCanvas(src, true)}
-                        onRemove={() => setLogoGallery(g => g.filter(s => s !== src))}/>
-                    ))}
-                    {artworkGallery.map((src, i) => (
-                      <AssetThumb key={`art-${i}`} src={src} label="Artwork"
-                        onAdd={() => addAssetToCanvas(src, false)}
-                        onRemove={() => setArtworkGallery(g => g.filter(s => s !== src))}/>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {selected?.type === 'image' ? (
-                <>
-                  {transformCard(selected)}
-                  {layerControlsCard()}
-                </>
-              ) : (
-                <div className="card">
-                  <div className="text-center py-6">
-                    <Layers size={22} className="mx-auto text-gray-300 mb-2"/>
-                    <p className="text-xs text-gray-400">Select a logo or artwork layer</p>
-                    <p className="text-[11px] text-gray-300 mt-1">to scale, position &amp; recolor it</p>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── Garment tab ── */}
-          {leftTab === 'garment' && (
-            <>
-              {/* Garment selector */}
-              <div className="card p-0 overflow-hidden">
-                <div className="px-3 py-2 border-b border-slate-200">
-                  <p className="text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">Garment</p>
-                </div>
-                <GarmentAssetPanel route={state.route ?? 'apparel'} state={state} onSetGarment={onSetGarment} />
-              </div>
-
-              <div className="card space-y-3">
-                <p className="text-xs font-medium text-gray-600">Garment Color</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {GARMENT_COLORS.map(c => (
-                    <button key={c} onClick={() => setGarmentColor(c === garmentColor ? '' : c)}
-                      title={c}
-                      style={{ backgroundColor: c }}
-                      className={`w-full aspect-square rounded-lg border-2 transition-all ${
-                        garmentColor === c ? 'border-grace-ink scale-110 shadow-md' : 'border-transparent hover:border-slate-300'
-                      } ${c === '#FFFFFF' || c === '#F5F5F5' ? 'border-slate-200' : ''}`}
-                    />
-                  ))}
-                </div>
-                <label className="flex items-center gap-2 text-xs text-gray-500">
-                  <span className="flex-1">Custom</span>
-                  <input type="color" value={garmentColor || '#FFFFFF'} onChange={e => setGarmentColor(e.target.value)}
-                    className="w-8 h-7 rounded cursor-pointer border border-slate-200"/>
-                </label>
-                {garmentColor && (
-                  <button onClick={() => setGarmentColor('')} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                    Clear color
-                  </button>
-                )}
-              </div>
-
-              {/* Recolor Artwork — shows when an image layer is selected */}
-              {selected?.type === 'image' && (
-                <div className="card space-y-2">
-                  <p className="text-xs font-medium text-gray-600">Recolor Artwork</p>
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {COLOR_SWATCHES.map(c => (
-                      <button key={c} onClick={() => updateSelected({ tintColor: (selected as ImageLayer).tintColor === c ? undefined : c })}
-                        style={{ backgroundColor: c }}
-                        className={`aspect-square rounded border-2 transition-all ${(selected as ImageLayer).tintColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                      />
-                    ))}
-                  </div>
-                  <input type="color" value={(selected as ImageLayer).tintColor || '#000000'}
-                    onChange={e => updateSelected({ tintColor: e.target.value })}
-                    className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
-                  {(selected as ImageLayer).tintColor && (
-                    <button onClick={() => updateSelected({ tintColor: undefined })} className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                      Clear tint
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {state.garment && (
-                <div className="card">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-xs font-medium text-gray-600">Garment Fit</p>
-                    <span className="text-xs text-gray-700">{garmentScale}%</span>
-                  </div>
-                  <input type="range" min={25} max={200} value={garmentScale}
-                    onChange={e => setGarmentScale(parseInt(e.target.value))}
-                    className="w-full accent-brand-green"/>
-                  <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">Drag the garment on the canvas to reposition it.</p>
-                  <button onClick={() => { setGarmentScale(100); setGarmentOffset({ x: 0, y: 0 }) }} className="mt-1.5 text-[11px] text-gray-400 hover:text-gray-700 transition-colors">
-                    Reset size &amp; position
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── Text tab ── */}
-          {leftTab === 'text' && (
-            <>
-              <div className="card space-y-3">
-                <p className="text-xs font-medium text-gray-600">Add Text</p>
-                <button onClick={addTextLayer} className="btn-primary w-full flex items-center justify-center gap-2">
-                  <Type size={13}/> Add Text Layer
-                </button>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  Adds a draggable text layer. Select it to change font, size, color, and border.
-                </p>
-              </div>
-
-              {selected?.type === 'text' ? (
-                <>
-                  <div className="card space-y-3">
-                    <p className="text-xs font-medium text-gray-600">Text</p>
-                    <textarea
-                      value={selected.text}
-                      onChange={e => updateSelected({ text: e.target.value })}
-                      className="textarea-field text-sm resize-none"
-                      rows={2}
-                      placeholder="Your text here"
-                    />
-
-                    <div>
-                      <p className="text-[11px] text-gray-500 mb-1.5">Font Library</p>
-                      <div className="grid grid-cols-2 gap-1">
-                        {FONT_LIBRARY.map(f => (
-                          <button key={f.name} onClick={() => updateSelected({ fontFamily: f.name })}
-                            style={{ fontFamily: `"${f.name}", sans-serif` }}
-                            className={`px-2 py-1.5 rounded border text-xs truncate transition-all text-left ${
-                              (selected as TextLayer).fontFamily === f.name
-                                ? 'border-grace-ink bg-grace-ink text-white'
-                                : 'border-slate-200 hover:border-slate-300 text-gray-700'
-                            }`}>
-                            {f.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Bold / Italic */}
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => updateSelected({ fontWeight: (selected as TextLayer).fontWeight === 'bold' ? 'normal' : 'bold' })}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                          (selected as TextLayer).fontWeight !== 'normal' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
-                        }`}
-                      >B</button>
-                      <button
-                        onClick={() => updateSelected({ fontStyle: (selected as TextLayer).fontStyle === 'italic' ? 'normal' : 'italic' })}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs italic transition-all ${
-                          (selected as TextLayer).fontStyle === 'italic' ? 'bg-grace-ink text-white border-grace-ink' : 'border-slate-200 text-gray-600 hover:border-gray-400'
-                        }`}
-                      >I</button>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-xs text-gray-500">Size</span>
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => updateSelected({ fontSize: Math.max(8, (selected as TextLayer).fontSize - 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
-                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).fontSize}px</span>
-                          <button onClick={() => updateSelected({ fontSize: Math.min(120, (selected as TextLayer).fontSize + 2) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[11px] text-gray-500 mb-1.5">Color</p>
-                      <div className="grid grid-cols-6 gap-1.5 mb-2">
-                        {COLOR_SWATCHES.map(c => (
-                          <button key={c} onClick={() => updateSelected({ color: c })}
-                            style={{ backgroundColor: c }}
-                            className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).color === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                          />
-                        ))}
-                      </div>
-                      <input type="color" value={(selected as TextLayer).color}
-                        onChange={e => updateSelected({ color: e.target.value })}
-                        className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
-                    </div>
-
-                    {/* Border / outline */}
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-xs text-gray-500">Border</span>
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => updateSelected({ strokeWidth: Math.max(0, ((selected as TextLayer).strokeWidth ?? 0) - 1) })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
-                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).strokeWidth ?? 0}px</span>
-                          <button onClick={() => updateSelected({ strokeWidth: Math.min(20, ((selected as TextLayer).strokeWidth ?? 0) + 1), strokeColor: (selected as TextLayer).strokeColor ?? '#000000' })} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
-                        </div>
-                      </div>
-                      {((selected as TextLayer).strokeWidth ?? 0) > 0 && (
-                        <div className="grid grid-cols-6 gap-1.5 mt-2">
-                          {COLOR_SWATCHES.map(c => (
-                            <button key={c} onClick={() => updateSelected({ strokeColor: c })}
-                              style={{ backgroundColor: c }}
-                              className={`aspect-square rounded border-2 transition-all ${(selected as TextLayer).strokeColor === c ? 'border-grace-ink scale-110' : 'border-transparent hover:border-slate-300'} ${c === '#FFFFFF' ? 'border-slate-200' : ''}`}
-                            />
-                          ))}
-                        </div>
-                      )}
-                      {((selected as TextLayer).strokeWidth ?? 0) > 0 && (
-                        <input type="color" value={(selected as TextLayer).strokeColor || '#000000'}
-                          onChange={e => updateSelected({ strokeColor: e.target.value })}
-                          className="w-full h-7 rounded cursor-pointer border border-slate-200 mt-2"/>
-                      )}
-                    </div>
-
-                    {/* Arch */}
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-xs text-gray-500">Arch</span>
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => setArch(((selected as TextLayer).archAmount ?? 0) - 10)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">−</button>
-                          <span className="text-xs text-gray-700 w-10 text-center">{(selected as TextLayer).archAmount ?? 0}</span>
-                          <button onClick={() => setArch(((selected as TextLayer).archAmount ?? 0) + 10)} className="w-5 h-5 flex items-center justify-center rounded hover:bg-slate-100 text-gray-500 text-xs">+</button>
-                        </div>
-                      </div>
-                      <input type="range" min={-100} max={100} value={(selected as TextLayer).archAmount ?? 0}
-                        onChange={e => setArch(parseInt(e.target.value))}
-                        className="w-full accent-brand-green"/>
-                      <p className="text-[11px] text-gray-400 mt-1">Positive curves up, negative curves down.</p>
-                    </div>
-                  </div>
-                  {transformCard(selected)}
-                  {layerControlsCard()}
-                </>
-              ) : (
-                <div className="card">
-                  <div className="text-center py-6">
-                    <Type size={22} className="mx-auto text-gray-300 mb-2"/>
-                    <p className="text-xs text-gray-400">Select a text layer</p>
-                    <p className="text-[11px] text-gray-300 mt-1">to edit font, color &amp; border</p>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Layers list */}
-          {layers.length > 0 && (
-            <div className="card">
-              <p className="text-xs font-medium text-gray-600 mb-2">Layers</p>
-              <div className="space-y-1">
-                {[...layers].reverse().map((layer, i) => (
-                  <button key={layer.id} onClick={() => selectLayer(layer.id)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
-                      selectedId === layer.id ? 'bg-brand-green/10 text-gray-900' : 'hover:bg-slate-100 text-gray-500'
-                    }`}>
-                    {layer.type === 'text' ? <Type size={11}/> : <Layers size={11}/>}
-                    <span className="truncate flex-1 text-left">
-                      {layer.type === 'text' ? (layer.text.slice(0, 16) || 'Text') : ((layer as ImageLayer).isLogo ? 'Logo' : `Artwork ${layers.length - i}`)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {garmentSrcForView(activeEditorView) && (
-            <div className="card space-y-2">
-              <p className="text-xs font-medium text-gray-600">Downloads</p>
-              <p className="text-[11px] text-gray-400 leading-relaxed">Each file exports as a transparent PNG with the background removed.</p>
-              <button onClick={async () => {
-                const png = await renderDesign({ transparent: true })
-                if (png) downloadDataUrl(png, `full-design-${activeEditorView}.png`)
-              }} className="btn-secondary w-full flex items-center justify-center gap-2 text-xs">
-                <Download size={13}/> Full Design
-              </button>
-              <button onClick={async () => {
-                let png = await renderDesign({ includeLayers: false, transparent: true })
-                if (!png) return
-                try { png = await removeWhiteBackground(png) } catch {}
-                png = await cropPadding(png)
-                downloadDataUrl(png, `garment-${activeEditorView}.png`)
-              }} className="btn-secondary w-full flex items-center justify-center gap-2 text-xs">
-                <Download size={13}/> Garment Only
-              </button>
-              {layers.map((layer, i) => {
-                const isLogo = layer.type === 'image' && (layer as ImageLayer).isLogo
-                const label = isLogo ? 'Logo' : layer.type === 'text' ? `Text ${i + 1}` : `Artwork ${i + 1}`
-                return (
-                  <button key={layer.id} onClick={async () => {
-                    const png = await renderLayerPng(layer)
-                    if (png) downloadDataUrl(png, `${label.toLowerCase().replace(/\s+/g, '-')}.png`)
-                  }} className="btn-secondary w-full flex items-center justify-center gap-2 text-xs">
-                    <Download size={13}/> {label}
-                  </button>
-                )
-              })}
-              <button onClick={downloadAll} className="btn-primary w-full flex items-center justify-center gap-2 text-xs">
-                <Download size={13}/> Download All (.zip)
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ── Canvas ── */}
-        <div className="card p-0 overflow-hidden">
-          {/* Toolbar */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 gap-2">
-            <div className="flex items-center gap-1">
-              {/* Sidebar collapse toggle (desktop only) */}
-              <button
-                onClick={() => setSidebarCollapsed(c => !c)}
-                title={sidebarCollapsed ? 'Show panel' : 'Hide panel'}
-                className="p-1.5 rounded hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors mr-1"
-              >
-                {sidebarCollapsed ? <ArrowRight size={14}/> : <ArrowLeft size={14}/>}
-              </button>
-              <button onClick={undo} disabled={past.length === 0} title="Undo"
-                className="p-1.5 rounded hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30">
-                <Undo2 size={14}/>
-              </button>
-              <button onClick={redo} disabled={future.length === 0} title="Redo"
-                className="p-1.5 rounded hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30">
-                <Redo2 size={14}/>
-              </button>
-
-              {/* View tabs — only shown when multiple views exist */}
-              {availableViews.length > 1 && (
-                <div className="flex items-center gap-1 ml-3 border-l border-slate-200 pl-3">
-                  {availableViews.map(v => (
-                    <button key={v} onClick={() => { setActiveEditorView(v); setSelectedId(null) }}
-                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium capitalize transition-colors ${
-                        activeEditorView === v ? 'bg-grace-ink text-white' : 'text-gray-500 hover:bg-slate-100'
-                      }`}>
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <button onClick={() => setZoom(z => Math.max(25, z - 25))} className="p-1 rounded hover:bg-slate-100 hover:text-gray-700 transition-colors">
-                <Minus size={12}/>
-              </button>
-              <span className="w-12 text-center">{zoom}%</span>
-              <button onClick={() => setZoom(z => Math.min(200, z + 25))} className="p-1 rounded hover:bg-slate-100 hover:text-gray-700 transition-colors">
-                <Plus size={12}/>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <span className="text-[11px] text-gray-400 flex items-center gap-1">
-                {saveStatus === 'saving' && <><Loader2 size={11} className="animate-spin"/> Saving…</>}
-                {saveStatus === 'saved'  && <><Check   size={11} className="text-brand-green"/> Saved</>}
-              </span>
-              <button onClick={handleManualSave} className="btn-secondary flex items-center gap-1.5">
-                <Save size={13}/> Save
-              </button>
-              <button onClick={handleConfirm} className="btn-primary flex items-center gap-1.5">
-                Confirm Design <ArrowRight size={13}/>
-              </button>
-            </div>
-          </div>
-
-          {/* Canvas area */}
-          <div ref={canvasRef}
-            className="relative bg-white overflow-hidden flex items-center justify-center"
-            style={{ minHeight: 'calc(100vh - 200px)' }}
-            onClick={e => { if (e.target === e.currentTarget) setSelectedId(null) }}>
-            <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center', position: 'relative', width: 380, height: 460 }}>
-
-              {/* Garment */}
-              {(() => {
-                const garmentDisplaySrc = displaySrcs[activeEditorView] || garmentSrcForView(activeEditorView)
-                return garmentSrcForView(activeEditorView) ? (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                  style={{ transform: `translate(${garmentOffset.x}px, ${garmentOffset.y}px) scale(${garmentScale / 100})`, transformOrigin: 'center center' }}>
-                  {/* isolation:isolate scopes mix-blend-mode to this container only */}
-                  <div
-                    onMouseDown={startGarmentDrag}
-                    onTouchStart={startGarmentDrag}
-                    style={{
-                    position: 'relative', width: GARMENT_DISPLAY_W, height: GARMENT_DISPLAY_H, flexShrink: 0,
-                    isolation: garmentColor ? 'isolate' : undefined,
-                    pointerEvents: 'auto',
-                    cursor: garmentDragging ? 'grabbing' : 'grab',
-                  }}>
-                    {garmentColor && (
-                      // Layer 1 — color fill clipped to garment alpha silhouette
-                      <div style={{
-                        position: 'absolute', inset: 0,
-                        backgroundColor: garmentColor,
-                        WebkitMaskImage: `url("${garmentDisplaySrc}")`,
-                        WebkitMaskSize: 'contain',
-                        WebkitMaskRepeat: 'no-repeat',
-                        WebkitMaskPosition: 'center',
-                        maskImage: `url("${garmentDisplaySrc}")`,
-                        maskSize: 'contain',
-                        maskRepeat: 'no-repeat',
-                        maskPosition: 'center',
-                        pointerEvents: 'none',
-                      } as React.CSSProperties}/>
-                    )}
-                    {/* Layer 2 — multiply: white pixels become transparent, dark pixels
-                        (shadows, seams, stitching, zipper) darken the color fill */}
-                    <img src={garmentDisplaySrc} alt="garment" draggable={false}
-                      style={{
-                        position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
-                        mixBlendMode: garmentColor ? 'multiply' : 'normal',
-                        pointerEvents: 'none',
-                      } as React.CSSProperties}/>
-                    {/* Layer 3 — soft-light texture overlay: adds midtone depth, fabric
-                        wrinkle highlights, fold contrast, and stitch/seam detail above the
-                        color. Opacity ~0.5 keeps the selected color vibrant. Only rendered
-                        when a garment color is active; does not affect the artwork layers
-                        above (they live outside this isolated container). */}
-                    {garmentColor && (
-                      <img src={garmentDisplaySrc} alt="" aria-hidden draggable={false}
-                        style={{
-                          position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
-                          mixBlendMode: 'soft-light',
-                          opacity: 0.5,
-                          pointerEvents: 'none',
-                        } as React.CSSProperties}/>
-                    )}
-                    {/* Invisible spacer keeps the container at the right height */}
-                    <div style={{ width: '100%', height: '100%' }}/>
-                  </div>
-                </div>
-                ) : null
-              })()}
-              {/* SVG garment fallback */}
-              {!garmentSrcForView(activeEditorView) && state.garment?.svg && (
-                <div className="absolute inset-0 pointer-events-none"
-                  style={{ transform: `scale(${garmentScale / 100})`, transformOrigin: 'center center' }}
-                  dangerouslySetInnerHTML={{ __html: state.garment.svg }}
-                />
-              )}
-              {/* No garment — upload prompt */}
-              {!garmentSrcForView(activeEditorView) && !state.garment?.svg && (
-                <label className="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-pointer text-gray-400 hover:text-gray-600 transition-colors">
-                  <Upload size={28}/>
-                  <span className="text-xs font-medium">Upload a garment</span>
-                  <span className="text-[11px] text-gray-400">or generate one in Phase 2</span>
-                  <input type="file" className="hidden" accept="image/*" onChange={handleUploadGarment}/>
-                </label>
-              )}
-
-              {/* Layers */}
-              {layers.map(layer => (
-                <div key={layer.id}
-                  onMouseDown={e => handlePointerDown(e, layer.id)}
-                  onTouchStart={e => handlePointerDown(e, layer.id)}
-                  style={{
-                    position: 'absolute',
-                    left: layer.x, top: layer.y,
-                    width: layer.width, height: layer.height,
-                    transform: `rotate(${layer.rotation}deg)`,
-                    cursor: dragging?.id === layer.id ? 'grabbing' : 'grab',
-                    outline: selectedId === layer.id ? '2px solid #0A0A0A' : 'none',
-                    outlineOffset: 2,
-                    userSelect: 'none', touchAction: 'none',
-                  }}>
-                  {layer.type === 'text' ? (
-                    (layer as TextLayer).archAmount ? (
-                      <ArchTextPreview layer={layer as TextLayer} />
-                    ) : (
-                    <div style={{
-                      width: '100%', height: '100%',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: `"${layer.fontFamily}", sans-serif`,
-                      fontSize: layer.fontSize,
-                      color: layer.color,
-                      fontWeight: (layer as TextLayer).fontWeight ?? 'bold',
-                      fontStyle: (layer as TextLayer).fontStyle ?? 'normal',
-                      WebkitTextStrokeWidth: (layer as TextLayer).strokeWidth ? `${(layer as TextLayer).strokeWidth}px` : undefined,
-                      WebkitTextStrokeColor: (layer as TextLayer).strokeColor ?? '#000000',
-                      paintOrder: 'stroke fill',
-                      whiteSpace: 'nowrap', overflow: 'hidden',
-                      pointerEvents: 'none',
-                    } as React.CSSProperties}>
-                      {layer.text || 'Your Text'}
-                    </div>
-                    )
-                  ) : (
-                    <img
-                      src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl}
-                      alt="artwork"
-                      className="w-full h-full object-contain"
-                      draggable={false}
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  )}
-
-                  {selectedId === layer.id && (
-                    <>
-                      {([
-                        { cursor: 'nw-resize', top: -4, left: -4 },
-                        { cursor: 'ne-resize', top: -4, right: -4 },
-                        { cursor: 'sw-resize', bottom: -4, left: -4 },
-                        { cursor: 'se-resize', bottom: -4, right: -4 },
-                      ] as const).map((handle, i) => (
-                        <div key={i}
-                          style={{ position: 'absolute', width: 18, height: 18, background: 'white', border: '2px solid #0A0A0A', borderRadius: 3, touchAction: 'none', ...handle }}
-                          onMouseDown={e => startResize(e, layer, handle.cursor)}
-                          onTouchStart={e => startResize(e, layer, handle.cursor)}
-                        />
-                      ))}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-      </div>{/* end desktop grid */}
     </div>
   )
 }
