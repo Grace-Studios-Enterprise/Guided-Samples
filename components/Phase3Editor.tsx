@@ -326,7 +326,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const [garmentColor, setGarmentColor] = useState(
     state.studioState?.garmentColor ?? _cachedGarmentColor
   )
-  const [leftTab, setLeftTab] = useState<'logoart' | 'garment' | 'text'>('garment')
+  const [leftTab, setLeftTab] = useState<'logoart' | 'garment' | 'text' | null>('garment')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // Mobile bottom sheet
   const [sheetExpanded, setSheetExpanded] = useState(false)
@@ -1145,18 +1145,20 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
 
         {/* Desktop sidebar (hidden on mobile) */}
         <div className={`hidden lg:block space-y-3 transition-all duration-300 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
-          {/* Tab bar */}
+          {/* Tab bar — click the active tab again to collapse its panel */}
           <div className="flex rounded-lg border border-slate-200 overflow-hidden">
             {([
               { id: 'garment', label: 'Garment',  icon: <Palette size={11}/> },
               { id: 'logoart', label: 'Logo/Art', icon: <Upload  size={11}/> },
               { id: 'text',    label: 'Text',     icon: <Type    size={11}/> },
             ] as const).map(tab => (
-              <button key={tab.id} onClick={() => setLeftTab(tab.id)}
+              <button key={tab.id} onClick={() => setLeftTab(t => t === tab.id ? null : tab.id)}
+                title={leftTab === tab.id ? 'Collapse' : tab.label}
                 className={`flex-1 flex items-center justify-center gap-1 py-2 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
                   leftTab === tab.id ? 'bg-grace-ink text-white' : 'text-grace-stone hover:bg-grace-mist'
                 }`}>
                 {tab.icon} {tab.label}
+                {leftTab === tab.id && <ChevronUp size={11} className="ml-0.5"/>}
               </button>
             ))}
           </div>
