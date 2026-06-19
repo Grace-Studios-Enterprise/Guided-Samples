@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import {
   Plus, Trash2, Loader2, FolderOpen, Sparkles, Search,
-  Pencil, Check, X, Folder, FolderPlus, FolderInput, CheckSquare, Square,
+  Pencil, Check, X, Folder, FolderPlus, FolderInput, CheckSquare, Square, ChevronDown,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import {
@@ -42,6 +42,7 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
   const [editFolderName, setEditFolderName] = useState('')
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [foldersOpen, setFoldersOpen] = useState(true)
 
   // Drag-and-drop
   const [dragOverFolder, setDragOverFolder] = useState<FolderTarget | 'none'>(null)
@@ -237,95 +238,10 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
             </button>
           </div>
         ) : (
-          <div className="flex gap-6 items-start">
-            {/* Folder rail — desktop sidebar, mobile horizontal chips */}
-            <aside className="shrink-0">
-              {/* Desktop rail */}
-              <div className="w-48 hidden md:block">
-                <p className="px-2 mb-2 text-[10px] font-bold tracking-[0.18em] uppercase text-gray-400">Folders</p>
-                <nav className="space-y-0.5">
-                  {allFolderItems.map(({ id, label }) => {
-                    const folderData = id ? folders.find(f => f.id === id) : null
-                    return (
-                      <div key={id ?? '__all__'}>
-                        {editingFolderId === id ? (
-                          <div className="flex items-center gap-1 px-2 py-1.5">
-                            <input autoFocus value={editFolderName}
-                              onChange={e => setEditFolderName(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') commitFolderRename(id!)
-                                if (e.key === 'Escape') setEditingFolderId(null)
-                              }}
-                              className="input-field text-xs py-1 px-2 min-w-0 flex-1"/>
-                            <button onClick={() => commitFolderRename(id!)} className="text-brand-green shrink-0">
-                              <Check size={13}/>
-                            </button>
-                          </div>
-                        ) : (
-                          <FolderRailItem
-                            label={label}
-                            icon={id ? <Folder size={14}/> : <FolderOpen size={14}/>}
-                            count={folderCount(id)}
-                            active={activeFolder === id}
-                            isDragOver={dragOverFolder === id}
-                            onClick={() => setActiveFolder(id)}
-                            onRename={folderData ? () => { setEditingFolderId(id); setEditFolderName(label) } : undefined}
-                            onDelete={folderData ? () => handleDeleteFolder(folderData) : undefined}
-                            onDragOver={e => { e.preventDefault(); setDragOverFolder(id) }}
-                            onDragLeave={() => setDragOverFolder(null)}
-                            onDrop={e => handleFolderDrop(e, id)}
-                          />
-                        )}
-                      </div>
-                    )
-                  })}
-                </nav>
-
-                {creatingFolder ? (
-                  <div className="flex items-center gap-1 mt-2 px-2">
-                    <input autoFocus value={newFolderName}
-                      onChange={e => setNewFolderName(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleCreateFolder()
-                        if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName('') }
-                      }}
-                      placeholder="Folder name"
-                      className="input-field text-xs py-1 px-2 min-w-0 flex-1"/>
-                    <button onClick={handleCreateFolder} className="text-brand-green shrink-0"><Check size={13}/></button>
-                  </div>
-                ) : (
-                  <button onClick={() => setCreatingFolder(true)}
-                    className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-400 hover:text-brand-green hover:bg-brand-green/5 transition-colors">
-                    <FolderPlus size={14}/> New Folder
-                  </button>
-                )}
-              </div>
-
-              {/* Mobile chips */}
-              <div className="md:hidden flex gap-2 mb-4 overflow-x-auto pb-1">
-                {allFolderItems.map(({ id, label }) => (
-                  <button key={id ?? '__all__'}
-                    onClick={() => setActiveFolder(id)}
-                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                      activeFolder === id
-                        ? 'bg-grace-ink text-white'
-                        : 'bg-white border border-slate-200 text-gray-600 hover:border-grace-ink'
-                    }`}>
-                    {id ? <Folder size={12}/> : <FolderOpen size={12}/>}
-                    {label}
-                    <span className="text-[10px] opacity-60">{folderCount(id)}</span>
-                  </button>
-                ))}
-                <button onClick={() => setCreatingFolder(true)}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border border-dashed border-slate-300 text-gray-400 hover:text-brand-green hover:border-brand-green transition-colors">
-                  <FolderPlus size={12}/> New Folder
-                </button>
-              </div>
-            </aside>
-
-            {/* Main grid */}
-            <div className="flex-1 min-w-0">
-              <div className="relative mb-6 max-w-sm">
+          <div>
+            {/* Search + Folders accordion toggle */}
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
+              <div className="relative flex-1 min-w-[220px] max-w-sm">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
                 <input type="text" value={query} onChange={e => setQuery(e.target.value)}
                   placeholder="Search projects by name…" className="input-field w-full pl-9"/>
@@ -336,7 +252,87 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
                   </button>
                 )}
               </div>
+              <button onClick={() => setFoldersOpen(o => !o)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm text-gray-600 hover:bg-slate-50 transition-colors">
+                <Folder size={15} className="text-gray-400"/>
+                Folders
+                <span className="text-[11px] text-gray-400">{folders.length}</span>
+                <ChevronDown size={15} className={`text-gray-400 transition-transform ${foldersOpen ? 'rotate-180' : ''}`}/>
+              </button>
+            </div>
 
+            {/* Folder accordion content — chips next to the search row */}
+            {foldersOpen && (
+              <div className="flex flex-wrap items-center gap-2 mb-6">
+                {allFolderItems.map(({ id, label }) => {
+                  const folderData = id ? folders.find(f => f.id === id) : null
+                  if (editingFolderId === id) {
+                    return (
+                      <div key={id ?? '__all__'} className="flex items-center gap-1 px-2 py-1 rounded-full border border-slate-200 bg-white">
+                        <input autoFocus value={editFolderName}
+                          onChange={e => setEditFolderName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') commitFolderRename(id!)
+                            if (e.key === 'Escape') setEditingFolderId(null)
+                          }}
+                          className="text-xs py-0.5 px-1 min-w-0 w-28 outline-none bg-transparent"/>
+                        <button onClick={() => commitFolderRename(id!)} className="text-brand-green shrink-0"><Check size={13}/></button>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={id ?? '__all__'}
+                      onClick={() => setActiveFolder(id)}
+                      onDragOver={e => { e.preventDefault(); setDragOverFolder(id) }}
+                      onDragLeave={() => setDragOverFolder(null)}
+                      onDrop={e => handleFolderDrop(e, id)}
+                      className={`group shrink-0 flex items-center gap-1.5 pl-3 pr-2.5 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-colors ${
+                        dragOverFolder === id ? 'bg-brand-green/10 border border-brand-green/50 border-dashed' :
+                        activeFolder === id ? 'bg-grace-ink text-white' :
+                        'bg-white border border-slate-200 text-gray-600 hover:border-grace-ink'
+                      }`}>
+                      {id ? <Folder size={12}/> : <FolderOpen size={12}/>}
+                      {label}
+                      <span className="text-[10px] opacity-60">{folderCount(id)}</span>
+                      {folderData && (
+                        <span className="hidden group-hover:flex items-center gap-1 ml-0.5">
+                          <button onClick={e => { e.stopPropagation(); setEditingFolderId(id); setEditFolderName(label) }}
+                            className={activeFolder === id ? 'text-white/70 hover:text-white' : 'text-gray-300 hover:text-brand-green'}>
+                            <Pencil size={11}/>
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); handleDeleteFolder(folderData) }}
+                            className={activeFolder === id ? 'text-white/70 hover:text-red-300' : 'text-gray-300 hover:text-red-400'}>
+                            <Trash2 size={11}/>
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+
+                {creatingFolder ? (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-full border border-slate-200 bg-white">
+                    <input autoFocus value={newFolderName}
+                      onChange={e => setNewFolderName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleCreateFolder()
+                        if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName('') }
+                      }}
+                      placeholder="Folder name"
+                      className="text-xs py-0.5 px-1 min-w-0 w-28 outline-none bg-transparent"/>
+                    <button onClick={handleCreateFolder} className="text-brand-green shrink-0"><Check size={13}/></button>
+                  </div>
+                ) : (
+                  <button onClick={() => setCreatingFolder(true)}
+                    className="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full">
+                    <FolderPlus size={13}/> New Folder
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Main grid */}
+            <div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {!selectMode && (
                   <button onClick={onNewProject}
@@ -496,48 +492,3 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
   )
 }
 
-function FolderRailItem({ label, icon, count, active, isDragOver, onClick, onRename, onDelete, onDragOver, onDragLeave, onDrop }: {
-  label: string
-  icon: React.ReactNode
-  count: number
-  active: boolean
-  isDragOver: boolean
-  onClick: () => void
-  onRename?: () => void
-  onDelete?: () => void
-  onDragOver: (e: React.DragEvent) => void
-  onDragLeave: () => void
-  onDrop: (e: React.DragEvent) => void
-}) {
-  return (
-    <div
-      className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-all cursor-pointer ${
-        isDragOver ? 'bg-brand-green/10 border border-brand-green/40 border-dashed' :
-        active ? 'bg-grace-mist text-grace-ink font-semibold' :
-        'text-gray-500 hover:bg-grace-mist hover:text-grace-ink'
-      }`}
-      onClick={onClick}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      <span className="shrink-0 text-gray-400">{icon}</span>
-      <span className="flex-1 truncate">{label}</span>
-      <span className="text-[10px] text-gray-400 shrink-0 group-hover:hidden">{count}</span>
-      {(onRename || onDelete) && (
-        <span className="hidden group-hover:flex items-center gap-1 shrink-0">
-          {onRename && (
-            <button onClick={e => { e.stopPropagation(); onRename() }} className="text-gray-300 hover:text-brand-green">
-              <Pencil size={12}/>
-            </button>
-          )}
-          {onDelete && (
-            <button onClick={e => { e.stopPropagation(); onDelete() }} className="text-gray-300 hover:text-red-400">
-              <Trash2 size={12}/>
-            </button>
-          )}
-        </span>
-      )}
-    </div>
-  )
-}
