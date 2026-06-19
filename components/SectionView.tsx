@@ -10,6 +10,8 @@ import { useAICredits } from '@/lib/aiCreditsContext'
 import { listAllUserAssets } from '@/lib/projects'
 import SizeGuide from '@/components/SizeGuide'
 import TechnicalDrawing from '@/components/TechnicalDrawing'
+import ClientProductionTracker from '@/components/client/ClientProductionTracker'
+import ClientOrderDetail from '@/components/client/ClientOrderDetail'
 import type { SizeGuideOverrides } from '@/lib/fitBlocks/sizeGuide'
 import { resolveGarmentType } from '@/lib/fitBlocks'
 import type { GarmentType } from '@/lib/fitBlocks/types'
@@ -155,11 +157,35 @@ function Projects({ state, onStartDesign }: { state: AppState; onStartDesign: ()
 // getTechnicalDrawingData() (via buildTechPackDocument) — no sizing logic here and
 
 function Orders() {
+  const { user, signOut } = useAuth()
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+
+  if (!user) {
+    return (
+      <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
+        <Header icon={<ShoppingCart size={20} />} title="Orders" subtitle="Production and sample orders" />
+        <EmptyState icon={<ShoppingCart size={28} />} title="Sign in to view orders" subtitle="Your production and sample orders appear here once you're signed in." />
+      </div>
+    )
+  }
+
+  if (selectedOrderId) {
+    return (
+      <ClientOrderDetail
+        orderId={selectedOrderId}
+        onBack={() => setSelectedOrderId(null)}
+        embedded
+      />
+    )
+  }
+
   return (
-    <div className="p-4 md:p-6 max-w-[1100px] mx-auto">
-      <Header icon={<ShoppingCart size={20} />} title="Orders" subtitle="Production and sample orders" />
-      <EmptyState icon={<ShoppingCart size={28} />} title="No orders yet" subtitle="Submit a tech pack to a manufacturer to place an order." />
-    </div>
+    <ClientProductionTracker
+      userEmail={user.email}
+      onSelectOrder={setSelectedOrderId}
+      onSignOut={signOut}
+      embedded
+    />
   )
 }
 

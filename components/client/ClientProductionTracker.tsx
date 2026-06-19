@@ -19,6 +19,9 @@ interface Props {
   userEmail:     string
   onSelectOrder: (orderId: string) => void
   onSignOut:     () => void
+  /** When rendered inside the studio shell (sidebar + top banner) we hide the
+   *  standalone page header and branding to avoid duplicate chrome. */
+  embedded?:     boolean
 }
 
 function timeAgo(iso: string): string {
@@ -133,7 +136,7 @@ function paidContext(): { paid: boolean; label: string } {
 
 type TabId = 'sample' | 'production'
 
-export default function ClientProductionTracker({ userEmail, onSelectOrder, onSignOut }: Props) {
+export default function ClientProductionTracker({ userEmail, onSelectOrder, onSignOut, embedded = false }: Props) {
   const [orders,  setOrders]  = useState<ProductionOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
@@ -213,41 +216,57 @@ export default function ClientProductionTracker({ userEmail, onSelectOrder, onSi
   )
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <a href="/?view=studio" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity" title="Back to Dashboard">
-            <div className="w-7 h-7 rounded-lg bg-brand-green flex items-center justify-center">
-              <Package size={13} className="text-white" />
-            </div>
-            <p className="text-sm font-bold text-gray-900">My Orders</p>
-          </a>
-          <a
-            href="/?view=studio"
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors border-l border-slate-200 pl-3"
-          >
-            <ArrowLeft size={13} /> Dashboard
-          </a>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <NotificationBell userEmail={userEmail} settingsHref="/track/settings" />
-          <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 transition-colors">
-            <RefreshCw size={13} />
-          </button>
-          <a href="/track/settings" className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 transition-colors">
-            <Settings size={13} />
-          </a>
-          <button
-            onClick={onSignOut}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors px-2 py-1.5 rounded-lg hover:bg-slate-100"
-          >
-            <LogOut size={12} /> Sign out
-          </button>
-        </div>
-      </header>
+    <div className={embedded ? '' : 'min-h-screen bg-gray-50'}>
+      {/* Standalone page header — hidden when embedded in the studio shell */}
+      {!embedded && (
+        <header className="sticky top-0 z-10 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <a href="/?view=studio" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity" title="Back to Dashboard">
+              <div className="w-7 h-7 rounded-lg bg-brand-green flex items-center justify-center">
+                <Package size={13} className="text-white" />
+              </div>
+              <p className="text-sm font-bold text-gray-900">My Orders</p>
+            </a>
+            <a
+              href="/?view=studio"
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors border-l border-slate-200 pl-3"
+            >
+              <ArrowLeft size={13} /> Dashboard
+            </a>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <NotificationBell userEmail={userEmail} settingsHref="/track/settings" />
+            <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 transition-colors">
+              <RefreshCw size={13} />
+            </button>
+            <a href="/track/settings" className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 transition-colors">
+              <Settings size={13} />
+            </a>
+            <button
+              onClick={onSignOut}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors px-2 py-1.5 rounded-lg hover:bg-slate-100"
+            >
+              <LogOut size={12} /> Sign out
+            </button>
+          </div>
+        </header>
+      )}
 
       <div className="max-w-2xl mx-auto px-4 py-6">
+
+        {/* Embedded toolbar — keep notifications/refresh/settings without the
+            duplicate branding (sidebar + shell banner already provide it). */}
+        {embedded && (
+          <div className="flex items-center justify-end gap-1.5 mb-4">
+            <NotificationBell userEmail={userEmail} settingsHref="/track/settings" />
+            <button onClick={load} className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 transition-colors">
+              <RefreshCw size={13} />
+            </button>
+            <a href="/track/settings" className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 transition-colors">
+              <Settings size={13} />
+            </a>
+          </div>
+        )}
 
         {/* Page heading */}
         <div className="mb-4">

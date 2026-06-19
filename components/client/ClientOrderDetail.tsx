@@ -28,6 +28,8 @@ import MediaGallery from './MediaGallery'
 interface Props {
   orderId: string
   onBack:  () => void
+  /** Hide the standalone full-page chrome when rendered inside the studio shell. */
+  embedded?: boolean
 }
 
 function formatDate(iso: string | null) {
@@ -208,7 +210,7 @@ function MediaHistoryCollapsible({ media }: { media: import('@/types/supplier').
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function ClientOrderDetail({ orderId, onBack }: Props) {
+export default function ClientOrderDetail({ orderId, onBack, embedded = false }: Props) {
   const { user }                        = useAuth()
   const [order,   setOrder]   = useState<ProductionOrder | null>(null)
   const [media,   setMedia]   = useState<OrderMedia[]>([])
@@ -281,7 +283,7 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
   const historicalMedia   = media.filter(m => m.stage !== stage)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={embedded ? '' : 'min-h-screen bg-gray-50'}>
       <StageToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {/* Sticky header */}

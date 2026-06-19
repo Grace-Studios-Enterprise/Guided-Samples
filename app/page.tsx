@@ -21,7 +21,7 @@ import LandingPage from '@/components/LandingPage'
 import CreativeDirectionForm from '@/components/CreativeDirectionForm'
 import AIPaywallModal from '@/components/AIPaywallModal'
 import { AICreditsProvider, useAICredits } from '@/lib/aiCreditsContext'
-import { Menu, ArrowLeft, Loader2, Check, AlertCircle } from 'lucide-react'
+import { Menu, Loader2, Check, AlertCircle } from 'lucide-react'
 
 export type StudioLayersByView = Record<string, unknown[]>
 
@@ -306,20 +306,12 @@ function App() {
             {saveToast === 'saving' ? 'Saving…' : saveToast === 'saved' ? 'Project saved' : 'Save failed'}
           </div>
         )}
-        {/* Shared top banner — same on every page: GRACE Enterprise left, Back right */}
+        {/* Shared top banner — same on every page: GRACE Enterprise far left */}
         <header className="flex items-center px-4 py-3 bg-white border-b border-slate-200 shrink-0">
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-slate-100 text-gray-600">
-              <Menu size={20}/>
-            </button>
-            <span className="text-sm font-semibold text-gray-900">GRACE Enterprise</span>
-          </div>
-          <button
-            onClick={() => setView('landing')}
-            className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors"
-          >
-            <ArrowLeft size={14}/> Back
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 mr-2 rounded-lg hover:bg-slate-100 text-gray-600">
+            <Menu size={20}/>
           </button>
+          <span className="text-sm font-semibold text-gray-900">GRACE Enterprise</span>
         </header>
 
         <main className="flex-1 overflow-y-auto">
