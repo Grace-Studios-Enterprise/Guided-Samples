@@ -9,6 +9,15 @@ export type Project = {
   created_at: string
   updated_at: string
   thumbnail_url?: string | null
+  folder_id?: string | null
+}
+
+export type Folder = {
+  id: string
+  user_id: string
+  name: string
+  created_at: string
+  updated_at: string
 }
 
 export type ProjectDetail = Project & {
@@ -180,11 +189,62 @@ export async function listProjects(userId: string): Promise<Project[]> {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('projects')
-    .select('id, user_id, name, phase_reached, created_at, updated_at, thumbnail_url')
+    .select('id, user_id, name, phase_reached, created_at, updated_at, thumbnail_url, folder_id')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
   if (error) { console.error(error); return [] }
   return data ?? []
+}
+
+// ── Folders ──────────────────────────────────────────────────────────────────
+
+export async function listFolders(userId: string): Promise<Folder[]> {
+  const supabase = createClient()
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('folders')
+    .select('id, user_id, name, created_at, updated_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+  if (error) { console.error(error); return [] }
+  return data ?? []
+}
+
+export async function createFolder(userId: string, name: string): Promise<Folder | null> {
+  const supabase = createClient()
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('folders')
+    .insert({ user_id: userId, name })
+    .select('id, user_id, name, created_at, updated_at')
+    .single()
+  if (error) { console.error(error); return null }
+  return data
+}
+
+export async function renameFolder(folderId: string, name: string): Promise<void> {
+  const supabase = createClient()
+  if (!supabase) return
+  await supabase.from('folders')
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq('id', folderId)
+}
+
+// Deleting a folder leaves its projects intact — the DB's ON DELETE SET NULL
+// returns them to the top level rather than cascading the delete.
+export async function deleteFolder(folderId: string): Promise<void> {
+  const supabase = createClient()
+  if (!supabase) return
+  await supabase.from('folders').delete().eq('id', folderId)
+}
+
+// Move projects into a folder (folderId) or back to the top level (null).
+export async function moveProjectsToFolder(projectIds: string[], folderId: string | null): Promise<void> {
+  const supabase = createClient()
+  if (!supabase || projectIds.length === 0) return
+  await supabase.from('projects')
+    .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .in('id', projectIds)
 }
 
 export async function loadProject(projectId: string): Promise<ProjectDetail | null> {

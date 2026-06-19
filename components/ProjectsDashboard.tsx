@@ -1,10 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, FolderOpen, LogOut, Sparkles, ArrowLeft, Search, Pencil, Check, X } from 'lucide-react'
+import {
+  Plus, Trash2, Loader2, FolderOpen, LogOut, Sparkles, ArrowLeft, Search,
+  Pencil, Check, X, Folder, FolderPlus, FolderInput, CheckSquare, Square,
+} from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { listProjects, deleteProject, renameProject } from '@/lib/projects'
-import type { Project } from '@/lib/projects'
+import {
+  listProjects, deleteProject, renameProject,
+  listFolders, createFolder, renameFolder, deleteFolder, moveProjectsToFolder,
+} from '@/lib/projects'
+import type { Project, Folder as FolderType } from '@/lib/projects'
 
 interface Props {
   onNewProject: () => void
@@ -12,24 +18,62 @@ interface Props {
   onBack: () => void
 }
 
+// Lightweight in-app confirm so destructive actions use the GRACE UI instead of
+// the browser-native confirm() dialog ("www.graceofficial.app says…").
+type ConfirmState = {
+  title: string
+  body?: string
+  confirmLabel: string
+  danger?: boolean
+  onConfirm: () => void
+} | null
+
 export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack }: Props) {
   const { user, signOut } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
+  const [folders, setFolders] = useState<FolderType[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
 
+  // Folder view: null = "All Projects"
+  const [activeFolder, setActiveFolder] = useState<string | null>(null)
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
+  const [editFolderName, setEditFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+
+  // Multi-select
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [moveOpen, setMoveOpen] = useState(false)
+
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
+
   useEffect(() => {
     if (!user) return
-    listProjects(user.id).then(p => { setProjects(p); setLoading(false) })
+    Promise.all([listProjects(user.id), listFolders(user.id)]).then(([p, f]) => {
+      setProjects(p)
+      setFolders(f)
+      setLoading(false)
+    })
   }, [user])
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  // ── Projects ───────────────────────────────────────────────────────────────
+  const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('Delete this project?')) return
-    await deleteProject(id)
-    setProjects(ps => ps.filter(p => p.id !== id))
+    setConfirmState({
+      title: 'Delete this project?',
+      body: 'This permanently removes the design and its files. This can’t be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        await deleteProject(id)
+        setProjects(ps => ps.filter(p => p.id !== id))
+        setSelected(s => { const n = new Set(s); n.delete(id); return n })
+      },
+    })
   }
 
   const startRename = (p: Project, e: React.MouseEvent) => {
@@ -47,8 +91,86 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack 
     await renameProject(id, name)
   }
 
-  const filtered = projects.filter(p =>
+  // ── Folders ──────────────────────────────────────────────────────────────────
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim()
+    setCreatingFolder(false)
+    setNewFolderName('')
+    if (!name || !user) return
+    const folder = await createFolder(user.id, name)
+    if (folder) setFolders(fs => [...fs, folder])
+  }
+
+  const commitFolderRename = async (id: string) => {
+    const name = editFolderName.trim()
+    setEditingFolderId(null)
+    if (!name) return
+    setFolders(fs => fs.map(f => (f.id === id ? { ...f, name } : f)))
+    await renameFolder(id, name)
+  }
+
+  const handleDeleteFolder = (folder: FolderType) => {
+    setConfirmState({
+      title: `Delete “${folder.name}”?`,
+      body: 'The folder is removed but its projects are kept and moved back to All Projects.',
+      confirmLabel: 'Delete Folder',
+      danger: true,
+      onConfirm: async () => {
+        await deleteFolder(folder.id)
+        setFolders(fs => fs.filter(f => f.id !== folder.id))
+        setProjects(ps => ps.map(p => (p.folder_id === folder.id ? { ...p, folder_id: null } : p)))
+        if (activeFolder === folder.id) setActiveFolder(null)
+      },
+    })
+  }
+
+  // ── Multi-select ─────────────────────────────────────────────────────────────
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelected(s => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelected(new Set())
+    setMoveOpen(false)
+  }
+
+  const handleMove = async (folderId: string | null) => {
+    const ids = Array.from(selected)
+    setMoveOpen(false)
+    if (ids.length === 0) return
+    setProjects(ps => ps.map(p => (selected.has(p.id) ? { ...p, folder_id: folderId } : p)))
+    await moveProjectsToFolder(ids, folderId)
+    exitSelectMode()
+  }
+
+  const handleBulkDelete = () => {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    setConfirmState({
+      title: `Delete ${ids.length} project${ids.length > 1 ? 's' : ''}?`,
+      body: 'This permanently removes the selected designs and their files. This can’t be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        await Promise.all(ids.map(id => deleteProject(id)))
+        setProjects(ps => ps.filter(p => !selected.has(p.id)))
+        exitSelectMode()
+      },
+    })
+  }
+
+  // ── Derived ──────────────────────────────────────────────────────────────────
+  const inFolder = projects.filter(p => (activeFolder ? p.folder_id === activeFolder : true))
+  const filtered = inFolder.filter(p =>
     p.name.toLowerCase().includes(query.trim().toLowerCase()))
+  const folderCount = (id: string | null) =>
+    projects.filter(p => (id ? p.folder_id === id : true)).length
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -76,35 +198,30 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack 
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 gap-3">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
             <p className="text-sm text-gray-500 mt-1">Pick up where you left off, or start something new.</p>
           </div>
-          <button onClick={onNewProject} className="btn-primary flex items-center gap-2">
-            <Plus size={14}/> New Project
-          </button>
-        </div>
-
-        {/* Search */}
-        {!loading && projects.length > 0 && (
-          <div className="relative mb-6 max-w-sm">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-            <input
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search projects by name…"
-              className="input-field w-full pl-9"
-            />
-            {query && (
-              <button onClick={() => setQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-600">
-                <X size={14}/>
-              </button>
+          <div className="flex items-center gap-2">
+            {!loading && projects.length > 0 && (
+              selectMode ? (
+                <button onClick={exitSelectMode}
+                  className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-200 text-gray-600 hover:bg-slate-50 transition-colors">
+                  <X size={14}/> Cancel
+                </button>
+              ) : (
+                <button onClick={() => setSelectMode(true)}
+                  className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-200 text-gray-600 hover:bg-slate-50 transition-colors">
+                  <CheckSquare size={14}/> Select
+                </button>
+              )
             )}
+            <button onClick={onNewProject} className="btn-primary flex items-center gap-2">
+              <Plus size={14}/> New Project
+            </button>
           </div>
-        )}
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
@@ -123,93 +240,291 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack 
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {/* New project card */}
-            <button onClick={onNewProject}
-              className="card border-dashed border-2 border-slate-200 hover:border-brand-green flex flex-col items-center justify-center py-10 gap-3 text-gray-400 hover:text-brand-green transition-colors group">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-brand-green/10 flex items-center justify-center transition-colors">
-                <Plus size={20}/>
-              </div>
-              <span className="text-xs font-medium">New Project</span>
-            </button>
-
-            {filtered.length === 0 && query && (
-              <div className="col-span-full text-center py-12 text-sm text-gray-400">
-                No projects match “{query}”.
-              </div>
-            )}
-
-            {filtered.map(project => (
-              <div key={project.id} onClick={() => onOpenProject(project.id)}
-                className="card hover:border-brand-green/30 cursor-pointer transition-colors group relative overflow-hidden">
-                {/* Thumbnail */}
-                <div className="bg-slate-50 rounded-lg mb-3 flex items-center justify-center overflow-hidden" style={{ height: 140 }}>
-                  {project.thumbnail_url ? (
-                    <img src={project.thumbnail_url} alt={project.name}
-                      className="w-full h-full object-contain p-3"/>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 text-gray-300">
-                      <FolderOpen size={28}/>
-                      <span className="text-[10px]">No preview</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    {editingId === project.id ? (
-                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <div className="flex gap-6 items-start">
+            {/* Folder rail */}
+            <aside className="w-48 shrink-0 hidden md:block">
+              <p className="px-2 mb-2 text-[10px] font-bold tracking-[0.18em] uppercase text-gray-400">Folders</p>
+              <nav className="space-y-0.5">
+                <FolderItem
+                  label="All Projects"
+                  icon={<FolderOpen size={14}/>}
+                  count={folderCount(null)}
+                  active={activeFolder === null}
+                  onClick={() => setActiveFolder(null)}
+                />
+                {folders.map(f => (
+                  <div key={f.id}>
+                    {editingFolderId === f.id ? (
+                      <div className="flex items-center gap-1 px-2 py-1.5">
                         <input
                           autoFocus
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
+                          value={editFolderName}
+                          onChange={e => setEditFolderName(e.target.value)}
                           onKeyDown={e => {
-                            if (e.key === 'Enter') commitRename(project.id)
-                            if (e.key === 'Escape') setEditingId(null)
+                            if (e.key === 'Enter') commitFolderRename(f.id)
+                            if (e.key === 'Escape') setEditingFolderId(null)
                           }}
-                          className="input-field text-sm py-1 px-2 min-w-0 flex-1"
+                          className="input-field text-xs py-1 px-2 min-w-0 flex-1"
                         />
-                        <button onClick={e => commitRename(project.id, e)}
-                          className="text-brand-green hover:text-brand-green/70 shrink-0">
-                          <Check size={14}/>
-                        </button>
-                        <button onClick={e => { e.stopPropagation(); setEditingId(null) }}
-                          className="text-gray-300 hover:text-gray-600 shrink-0">
-                          <X size={14}/>
+                        <button onClick={() => commitFolderRename(f.id)} className="text-brand-green shrink-0">
+                          <Check size={13}/>
                         </button>
                       </div>
                     ) : (
-                      <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                      <FolderItem
+                        label={f.name}
+                        icon={<Folder size={14}/>}
+                        count={folderCount(f.id)}
+                        active={activeFolder === f.id}
+                        onClick={() => setActiveFolder(f.id)}
+                        onRename={() => { setEditingFolderId(f.id); setEditFolderName(f.name) }}
+                        onDelete={() => handleDeleteFolder(f)}
+                      />
                     )}
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      Phase {project.phase_reached} · {new Date(project.updated_at).toLocaleDateString()}
-                    </p>
                   </div>
-                  {editingId !== project.id && (
-                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                      <button onClick={e => startRename(project, e)}
-                        className="text-gray-200 hover:text-brand-green opacity-0 group-hover:opacity-100 transition-all">
-                        <Pencil size={13}/>
-                      </button>
-                      <button onClick={e => handleDelete(project.id, e)}
-                        className="text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                        <Trash2 size={13}/>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                ))}
+              </nav>
 
-                {/* Phase progress bar */}
-                <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-brand-green rounded-full transition-all"
-                    style={{ width: `${(project.phase_reached / 6) * 100}%` }}/>
+              {creatingFolder ? (
+                <div className="flex items-center gap-1 mt-2 px-2">
+                  <input
+                    autoFocus
+                    value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleCreateFolder()
+                      if (e.key === 'Escape') { setCreatingFolder(false); setNewFolderName('') }
+                    }}
+                    placeholder="Folder name"
+                    className="input-field text-xs py-1 px-2 min-w-0 flex-1"
+                  />
+                  <button onClick={handleCreateFolder} className="text-brand-green shrink-0">
+                    <Check size={13}/>
+                  </button>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">{project.phase_reached}/6 phases complete</p>
+              ) : (
+                <button onClick={() => setCreatingFolder(true)}
+                  className="mt-2 w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-gray-400 hover:text-brand-green hover:bg-brand-green/5 transition-colors">
+                  <FolderPlus size={14}/> New Folder
+                </button>
+              )}
+            </aside>
+
+            {/* Main column */}
+            <div className="flex-1 min-w-0">
+              {/* Search */}
+              <div className="relative mb-6 max-w-sm">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                <input
+                  type="text"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search projects by name…"
+                  className="input-field w-full pl-9"
+                />
+                {query && (
+                  <button onClick={() => setQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-600">
+                    <X size={14}/>
+                  </button>
+                )}
               </div>
-            ))}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* New project card — hidden in select mode to keep the grid clean */}
+                {!selectMode && (
+                  <button onClick={onNewProject}
+                    className="card border-dashed border-2 border-slate-200 hover:border-brand-green flex flex-col items-center justify-center py-10 gap-3 text-gray-400 hover:text-brand-green transition-colors group">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-brand-green/10 flex items-center justify-center transition-colors">
+                      <Plus size={20}/>
+                    </div>
+                    <span className="text-xs font-medium">New Project</span>
+                  </button>
+                )}
+
+                {filtered.length === 0 && (
+                  <div className="col-span-full text-center py-12 text-sm text-gray-400">
+                    {query ? `No projects match “${query}”.` : 'No projects in this folder yet.'}
+                  </div>
+                )}
+
+                {filtered.map(project => {
+                  const isSelected = selected.has(project.id)
+                  return (
+                    <div key={project.id}
+                      onClick={() => selectMode ? toggleSelect(project.id, { stopPropagation() {} } as React.MouseEvent) : onOpenProject(project.id)}
+                      className={`card cursor-pointer transition-colors group relative overflow-hidden ${
+                        isSelected ? 'border-brand-green ring-2 ring-brand-green/30' : 'hover:border-brand-green/30'
+                      }`}>
+                      {/* Selection checkbox */}
+                      {selectMode && (
+                        <button onClick={e => toggleSelect(project.id, e)}
+                          className="absolute top-2 left-2 z-10 text-brand-green bg-white/90 rounded">
+                          {isSelected ? <CheckSquare size={20}/> : <Square size={20} className="text-gray-300"/>}
+                        </button>
+                      )}
+                      {/* Thumbnail */}
+                      <div className="bg-slate-50 rounded-lg mb-3 flex items-center justify-center overflow-hidden" style={{ height: 140 }}>
+                        {project.thumbnail_url ? (
+                          <img src={project.thumbnail_url} alt={project.name}
+                            className="w-full h-full object-contain p-3"/>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 text-gray-300">
+                            <FolderOpen size={28}/>
+                            <span className="text-[10px]">No preview</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          {editingId === project.id ? (
+                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                              <input
+                                autoFocus
+                                value={editName}
+                                onChange={e => setEditName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') commitRename(project.id)
+                                  if (e.key === 'Escape') setEditingId(null)
+                                }}
+                                className="input-field text-sm py-1 px-2 min-w-0 flex-1"
+                              />
+                              <button onClick={e => commitRename(project.id, e)}
+                                className="text-brand-green hover:text-brand-green/70 shrink-0">
+                                <Check size={14}/>
+                              </button>
+                              <button onClick={e => { e.stopPropagation(); setEditingId(null) }}
+                                className="text-gray-300 hover:text-gray-600 shrink-0">
+                                <X size={14}/>
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                          )}
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            Phase {project.phase_reached} · {new Date(project.updated_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        {!selectMode && editingId !== project.id && (
+                          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                            <button onClick={e => startRename(project, e)}
+                              className="text-gray-200 hover:text-brand-green opacity-0 group-hover:opacity-100 transition-all">
+                              <Pencil size={13}/>
+                            </button>
+                            <button onClick={e => handleDelete(project.id, e)}
+                              className="text-gray-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                              <Trash2 size={13}/>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Phase progress bar */}
+                      <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-brand-green rounded-full transition-all"
+                          style={{ width: `${(project.phase_reached / 6) * 100}%` }}/>
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">{project.phase_reached}/6 phases complete</p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Floating bulk-action bar */}
+      {selectMode && selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-3 rounded-2xl bg-grace-ink text-white shadow-xl">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="w-px h-5 bg-white/20"/>
+          <div className="relative">
+            <button onClick={() => setMoveOpen(o => !o)}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors">
+              <FolderInput size={15}/> Move to…
+            </button>
+            {moveOpen && (
+              <div className="absolute bottom-full mb-2 left-0 w-52 bg-white text-gray-700 rounded-xl shadow-xl border border-slate-200 py-1 max-h-64 overflow-y-auto">
+                <button onClick={() => handleMove(null)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 text-left">
+                  <FolderOpen size={14}/> All Projects (top level)
+                </button>
+                {folders.length > 0 && <div className="my-1 border-t border-slate-100"/>}
+                {folders.map(f => (
+                  <button key={f.id} onClick={() => handleMove(f.id)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 text-left truncate">
+                    <Folder size={14}/> {f.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={handleBulkDelete}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg hover:bg-white/10 text-red-300 transition-colors">
+            <Trash2 size={15}/> Delete
+          </button>
+        </div>
+      )}
+
+      {/* In-app confirm modal */}
+      {confirmState && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setConfirmState(null)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-gray-900">{confirmState.title}</h3>
+            {confirmState.body && <p className="text-sm text-gray-500 mt-2">{confirmState.body}</p>}
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button onClick={() => setConfirmState(null)}
+                className="text-sm px-4 py-2 rounded-lg border border-slate-200 text-gray-600 hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={() => { const c = confirmState; setConfirmState(null); c?.onConfirm() }}
+                className={`text-sm px-4 py-2 rounded-lg text-white font-medium transition-colors ${
+                  confirmState.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-grace-ink hover:bg-zinc-800'
+                }`}>
+                {confirmState.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FolderItem({ label, icon, count, active, onClick, onRename, onDelete }: {
+  label: string
+  icon: React.ReactNode
+  count: number
+  active: boolean
+  onClick: () => void
+  onRename?: () => void
+  onDelete?: () => void
+}) {
+  return (
+    <div className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors cursor-pointer ${
+      active ? 'bg-grace-mist text-grace-ink font-semibold' : 'text-gray-500 hover:bg-grace-mist hover:text-grace-ink'
+    }`} onClick={onClick}>
+      <span className="shrink-0 text-gray-400">{icon}</span>
+      <span className="flex-1 truncate">{label}</span>
+      <span className="text-[10px] text-gray-400 shrink-0 group-hover:hidden">{count}</span>
+      {(onRename || onDelete) && (
+        <span className="hidden group-hover:flex items-center gap-1 shrink-0">
+          {onRename && (
+            <button onClick={e => { e.stopPropagation(); onRename() }} className="text-gray-300 hover:text-brand-green">
+              <Pencil size={12}/>
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={e => { e.stopPropagation(); onDelete() }} className="text-gray-300 hover:text-red-400">
+              <Trash2 size={12}/>
+            </button>
+          )}
+        </span>
+      )}
     </div>
   )
 }
