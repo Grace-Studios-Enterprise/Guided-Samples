@@ -219,11 +219,26 @@ function LibraryView({ state: _state }: { state: AppState }) {
     tab === 'garments' ? garments :
     previews
 
-  const handleDownload = (src: string, index: number) => {
-    const a = document.createElement('a')
-    a.href = src
-    a.download = `${tab}-${index + 1}.png`
-    a.click()
+  const handleDownload = async (src: string, index: number) => {
+    const filename = `${tab}-${index + 1}.png`
+    try {
+      // Fetch as a blob so the download is forced even for cross-origin
+      // (Supabase storage) URLs, where the `download` attribute is otherwise
+      // ignored and the browser just navigates to the file.
+      const res = await fetch(src)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      // Fallback: open in a new tab if the fetch is blocked (e.g. CORS)
+      window.open(src, '_blank', 'noopener,noreferrer')
+    }
   }
 
   return (
