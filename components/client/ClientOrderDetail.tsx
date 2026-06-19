@@ -285,19 +285,19 @@ export default function ClientOrderDetail({ orderId, onBack }: Props) {
       <StageToastContainer toasts={toasts} onDismiss={dismiss} />
 
       {/* Sticky header */}
-      <header className="sticky top-0 z-10 bg-grace-ink px-5 py-3 flex items-center justify-between">
+      <header className="sticky top-0 z-10 bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors"
+          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors"
         >
           <ArrowLeft size={13} /> All Orders
         </button>
-        <p className="text-xs font-semibold text-white absolute left-1/2 -translate-x-1/2">
+        <p className="text-xs font-semibold text-gray-700 absolute left-1/2 -translate-x-1/2">
           {si?.styleName ?? 'Order'}
         </p>
         <button
           onClick={load}
-          className="p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+          className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-400 hover:text-gray-700 transition-colors"
         >
           <RefreshCw size={13} />
         </button>

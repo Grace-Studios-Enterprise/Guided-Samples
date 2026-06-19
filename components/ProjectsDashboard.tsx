@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  Plus, Trash2, Loader2, FolderOpen, LogOut, Sparkles, ArrowLeft, Search,
+  Plus, Trash2, Loader2, FolderOpen, Sparkles, Search,
   Pencil, Check, X, Folder, FolderPlus, FolderInput, CheckSquare, Square,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -15,7 +15,6 @@ import type { Project, Folder as FolderType } from '@/lib/projects'
 interface Props {
   onNewProject: () => void
   onOpenProject: (projectId: string) => void
-  onBack: () => void
 }
 
 type ConfirmState = {
@@ -29,8 +28,8 @@ type ConfirmState = {
 // Folder ID or null for "All Projects"
 type FolderTarget = string | null
 
-export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack }: Props) {
-  const { user, signOut } = useAuth()
+export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props) {
+  const { user } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
   const [folders, setFolders] = useState<FolderType[]>([])
   const [loading, setLoading] = useState(true)
@@ -194,30 +193,7 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject, onBack 
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header — GRACE black bar */}
-      <header className="bg-grace-ink sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center">
-              <span className="text-white text-xs font-bold">G</span>
-            </div>
-            <span className="font-semibold text-white text-sm">GRACE Enterprise</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-white/50 text-xs hidden sm:block">{user?.name} · {user?.email}</span>
-            <button onClick={signOut}
-              className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors">
-              <LogOut size={13}/> Sign Out
-            </button>
-            <button onClick={onBack}
-              className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors">
-              <ArrowLeft size={13}/> Back
-            </button>
-          </div>
-        </div>
-      </header>
-
+    <div className="bg-gray-50 min-h-full">
       <div className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-8 gap-3">
           <div>

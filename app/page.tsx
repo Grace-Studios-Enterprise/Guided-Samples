@@ -21,7 +21,7 @@ import LandingPage from '@/components/LandingPage'
 import CreativeDirectionForm from '@/components/CreativeDirectionForm'
 import AIPaywallModal from '@/components/AIPaywallModal'
 import { AICreditsProvider, useAICredits } from '@/lib/aiCreditsContext'
-import { Menu, Sparkles, Loader2, Check, AlertCircle } from 'lucide-react'
+import { Menu, ArrowLeft, Loader2, Check, AlertCircle } from 'lucide-react'
 
 export type StudioLayersByView = Record<string, unknown[]>
 
@@ -78,8 +78,7 @@ const EMPTY_STATE: AppState = {
 
 function App() {
   const { user, loading } = useAuth()
-  const { refreshCredits, freeUsed, freeLimit, creditBalance } = useAICredits()
-  const generationsLeft = Math.max(0, freeLimit - freeUsed) + creditBalance
+  const { refreshCredits } = useAICredits()
   // Allow deep-linking straight to the studio dashboard (e.g. the "home" link
   // from the /track orders page) via /?view=studio.
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
@@ -89,7 +88,7 @@ function App() {
     refreshCredits()
     window.history.replaceState({}, '', window.location.pathname + '?view=studio')
   }
-  const [view, setView] = useState<'landing' | 'projects' | 'studio' | 'creative-direction'>(initialView)
+  const [view, setView] = useState<'landing' | 'studio' | 'creative-direction'>(initialView)
   const prevViewRef = useRef<'landing' | 'studio'>('landing')
   const [state, setState] = useState<AppState>(EMPTY_STATE)
   const [section, setSection] = useState(initialView === 'studio' ? 'dashboard' : 'design')
@@ -175,12 +174,14 @@ function App() {
   }
 
   const handleSectionChange = (s: string) => {
-    if (s === 'projects') {
-      setView('projects')
-      setSidebarOpen(false)
-      return
-    }
     setSection(s)
+    setSidebarOpen(false)
+  }
+
+  // Show the Projects dashboard inside the studio shell so the sidebar persists.
+  const goToProjects = () => {
+    setView('studio')
+    setSection('projects')
     setSidebarOpen(false)
   }
 
@@ -272,17 +273,6 @@ function App() {
     )
   }
 
-  // Projects dashboard
-  if (view === 'projects') {
-    return (
-      <ProjectsDashboard
-        onNewProject={startNewProject}
-        onOpenProject={openProject}
-        onBack={() => setView('studio')}
-      />
-    )
-  }
-
   // Studio
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -316,57 +306,41 @@ function App() {
             {saveToast === 'saving' ? 'Saving…' : saveToast === 'saved' ? 'Project saved' : 'Save failed'}
           </div>
         )}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 bg-grace-ink shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-white/10 text-white/70">
-            <Menu size={20}/>
-          </button>
+        {/* Shared top banner — same on every page: GRACE Enterprise left, Back right */}
+        <header className="flex items-center px-4 py-3 bg-white border-b border-slate-200 shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-white/10 rounded-md flex items-center justify-center text-xs font-bold text-white">G</div>
-            <span className="text-sm font-bold text-white">GRACE</span>
-          </div>
-          {saveToast !== 'idle' && (
-            <span className={`flex items-center gap-1 text-xs font-medium ${
-              saveToast === 'saving' ? 'text-white/50' : saveToast === 'saved' ? 'text-brand-green' : 'text-red-300'
-            }`}>
-              {saveToast === 'saving' && <Loader2 size={11} className="animate-spin"/>}
-              {saveToast === 'saved'  && <Check size={11}/>}
-              {saveToast === 'error'  && <AlertCircle size={11}/>}
-              {saveToast === 'saving' ? 'Saving…' : saveToast === 'saved' ? 'Saved' : 'Failed'}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-3">
-            <button
-              onClick={() => { setSection('settings'); setSidebarOpen(false) }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/20 hover:border-brand-green transition-colors"
-              title="Manage AI credits"
-            >
-              <Sparkles size={12} className="text-brand-green"/>
-              <span className={`text-xs font-bold ${generationsLeft > 0 ? 'text-white' : 'text-red-300'}`}>{generationsLeft}</span>
+            <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-slate-100 text-gray-600">
+              <Menu size={20}/>
             </button>
-            {user && (
-              <button onClick={() => setView('projects')} className="text-xs text-white/60 hover:text-white transition-colors">
-                My Projects
-              </button>
-            )}
+            <span className="text-sm font-semibold text-gray-900">GRACE Enterprise</span>
           </div>
+          <button
+            onClick={() => setView('landing')}
+            className="ml-auto flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 transition-colors"
+          >
+            <ArrowLeft size={14}/> Back
+          </button>
         </header>
 
         <main className="flex-1 overflow-y-auto">
-          {section !== 'design' && (
+          {section === 'projects' && (
+            <ProjectsDashboard onNewProject={startNewProject} onOpenProject={openProject} />
+          )}
+          {section !== 'design' && section !== 'projects' && (
             <SectionView section={section} state={state} onStartDesign={() => goToPhase(1)} />
           )}
           {section === 'design' && state.currentPhase === 1 && (
             <Phase2Garment
               state={state}
               onComplete={(route) => advancePhase({ route, currentPhase: 2 })}
-              onBack={() => setView('projects')}
+              onBack={goToProjects}
             />
           )}
           {section === 'design' && state.currentPhase === 2 && (
             <PhaseDesignStudio
               state={state}
               onComplete={(updates) => advancePhase({ ...updates, currentPhase: 3 })}
-              onBack={() => isExistingProjectRef.current ? setView('projects') : goToPhase(1)}
+              onBack={() => isExistingProjectRef.current ? goToProjects() : goToPhase(1)}
               onLogoUpdate={(logo) => setState(s => ({ ...s, logo }))}
               onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
               onStudioStateChange={(studioState) => setState(s => {
