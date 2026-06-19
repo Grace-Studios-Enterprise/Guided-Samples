@@ -196,12 +196,30 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
   return (
     <div className="bg-gray-50 min-h-full">
       <div className="max-w-6xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between mb-8 gap-3">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Projects</h1>
             <p className="text-sm text-gray-500 mt-1">Pick up where you left off, or start something new.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+              <input type="text" value={query} onChange={e => setQuery(e.target.value)}
+                placeholder="Search projects…" className="input-field pl-9 w-48"/>
+              {query && (
+                <button onClick={() => setQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-600">
+                  <X size={14}/>
+                </button>
+              )}
+            </div>
+            <button onClick={() => setFoldersOpen(o => !o)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm text-gray-600 hover:bg-slate-50 transition-colors">
+              <Folder size={15} className="text-gray-400"/>
+              Folders
+              <span className="text-[11px] text-gray-400">{folders.length}</span>
+              <ChevronDown size={15} className={`text-gray-400 transition-transform ${foldersOpen ? 'rotate-180' : ''}`}/>
+            </button>
             {!loading && projects.length > 0 && (
               selectMode ? (
                 <button onClick={exitSelectMode}
@@ -239,27 +257,6 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
           </div>
         ) : (
           <div>
-            {/* Search + Folders accordion toggle */}
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
-              <div className="relative flex-1 min-w-[220px] max-w-sm">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-                <input type="text" value={query} onChange={e => setQuery(e.target.value)}
-                  placeholder="Search projects by name…" className="input-field w-full pl-9"/>
-                {query && (
-                  <button onClick={() => setQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-600">
-                    <X size={14}/>
-                  </button>
-                )}
-              </div>
-              <button onClick={() => setFoldersOpen(o => !o)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm text-gray-600 hover:bg-slate-50 transition-colors">
-                <Folder size={15} className="text-gray-400"/>
-                Folders
-                <span className="text-[11px] text-gray-400">{folders.length}</span>
-                <ChevronDown size={15} className={`text-gray-400 transition-transform ${foldersOpen ? 'rotate-180' : ''}`}/>
-              </button>
-            </div>
 
             {/* Folder accordion content — chips next to the search row */}
             {foldersOpen && (
