@@ -72,7 +72,16 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
       confirmLabel: 'Delete',
       danger: true,
       onConfirm: async () => {
-        await deleteProject(id)
+        const { error } = await deleteProject(id)
+        if (error) {
+          setConfirmState({
+            title: 'Can’t delete this project',
+            body: error,
+            confirmLabel: 'OK',
+            onConfirm: () => {},
+          })
+          return
+        }
         setProjects(ps => ps.filter(p => p.id !== id))
         setSelected(s => { const n = new Set(s); n.delete(id); return n })
       },
@@ -160,9 +169,19 @@ export default function ProjectsDashboard({ onNewProject, onOpenProject }: Props
       confirmLabel: 'Delete',
       danger: true,
       onConfirm: async () => {
-        await Promise.all(ids.map(id => deleteProject(id)))
-        setProjects(ps => ps.filter(p => !selected.has(p.id)))
+        const results = await Promise.all(ids.map(async id => ({ id, ...(await deleteProject(id)) })))
+        const deleted = results.filter(r => !r.error).map(r => r.id)
+        const failed  = results.filter(r => r.error)
+        setProjects(ps => ps.filter(p => !deleted.includes(p.id)))
         exitSelectMode()
+        if (failed.length > 0) {
+          setConfirmState({
+            title: `Couldn’t delete ${failed.length} project${failed.length > 1 ? 's' : ''}`,
+            body: 'Projects with a production order can’t be deleted. The rest were removed.',
+            confirmLabel: 'OK',
+            onConfirm: () => {},
+          })
+        }
       },
     })
   }

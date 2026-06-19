@@ -370,8 +370,16 @@ export async function listAllUserAssets(userId: string): Promise<{
   return { logos, artworks, garments, previews }
 }
 
-export async function deleteProject(projectId: string): Promise<void> {
+export async function deleteProject(projectId: string): Promise<{ error: string | null }> {
   const supabase = createClient()
-  if (!supabase) return
-  await supabase.from('projects').delete().eq('id', projectId)
+  if (!supabase) return { error: 'Not connected.' }
+  const { error } = await supabase.from('projects').delete().eq('id', projectId)
+  if (error) {
+    // Foreign-key restrict: a production order references this project.
+    if (error.code === '23503') {
+      return { error: 'This project has a production order and can’t be deleted.' }
+    }
+    return { error: error.message }
+  }
+  return { error: null }
 }
