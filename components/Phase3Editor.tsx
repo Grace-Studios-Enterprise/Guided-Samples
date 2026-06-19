@@ -9,7 +9,7 @@ import {
 import { AppState } from '@/app/page'
 import { streamGenerate } from '@/lib/streamGenerate'
 import { cacheGet, cacheSet, cacheKey } from '@/lib/generateCache'
-import { removeWhiteBackground, cleanupBackground } from '@/lib/removeWhiteBg'
+import { removeWhiteBackground, removeBackgroundClean } from '@/lib/removeWhiteBg'
 import { fileToDataUrl } from '@/lib/fileToDataUrl'
 import { downloadDataUrl, downloadAssetsZip } from '@/lib/downloadAssets'
 import GarmentAssetPanel from './GarmentAssetPanel'
@@ -315,6 +315,24 @@ function ArchTextPreview({ layer }: { layer: TextLayer }) {
   )
 }
 
+// Compute a layer box that preserves an image's natural aspect ratio, scaled so
+// its longest side is ~160px. Falls back to a square if dimensions can't load.
+async function imageLayerBox(dataUrl: string, target = 160): Promise<{ width: number; height: number }> {
+  try {
+    const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+      img.onerror = reject
+      img.src = dataUrl
+    })
+    if (!dims.w || !dims.h) return { width: target, height: target }
+    const scale = target / Math.max(dims.w, dims.h)
+    return { width: Math.round(dims.w * scale), height: Math.round(dims.h * scale) }
+  } catch {
+    return { width: target, height: target }
+  }
+}
+
 export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUpdate, onBack, hideHeader, pendingArtwork, onArtworkConsumed, onStudioStateChange }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(100)
@@ -593,17 +611,19 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     for (const file of files) {
       try {
         let dataUrl = await fileToDataUrl(file)
-        try { dataUrl = await cleanupBackground(dataUrl) } catch {}
+        try { dataUrl = await removeBackgroundClean(dataUrl) } catch {}
         setArtworkGallery(g => g.includes(dataUrl) ? g : [...g, dataUrl])
       } catch (err) { console.error('Artwork upload failed', err) }
     }
   }
 
-  // Drop a gallery asset onto the canvas as a new layer.
-  const addAssetToCanvas = (dataUrl: string, isLogo: boolean) => {
+  // Drop a gallery asset onto the canvas as a new layer, sized to preserve the
+  // image's natural aspect ratio (trimmed logos are no longer squashed to 160×80).
+  const addAssetToCanvas = async (dataUrl: string, isLogo: boolean) => {
     const id = crypto.randomUUID()
+    const { width, height } = await imageLayerBox(dataUrl)
     snapshot()
-    setLayers(ls => [...ls, { id, type: 'image', dataUrl, isLogo, x: 60, y: 80, width: 160, height: 80, rotation: 0 }])
+    setLayers(ls => [...ls, { id, type: 'image', dataUrl, isLogo, x: 60, y: 80, width, height, rotation: 0 }])
     setSelectedId(id)
   }
 
@@ -754,10 +774,11 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     e.target.value = ''
     try {
       let dataUrl = await fileToDataUrl(file)
-      try { dataUrl = await removeWhiteBackground(dataUrl) } catch {}
+      try { dataUrl = await removeBackgroundClean(dataUrl) } catch {}
       const id = crypto.randomUUID()
+      const { width, height } = await imageLayerBox(dataUrl)
       snapshot()
-      setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width: 160, height: 80, rotation: 0 }])
+      setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width, height, rotation: 0 }])
       setSelectedId(id)
     } catch (err) { console.error('Upload failed', err) }
   }
