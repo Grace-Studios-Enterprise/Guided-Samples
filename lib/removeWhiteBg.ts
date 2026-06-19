@@ -104,16 +104,22 @@ export async function removeBackgroundClean(dataUrl: string): Promise<string> {
   return out
 }
 
-// Remove a solid-color background from a logo image.
-// Averages all four corners to detect the background color, then BFS flood-fills
-// from the image borders — only the outer connected background region becomes
-// transparent. Interior pixels of the same color are preserved because they
-// aren't reachable from the border.
+// Remove the background from a logo image via a BFS flood-fill that understands
+// MULTI-COLOR backgrounds.
 //
-// Tolerance lowered to 30 (was 40) to avoid blending into thin outline strokes.
-// If all 4 corners are already transparent, the image has no solid background —
-// skip flood-fill entirely so border strokes are never accidentally removed.
-export async function removeWhiteBackground(dataUrl: string, tolerance = 30): Promise<string> {
+// Instead of detecting one averaged background color, it builds a small *palette*
+// of the colors that actually appear along the image border. A solid background
+// yields one palette color; a baked-in transparency checkerboard yields two
+// (white + light gray); a gradient yields a few. A pixel counts as background if
+// it's opaque and matches ANY palette color within tolerance. The flood-fill
+// then clears only the OUTER connected region reachable from the border, so
+// interior strokes (e.g. the GRACE gold/black double border or the ram crest)
+// are preserved because they aren't border colors and aren't reachable.
+//
+// If the border is fully transparent (the logo is already cut out, like the
+// transparent GRACE PNG), the palette is empty and the image is returned
+// untouched — never risking damage to an already-clean logo.
+export async function removeWhiteBackground(dataUrl: string, tolerance = 32): Promise<string> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image()
     i.onload = () => resolve(i)
@@ -132,28 +138,47 @@ export async function removeWhiteBackground(dataUrl: string, tolerance = 30): Pr
   const imageData = ctx.getImageData(0, 0, w, h)
   const px = imageData.data
 
-  // Sample all four corners and average to get a robust background color estimate.
-  // Corners that are fully transparent are skipped.
-  const cornerCoords = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]] as const
-  let rSum = 0, gSum = 0, bSum = 0, count = 0
-  for (const [x, y] of cornerCoords) {
+  // ── Build the border-color palette ─────────────────────────────────────────
+  // Sample a thin band along all four edges, quantize each opaque color into a
+  // coarse 16-level bucket, and keep the buckets that make up a meaningful
+  // fraction of the border. This robustly captures a checkerboard's two tones.
+  const band = Math.max(2, Math.min(6, Math.round(Math.min(w, h) * 0.02)))
+  const buckets = new Map<number, { r: number; g: number; b: number; n: number }>()
+  const sample = (x: number, y: number) => {
     const idx = (y * w + x) * 4
-    if (px[idx + 3] < 10) continue // skip transparent corners
-    rSum += px[idx]; gSum += px[idx + 1]; bSum += px[idx + 2]
-    count++
+    if (px[idx + 3] < 10) return // skip transparent border pixels
+    const r = px[idx], g = px[idx + 1], b = px[idx + 2]
+    const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+    const e = buckets.get(key)
+    if (e) { e.r += r; e.g += g; e.b += b; e.n++ }
+    else buckets.set(key, { r, g, b, n: 1 })
   }
-  // All corners already transparent — image has no solid background to remove.
-  // Skip flood-fill entirely; just return as-is so trimTransparent can crop it.
-  if (count === 0) return dataUrl
-  const bg = { r: Math.round(rSum / count), g: Math.round(gSum / count), b: Math.round(bSum / count) }
+  for (let y = 0; y < h; y++) for (let d = 0; d < band; d++) { sample(d, y); sample(w - 1 - d, y) }
+  for (let x = 0; x < w; x++) for (let d = 0; d < band; d++) { sample(x, d); sample(x, h - 1 - d) }
 
-  const isBg = (idx: number) =>
-    px[idx + 3] > 10 && // only remove opaque pixels
-    Math.abs(px[idx]     - bg.r) <= tolerance &&
-    Math.abs(px[idx + 1] - bg.g) <= tolerance &&
-    Math.abs(px[idx + 2] - bg.b) <= tolerance
+  const bucketList = Array.from(buckets.values())
+  const totalSamples = bucketList.reduce((s, e) => s + e.n, 0)
+  // Border fully (or almost) transparent → already cut out, leave untouched.
+  if (totalSamples === 0) return dataUrl
 
-  // BFS flood fill from all border pixels
+  // Keep buckets that are at least 6% of border samples, up to 4 palette colors.
+  const palette = bucketList
+    .filter(e => e.n / totalSamples >= 0.06)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 4)
+    .map(e => ({ r: Math.round(e.r / e.n), g: Math.round(e.g / e.n), b: Math.round(e.b / e.n) }))
+  if (palette.length === 0) return dataUrl
+
+  const isBg = (idx: number) => {
+    if (px[idx + 3] <= 10) return false // already transparent
+    const r = px[idx], g = px[idx + 1], b = px[idx + 2]
+    for (const c of palette) {
+      if (Math.abs(r - c.r) <= tolerance && Math.abs(g - c.g) <= tolerance && Math.abs(b - c.b) <= tolerance) return true
+    }
+    return false
+  }
+
+  // ── BFS flood fill from all border pixels ──────────────────────────────────
   const visited = new Uint8Array(w * h)
   const queue: number[] = []
   const push = (x: number, y: number) => {
