@@ -98,6 +98,7 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false)
   const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup'>('signin')
   const projectIdRef = useRef<string | undefined>(undefined)
+  const isExistingProjectRef = useRef(false)
   const [saveToast, setSaveToast] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -204,6 +205,7 @@ function App() {
 
   const openProject = async (id: string) => {
     projectIdRef.current = id
+    isExistingProjectRef.current = true
     clearDesignCache()
     const detail = await loadProject(id)
     if (detail) {
@@ -228,6 +230,7 @@ function App() {
 
   const startNewProject = () => {
     projectIdRef.current = undefined
+    isExistingProjectRef.current = false
     clearDesignCache()
     setState(EMPTY_STATE)
     setTechPack(null)
@@ -354,14 +357,14 @@ function App() {
             <Phase2Garment
               state={state}
               onComplete={(route) => advancePhase({ route, currentPhase: 2 })}
-              onBack={() => goToPhase(1)}
+              onBack={() => setView('projects')}
             />
           )}
           {section === 'design' && state.currentPhase === 2 && (
             <PhaseDesignStudio
               state={state}
               onComplete={(updates) => advancePhase({ ...updates, currentPhase: 3 })}
-              onBack={() => goToPhase(1)}
+              onBack={() => isExistingProjectRef.current ? setView('projects') : goToPhase(1)}
               onLogoUpdate={(logo) => setState(s => ({ ...s, logo }))}
               onSetGarment={(garment) => setState(s => ({ ...s, garment }))}
               onStudioStateChange={(studioState) => setState(s => {
