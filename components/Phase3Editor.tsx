@@ -42,6 +42,9 @@ interface ImageLayer extends BaseLayer {
   dataUrl: string
   tintColor?: string
   isLogo?: boolean
+  /** 0–100. How strongly the garment's shading/texture is printed onto the artwork
+   *  (Preview mode only). Replaces faking realism with opacity. Defaults to ~50. */
+  fabricStrength?: number
 }
 
 interface TextLayer extends BaseLayer {
@@ -359,6 +362,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   const [zoom, setZoom] = useState(100)
   const [garmentScale, setGarmentScale] = useState(100)
   const [garmentOffset, setGarmentOffset] = useState({ x: 0, y: 0 })
+  // Design mode = clean artwork for editing. Preview mode = fabric-printed realism.
+  // Default to Preview so the realism controls visibly respond; users flip to Design
+  // for a clean editing view.
+  const [previewMode, setPreviewMode] = useState(true)
   const [garmentDragging, setGarmentDragging] = useState(false)
   const [garmentSelected, setGarmentSelected] = useState(false)
   // Restore garment color and layers — prefer persisted studioState (for project loads),
@@ -594,7 +601,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     if (!pendingArtwork) return
     const id = crypto.randomUUID()
     snapshot()
-    setLayers(ls => [...ls, { id, type: 'image', dataUrl: pendingArtwork, x: 60, y: 80, width: 160, height: 80, rotation: 0, blendMode: 'multiply', opacity: 100 }])
+    setLayers(ls => [...ls, { id, type: 'image', dataUrl: pendingArtwork, x: 60, y: 80, width: 160, height: 80, rotation: 0, blendMode: 'soft-light', opacity: 100, fabricStrength: 55 }])
     setSelectedId(id)
     onArtworkConsumed?.()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -645,7 +652,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     const id = crypto.randomUUID()
     const { width, height } = await imageLayerBox(dataUrl)
     snapshot()
-    setLayers(ls => [...ls, { id, type: 'image', dataUrl, isLogo, x: 60, y: 80, width, height, rotation: 0, blendMode: isLogo ? 'normal' : 'multiply', opacity: 100 }])
+    setLayers(ls => [...ls, { id, type: 'image', dataUrl, isLogo, x: 60, y: 80, width, height, rotation: 0, blendMode: 'soft-light', opacity: 100, fabricStrength: isLogo ? 45 : 55 }])
     setSelectedId(id)
   }
 
@@ -840,7 +847,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
       const id = crypto.randomUUID()
       const { width, height } = await imageLayerBox(dataUrl)
       snapshot()
-      setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width, height, rotation: 0, blendMode: 'normal', opacity: 100 }])
+      setLayers(ls => [...ls, { id, type: 'image', dataUrl, x: 60, y: 80, width, height, rotation: 0, blendMode: 'soft-light', opacity: 100, fabricStrength: 45 }])
       setSelectedId(id)
     } catch (err) { console.error('Upload failed', err) }
   }
@@ -1206,15 +1213,34 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     </div>
   )
 
-  // Blend mode + opacity — editable, preview-only properties for image layers.
+  // Fabric / print realism — editable, preview-only properties for image layers.
   const blendCard = (sel: ImageLayer) => (
     <div className="card space-y-3">
-      <p className="text-xs font-medium text-gray-600">Blending</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-gray-600">Fabric &amp; Print</p>
+        <button
+          onClick={() => setPreviewMode(p => !p)}
+          className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border transition-colors ${previewMode ? 'bg-grace-ink text-white border-grace-ink' : 'bg-white text-gray-500 border-slate-200 hover:text-gray-700'}`}>
+          {previewMode ? 'Preview' : 'Design'}
+        </button>
+      </div>
       <div>
-        <label className="text-xs text-gray-500 block mb-1.5">Blend Mode</label>
+        <div className="flex justify-between items-center mb-1.5">
+          <span className="text-xs text-gray-500">Fabric Interaction</span>
+          <span className="text-xs text-gray-700 w-10 text-center tabular-nums">{sel.fabricStrength ?? 0}%</span>
+        </div>
+        <input type="range" min={0} max={100} value={sel.fabricStrength ?? 0}
+          onChange={e => { setPreviewMode(true); updateSelected({ fabricStrength: parseInt(e.target.value) }) }}
+          className="w-full accent-brand-green"/>
+        <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+          How strongly fabric texture, wrinkles &amp; shading print into the artwork. Shown in <span className="font-semibold">Preview</span>; switch to <span className="font-semibold">Design</span> for clean editing. The design stays fully visible either way.
+        </p>
+      </div>
+      <div>
+        <label className="text-xs text-gray-500 block mb-1.5">Print Blend</label>
         <select
-          value={sel.blendMode ?? 'normal'}
-          onChange={e => updateSelected({ blendMode: e.target.value as BlendMode })}
+          value={sel.blendMode ?? 'soft-light'}
+          onChange={e => { setPreviewMode(true); updateSelected({ blendMode: e.target.value as BlendMode }) }}
           className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:border-grace-ink">
           {BLEND_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
@@ -1244,6 +1270,17 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
   )
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+
+  // Garment placement within the 380×460 artboard, used to align the fabric-shading
+  // overlay so the texture under each artwork matches the garment beneath it.
+  const _gScale = garmentScale / 100
+  const garmentRect = {
+    w: GARMENT_DISPLAY_W * _gScale,
+    h: GARMENT_DISPLAY_H * _gScale,
+    x: 190 + garmentOffset.x - (GARMENT_DISPLAY_W * _gScale) / 2,
+    y: 230 + garmentOffset.y - (GARMENT_DISPLAY_H * _gScale) / 2,
+  }
+  const garmentTextureSrc = displaySrcs[activeEditorView] || garmentSrcForView(activeEditorView)
 
   return (
     <div className={hideHeader ? 'px-6 pb-6 w-full' : 'p-6 w-full'}>
@@ -1580,6 +1617,13 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
               <button onClick={() => setZoom(z => Math.min(200, z + 25))} className="p-1 rounded hover:bg-slate-100 hover:text-gray-700 transition-colors"><Plus size={12}/></button>
             </div>
             <div className="flex items-center gap-2.5">
+              {/* Design = clean artwork for editing · Preview = fabric-printed realism */}
+              <div className="flex rounded-full border border-slate-200 overflow-hidden text-[11px] font-semibold">
+                <button onClick={() => setPreviewMode(false)} title="Clean artwork for editing"
+                  className={`px-2.5 py-1 transition-colors ${!previewMode ? 'bg-grace-ink text-white' : 'text-gray-500 hover:bg-slate-100'}`}>Design</button>
+                <button onClick={() => setPreviewMode(true)} title="Show fabric-printed realism"
+                  className={`px-2.5 py-1 transition-colors ${previewMode ? 'bg-grace-ink text-white' : 'text-gray-500 hover:bg-slate-100'}`}>Preview</button>
+              </div>
               <span className="text-[11px] text-gray-400 flex items-center gap-1">
                 {saveStatus === 'saving' && <><Loader2 size={11} className="animate-spin"/> Saving…</>}
                 {saveStatus === 'saved'  && <><Check   size={11} className="text-brand-green"/> Saved</>}
@@ -1678,24 +1722,24 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
               )}
               {/* Layers */}
               {layers.map(layer => {
-                // Blend + opacity must live on an element whose nearest ancestor
-                // stacking context is the canvas (which contains the garment) — NOT
-                // inside a rotate transform, which would isolate it and make
-                // mix-blend-mode composite against nothing. So rotation lives on the
-                // inner content wrapper here, and the outer wrapper stays untransformed
-                // (it only carries selection outline + resize handles).
-                const blendStyle: React.CSSProperties = layer.type === 'image'
-                  ? {
-                      mixBlendMode: ((layer as ImageLayer).blendMode ?? 'normal') as React.CSSProperties['mixBlendMode'],
-                      opacity: ((layer as ImageLayer).opacity ?? 100) / 100,
-                    }
-                  : {}
+                // Rotation lives on the inner content wrapper (not the outer wrapper),
+                // so the outer wrapper stays untransformed and only carries the
+                // selection outline + resize handles.
+                const img = layer.type === 'image' ? (layer as ImageLayer) : null
+                const realOpacity = img ? (img.opacity ?? 100) / 100 : 1
+                // Fabric Interaction (Preview only): a grayscale copy of the garment's
+                // shading, masked to the print and blended OVER a fully-opaque artwork.
+                // The base artwork guarantees readability on any garment colour; the
+                // overlay only modulates light/shadow, so the design never washes out.
+                const fabricStrength = img?.fabricStrength ?? 0
+                const showFabric = !!img && previewMode && !!garmentTextureSrc && fabricStrength > 0
+                const fabricOpacity = Math.min(0.8, (fabricStrength / 100) * 0.8)
                 return (
                 <div key={layer.id}
                   onMouseDown={e => handlePointerDown(e, layer.id)}
                   onTouchStart={e => handlePointerDown(e, layer.id)}
                   style={{ position: 'absolute', left: layer.x, top: layer.y, width: layer.width, height: layer.height, cursor: dragging?.id === layer.id ? 'grabbing' : 'grab', outline: selectedId === layer.id ? '2px solid #0A0A0A' : 'none', outlineOffset: 2, userSelect: 'none', touchAction: 'none' }}>
-                  <div style={{ width: '100%', height: '100%', transform: `rotate(${layer.rotation}deg)`, ...blendStyle }}>
+                  <div style={{ width: '100%', height: '100%', transform: `rotate(${layer.rotation}deg)`, opacity: realOpacity }}>
                   {layer.type === 'text' ? (
                     (layer as TextLayer).archAmount ? (
                       <ArchTextPreview layer={layer as TextLayer} />
@@ -1705,7 +1749,26 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                     </div>
                     )
                   ) : (
-                    <img src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl} alt="artwork" className="w-full h-full object-contain" draggable={false} style={{ pointerEvents: 'none' }}/>
+                    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                      <img src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl} alt="artwork" className="w-full h-full object-contain" draggable={false} style={{ display: 'block', pointerEvents: 'none' }}/>
+                      {showFabric && (
+                        <div aria-hidden style={{
+                          position: 'absolute', inset: 0, pointerEvents: 'none',
+                          backgroundImage: `url("${garmentTextureSrc}")`,
+                          backgroundRepeat: 'no-repeat',
+                          backgroundSize: `${garmentRect.w}px ${garmentRect.h}px`,
+                          backgroundPosition: `${garmentRect.x - layer.x}px ${garmentRect.y - layer.y}px`,
+                          WebkitMaskImage: `url("${(layer as ImageLayer).dataUrl}")`,
+                          maskImage: `url("${(layer as ImageLayer).dataUrl}")`,
+                          WebkitMaskSize: 'contain', maskSize: 'contain',
+                          WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                          WebkitMaskPosition: 'center', maskPosition: 'center',
+                          mixBlendMode: ((layer as ImageLayer).blendMode ?? 'soft-light') as React.CSSProperties['mixBlendMode'],
+                          opacity: fabricOpacity,
+                          filter: 'grayscale(1) contrast(1.04)',
+                        } as React.CSSProperties}/>
+                      )}
+                    </div>
                   )}
                   </div>
                   {selectedId === layer.id && (
@@ -1827,11 +1890,27 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                       onChange={e => updateSelected({ tintColor: e.target.value })}
                       className="w-full h-7 rounded cursor-pointer border border-slate-200"/>
                     {(selected as ImageLayer).tintColor && <button onClick={() => updateSelected({ tintColor: undefined })} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">Clear tint</button>}
-                    <div className="pt-2">
-                      <label className="text-xs text-gray-500 block mb-1.5">Blend Mode</label>
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-xs font-medium text-gray-600">Fabric &amp; Print</span>
+                      <div className="flex rounded-full border border-slate-200 overflow-hidden text-[10px] font-semibold">
+                        <button onClick={() => setPreviewMode(false)} className={`px-2 py-0.5 ${!previewMode ? 'bg-grace-ink text-white' : 'text-gray-500'}`}>Design</button>
+                        <button onClick={() => setPreviewMode(true)} className={`px-2 py-0.5 ${previewMode ? 'bg-grace-ink text-white' : 'text-gray-500'}`}>Preview</button>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs text-gray-500">Fabric Interaction</span>
+                        <span className="text-xs text-gray-700 w-10 text-center tabular-nums">{(selected as ImageLayer).fabricStrength ?? 0}%</span>
+                      </div>
+                      <input type="range" min={0} max={100} value={(selected as ImageLayer).fabricStrength ?? 0}
+                        onChange={e => { setPreviewMode(true); updateSelected({ fabricStrength: parseInt(e.target.value) }) }}
+                        className="w-full accent-brand-green"/>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1.5">Print Blend</label>
                       <select
-                        value={(selected as ImageLayer).blendMode ?? 'normal'}
-                        onChange={e => updateSelected({ blendMode: e.target.value as BlendMode })}
+                        value={(selected as ImageLayer).blendMode ?? 'soft-light'}
+                        onChange={e => { setPreviewMode(true); updateSelected({ blendMode: e.target.value as BlendMode }) }}
                         className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:border-grace-ink">
                         {BLEND_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                       </select>
