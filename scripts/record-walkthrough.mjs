@@ -28,6 +28,7 @@ const SIZE = { width: 1366, height: 854 }
 const OUT_DIR = path.join(ROOT, 'public', 'demo')
 const TMP_DIR = path.join(ROOT, 'test-results', 'walkthrough-video')
 const TARGET = path.join(OUT_DIR, 'grace-walkthrough.webm')
+const POSTER = path.join(OUT_DIR, 'grace-walkthrough-poster.png')
 
 fs.mkdirSync(OUT_DIR, { recursive: true })
 fs.mkdirSync(TMP_DIR, { recursive: true })
@@ -44,6 +45,14 @@ const INIT_SCRIPT = () => {
       * { caret-color: transparent !important; }
     `
     ;(document.head || document.documentElement).appendChild(style)
+
+    try {
+      // Seeded demo state (values the app already reads — no product changes):
+      // a full free-AI allowance so no paywall can interrupt, and an expanded
+      // sidebar for a consistent layout every run.
+      localStorage.setItem('grace_ai_free_used', '0')
+      localStorage.setItem('grace-sidebar-collapsed', '0')
+    } catch {}
 
     const mount = () => {
       if (!document.body || document.getElementById('__demo_cursor')) return
@@ -67,6 +76,12 @@ const INIT_SCRIPT = () => {
 
 async function main() {
   console.log(`\n🎬  Recording GRACE walkthrough against ${BASE}\n`)
+  // Optional seeded auth: reuse a saved Playwright session, or sign in with demo
+  // credentials through the real auth UI. Without either, the run is a guest —
+  // which already reaches the end (the flow never gates on login or AI).
+  const storageStatePath = process.env.GRACE_STORAGE_STATE
+  const reuseSession = !!(storageStatePath && fs.existsSync(storageStatePath))
+
   const browser = await chromium.launch({
     headless: HEADLESS,
     slowMo: 280, // deliberate, demo-paced motion
@@ -76,6 +91,7 @@ async function main() {
     viewport: SIZE,
     deviceScaleFactor: 2,
     recordVideo: { dir: TMP_DIR, size: SIZE },
+    ...(reuseSession ? { storageState: storageStatePath } : {}),
   })
   await context.addInitScript(INIT_SCRIPT)
   const page = await context.newPage()
@@ -109,11 +125,39 @@ async function main() {
   const byRole = (name) => () => page.getByRole('button', { name })
   const byText = (text) => () => page.getByText(text, { exact: false })
 
+  // Sign in with seeded demo credentials via the real auth modal (no product change).
+  async function maybeLogin() {
+    if (reuseSession) { console.log('▶ Reusing saved demo session'); return }
+    const email = process.env.GRACE_DEMO_EMAIL
+    const password = process.env.GRACE_DEMO_PASSWORD
+    if (!email || !password) { console.log('   · no demo credentials set — recording as guest'); return }
+    console.log('▶ Signing in as demo account')
+    const opened = await clickAny('Open auth', [() => page.getByRole('button', { name: /sign in/i })])
+    if (!opened) return
+    try {
+      await page.getByPlaceholder('you@example.com').first().fill(email)
+      await page.getByPlaceholder(/min\. 6 characters/i).first().fill(password)
+      await clickAny('Submit sign-in', [byRole(/sign in & continue/i), byRole(/^sign in/i)])
+      await pause(2800)
+      if (storageStatePath) {
+        fs.mkdirSync(path.dirname(storageStatePath), { recursive: true })
+        await context.storageState({ path: storageStatePath })
+        console.log(`   · saved session → ${path.relative(ROOT, storageStatePath)}`)
+      }
+    } catch (e) { console.warn('   · sign-in skipped:', e?.message ?? e) }
+  }
+
   try {
     // ── 1. Landing page ───────────────────────────────────────────────────────
     console.log('▶ Landing page')
     await page.goto(BASE, { waitUntil: 'domcontentloaded' })
     await pause(3000)
+    // Capture a clean first-frame poster (overwrites the committed placeholder).
+    await page.screenshot({ path: POSTER, animations: 'disabled', scale: 'css' }).then(
+      () => console.log(`   · poster → ${path.relative(ROOT, POSTER)}`),
+      () => {},
+    )
+    await maybeLogin()
     await clickAny('Self-service entry', [byRole(/build it yourself/i), byRole(/open studio/i), byRole(/launch studio/i)])
 
     // ── 2. New Project ────────────────────────────────────────────────────────

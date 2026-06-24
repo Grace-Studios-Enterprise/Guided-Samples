@@ -22,4 +22,37 @@ Your Route → Custom Apparel → Design Studio → Preview in Reality → Tech 
 Send to Production), paces each screen, hides dev overlays, and writes the
 result to `public/demo/grace-walkthrough.webm`. It never alters the product flow.
 
-Commit the regenerated `grace-walkthrough.webm` to publish it.
+## Repeatability (seeded demo state)
+
+Everything below is recorder-side only — the customer flow is untouched.
+
+- **No AI needed.** The walkthrough picks a **GRACE Library** garment (no
+  generation) and proceeds straight past the optional preview, so it never hits
+  an AI credit gate.
+- **Free-AI allowance seeded.** The recorder sets `grace_ai_free_used = 0` in
+  localStorage each run, so even incidental AI actions won't trigger a paywall.
+- **Login (optional).** The flow reaches the end as a guest. To record as a
+  signed-in demo account, set credentials and the recorder drives the real
+  sign-in modal:
+
+  ```bash
+  GRACE_DEMO_EMAIL=demo@grace.app GRACE_DEMO_PASSWORD=••••• npm run record:walkthrough
+  ```
+
+- **Reusable session.** Point `GRACE_STORAGE_STATE` at a JSON path; the first
+  signed-in run saves the session there and later runs reuse it (no re-login):
+
+  ```bash
+  GRACE_STORAGE_STATE=.auth/grace-demo.json \
+  GRACE_DEMO_EMAIL=demo@grace.app GRACE_DEMO_PASSWORD=••••• npm run record:walkthrough
+  ```
+
+## Poster
+
+`grace-walkthrough-poster.png` is the embedded video's poster (no empty state
+before playback). A lightweight branded placeholder is committed; each recording
+overwrites it with a real first-frame thumbnail. Regenerate the placeholder with
+`node scripts/make-poster.mjs`.
+
+Commit the regenerated `grace-walkthrough.webm` (and refreshed
+`grace-walkthrough-poster.png`) to publish.

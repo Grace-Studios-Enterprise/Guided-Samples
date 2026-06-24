@@ -165,6 +165,7 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onSign
             controls
             playsInline
             preload="metadata"
+            poster="/demo/grace-walkthrough-poster.png"
           >
             <source src="/demo/grace-walkthrough.webm" type="video/webm" />
             Your browser does not support embedded video.

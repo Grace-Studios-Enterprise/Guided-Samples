@@ -18,3 +18,5 @@ tsconfig.tsbuildinfo
 
 # Walkthrough recorder scratch output (final video lives in public/demo/)
 test-results/
+# Saved Playwright auth sessions for the demo recorder (contain tokens)
+.auth/
