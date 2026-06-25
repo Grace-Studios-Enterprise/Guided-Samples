@@ -4,10 +4,13 @@
 // the assistant UI. The host app can also intercept ids for navigation.
 
 import type { AssistantContext, QuickAction } from './types'
+import { buildSizeSpec, sizeSpecToCsv, sizeSpecSummary } from '@/lib/prepress/sizeSpec'
 
 export interface ActionResult {
   text: string
   actions?: QuickAction[]
+  /** Optional real file the UI should offer for download. */
+  download?: { filename: string; content: string; mime: string }
 }
 
 type Handler = (ctx: AssistantContext) => ActionResult
@@ -16,9 +19,14 @@ const REGISTRY: Record<string, Handler> = {
   escalate: () => ({
     text: 'I’ve flagged this for the GRACE production team — they’ll follow up by email with full context on where you are. Anything you’d like me to add to the note?',
   }),
-  'create-size-spec': () => ({
-    text: 'I can generate a graded size spec (XS–3XL) from a standard fit block for your garment and add it to your files, so production has consistent measurements.',
-  }),
+  'create-size-spec': (ctx) => {
+    const spec = buildSizeSpec(ctx.designState?.garment)
+    if (!spec) return { text: 'I can generate a graded size spec from a standard fit block — tell me the garment and I’ll build it.' }
+    return {
+      text: `${sizeSpecSummary(spec)} I’ve prepared it as a CSV you can hand to production or fold into your tech pack.`,
+      download: { filename: 'grace-size-chart.csv', content: sizeSpecToCsv(spec), mime: 'text/csv' },
+    }
+  },
   'upload-size-chart': () => ({
     text: 'Add your size chart on the upload screen and I’ll fold it into the readiness check automatically — no need to re-run everything.',
   }),

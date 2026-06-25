@@ -10,6 +10,7 @@ import { runFix } from '@/lib/prepress/fixes'
 import { STATUS_WEIGHT } from '@/lib/prepress/checks'
 import { CATEGORY_LABEL, type CheckResult, type PrepressReport, type Severity, type UploadedFile } from '@/lib/prepress/types'
 import { useAssistant } from '@/components/assistant/AssistantProvider'
+import { downloadTextFile } from '@/lib/prepress/sizeSpec'
 
 interface Props {
   onBack: () => void
@@ -73,6 +74,7 @@ export default function UploadProduction({ onBack, onContinue }: Props) {
   async function applyFix(check: CheckResult, fixId: string) {
     setFixing(f => ({ ...f, [check.id]: true }))
     const outcome = await runFix(fixId)
+    if (outcome.download) downloadTextFile(outcome.download.filename, outcome.download.content, outcome.download.mime)
     setReport(prev => {
       if (!prev) return prev
       const results = prev.results.map(r => r.id === check.id

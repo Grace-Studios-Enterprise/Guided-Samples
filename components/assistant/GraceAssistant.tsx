@@ -5,6 +5,7 @@ import { Sparkles, X, ArrowUp, Headset } from 'lucide-react'
 import { useAssistant } from './AssistantProvider'
 import { greet, reply } from '@/lib/assistant/advisor'
 import { runAction } from '@/lib/assistant/actions'
+import { downloadTextFile } from '@/lib/prepress/sizeSpec'
 import type { AssistantMessage, QuickAction } from '@/lib/assistant/types'
 
 const PATH_LABEL: Record<string, string> = {
@@ -48,6 +49,7 @@ export default function GraceAssistant() {
       push(userMsg(a.label))
       if (onAction?.(a.run)) { push({ id: `a${++uid}`, role: 'assistant', text: 'On it — taking you there. I’ll be right here if you need anything.' }); return }
       const res = runAction(a.run, context)
+      if (res.download) downloadTextFile(res.download.filename, res.download.content, res.download.mime)
       push({ id: `a${++uid}`, role: 'assistant', text: res.text, actions: res.actions })
     }
   }
