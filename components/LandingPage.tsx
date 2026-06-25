@@ -171,7 +171,12 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onUplo
         </div>
       </section>
 
-      {/* See how GRACE works — walkthrough demo */}
+      {/* See how GRACE works — walkthrough demo.
+          DISABLED until the walkthrough video is recorded. The recorder
+          (npm run record:walkthrough) writes public/demo/grace-walkthrough.webm;
+          once it's committed, change `false &&` below to `true &&` (or remove the
+          guard) to publish this section. */}
+      {false && (
       <section id="walkthrough" className="max-w-4xl mx-auto px-6 pb-24">
         <div className="text-center mb-8">
           <p className="phase-header">Product Walkthrough</p>
@@ -193,6 +198,7 @@ export default function LandingPage({ onSelfService, onCreativeDirection, onUplo
           </video>
         </div>
       </section>
+      )}
 
       {/* Workflow */}
       <section id="workflow" className="max-w-6xl mx-auto px-6 pb-24">
