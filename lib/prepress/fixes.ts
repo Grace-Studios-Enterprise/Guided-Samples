@@ -5,6 +5,7 @@
 // without touching the UI or the check pipeline.
 
 import { buildSizeSpec, sizeSpecToCsv, sizeSpecSummary } from './sizeSpec'
+import { generateTechPack } from './techPack'
 
 export interface FixOutcome {
   /** Message shown on the now-resolved check row. */
@@ -48,6 +49,19 @@ export async function runFix(id: string, garmentHint?: string): Promise<FixOutco
       }
     }
   }
+  // Real implementation: assemble a full production tech pack.
+  if (id === 'generate-techpack') {
+    await new Promise(res => setTimeout(res, 2200))
+    const tp = generateTechPack(garmentHint)
+    if (tp) {
+      return {
+        message: tp.summary,
+        artifact: tp.filename,
+        download: { filename: tp.filename, content: tp.content, mime: tp.mime },
+      }
+    }
+  }
+
   const r = REGISTRY[id]
   if (!r) return { message: 'Resolved by GRACE AI.' }
   await new Promise(res => setTimeout(res, r.delay))

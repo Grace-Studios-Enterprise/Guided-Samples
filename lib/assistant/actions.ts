@@ -5,6 +5,7 @@
 
 import type { AssistantContext, QuickAction } from './types'
 import { buildSizeSpec, sizeSpecToCsv, sizeSpecSummary } from '@/lib/prepress/sizeSpec'
+import { generateTechPack } from '@/lib/prepress/techPack'
 
 export interface ActionResult {
   text: string
@@ -51,6 +52,14 @@ const REGISTRY: Record<string, Handler> = {
   'start-production': () => ({
     text: 'Ready to commit? The production deposit starts your full run. If you haven’t sampled yet, I’d still suggest it first.',
   }),
+  'generate-techpack': (ctx) => {
+    const tp = generateTechPack(ctx.designState?.garment)
+    if (!tp) return { text: 'Tell me the garment and I’ll assemble a full tech pack from our graded spec engine.' }
+    return {
+      text: `${tp.summary}`,
+      download: { filename: tp.filename, content: tp.content, mime: tp.mime },
+    }
+  },
   'send-production': () => ({
     text: 'Once your tech pack is complete, Send to Production packages everything for your supplier. Want me to check it’s complete first?',
   }),

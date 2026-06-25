@@ -117,11 +117,13 @@ function sizeChartActions(ctx: AssistantContext): QuickAction[] {
 function techpackGreet(ctx: AssistantContext): AssistantMessage {
   const missing = ctx.missingItems ?? []
   if (missing.length) {
-    return msg(`A complete tech pack needs measurements, colors, placement, fabric, and decoration. Still missing: **${missing.join(', ')}**. I can fill these in with you.`,
-      [act('Complete my tech pack', { say: 'Help me complete the missing tech pack details', tone: 'primary' }), TALK])
+    return msg(`A complete tech pack needs measurements, colors, placement, fabric, and decoration. Still missing: **${missing.join(', ')}**. I can fill these in or assemble a starter tech pack for you.`,
+      [act('Generate tech pack', { run: 'generate-techpack', tone: 'primary' }),
+       act('Complete the details', { say: 'Help me complete the missing tech pack details' }), TALK])
   }
-  return msg('Let’s make sure your tech pack is production-ready: graded measurements, colors, placement specs, fabric, and decoration method. I can review what’s there and flag any gaps before it reaches a supplier.',
-    [act('Review my tech pack', { say: 'Check whether my tech pack is missing manufacturing details', tone: 'primary' }), TALK])
+  return msg('Let’s make sure your tech pack is production-ready: graded measurements, colors, placement specs, fabric, and decoration method. I can generate a full graded tech pack or review what you have.',
+    [act('Generate tech pack', { run: 'generate-techpack', tone: 'primary' }),
+     act('Review my tech pack', { say: 'Check whether my tech pack is missing manufacturing details' }), TALK])
 }
 
 // ── Follow-up replies ──────────────────────────────────────────────────────────
@@ -161,8 +163,9 @@ export function reply(ctx: AssistantContext, text: string): AssistantMessage {
       [act('Start a sample', { run: 'start-sample' }), act('Start production', { run: 'start-production' })])
 
   if (/tech ?pack|manufacturing detail|required detail|missing.*(detail|spec)/.test(t))
-    return msg('A production-ready tech pack includes: **graded measurements**, **colors / Pantone**, **graphic placement specs**, **fabric composition & weight**, **decoration method**, and **care/label info**. Tell me which you’re unsure about and I’ll help fill it in.',
-      [act('Generate placement specs', { run: 'generate-placement' }), act('Recommend decoration', { run: 'specify-decoration' }), TALK])
+    return msg('A production-ready tech pack includes: **graded measurements**, **colors / Pantone**, **graphic placement specs**, **fabric composition & weight**, **decoration method**, and **care/label info**. I can assemble a full graded tech pack now, or help with any single piece.',
+      [act('Generate tech pack', { run: 'generate-techpack', tone: 'primary' }),
+       act('Generate placement specs', { run: 'generate-placement' }), act('Recommend decoration', { run: 'specify-decoration' }), TALK])
 
   if (/next|stage|what happens|status/.test(t))
     return msg(stageNarrative(ctx), [TALK])
