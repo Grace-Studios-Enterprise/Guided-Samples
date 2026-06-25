@@ -4,11 +4,16 @@
 // tracing, CMYK/Pantone conversion, …) can replace the simulated resolvers
 // without touching the UI or the check pipeline.
 
+import { buildSizeSpec, sizeSpecToCsv, sizeSpecSummary } from './sizeSpec'
+import { generateTechPack } from './techPack'
+
 export interface FixOutcome {
   /** Message shown on the now-resolved check row. */
   message: string
   /** Optional artifact the AI produced (e.g. a generated file name). */
   artifact?: string
+  /** Optional real file the caller should offer for download. */
+  download?: { filename: string; content: string; mime: string }
 }
 
 type Resolver = { delay: number; resolve: () => FixOutcome }
@@ -31,7 +36,32 @@ const REGISTRY: Record<string, Resolver> = {
 }
 
 /** Run an AI fix. Replace the simulated body with a real API call per id. */
-export async function runFix(id: string): Promise<FixOutcome> {
+export async function runFix(id: string, garmentHint?: string): Promise<FixOutcome> {
+  // Real implementation: generate a graded size chart from the fitBlocks engine.
+  if (id === 'generate-sizechart') {
+    await new Promise(res => setTimeout(res, 1400))
+    const spec = buildSizeSpec(garmentHint)
+    if (spec) {
+      return {
+        message: sizeSpecSummary(spec),
+        artifact: 'size-chart.csv',
+        download: { filename: 'grace-size-chart.csv', content: sizeSpecToCsv(spec), mime: 'text/csv' },
+      }
+    }
+  }
+  // Real implementation: assemble a full production tech pack.
+  if (id === 'generate-techpack') {
+    await new Promise(res => setTimeout(res, 2200))
+    const tp = generateTechPack(garmentHint)
+    if (tp) {
+      return {
+        message: tp.summary,
+        artifact: tp.filename,
+        download: { filename: tp.filename, content: tp.content, mime: tp.mime },
+      }
+    }
+  }
+
   const r = REGISTRY[id]
   if (!r) return { message: 'Resolved by GRACE AI.' }
   await new Promise(res => setTimeout(res, r.delay))
