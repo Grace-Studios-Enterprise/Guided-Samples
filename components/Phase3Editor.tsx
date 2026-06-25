@@ -37,6 +37,14 @@ interface BaseLayer {
   opacity?: number
 }
 
+// Non-destructive texture effects for artwork. Stored as editable layer props and
+// rendered live (CSS filters for colour grades, masked SVG-noise overlays for
+// distress textures) — the original artwork dataUrl is never modified.
+type TextureEffectType =
+  | 'vintage' | 'faded' | 'washed-print'   // colour grades
+  | 'distressed' | 'grunge' | 'crack-print' // distress textures
+interface TextureEffect { type: TextureEffectType; enabled: boolean; intensity: number }
+
 interface ImageLayer extends BaseLayer {
   type: 'image'
   dataUrl: string
@@ -45,6 +53,8 @@ interface ImageLayer extends BaseLayer {
   /** 0–100. How strongly the garment's shading/texture is printed onto the artwork
    *  (Preview mode only). Replaces faking realism with opacity. Defaults to ~50. */
   fabricStrength?: number
+  /** Stackable, non-destructive texture effects (vintage/distressed/etc.). */
+  effects?: TextureEffect[]
 }
 
 interface TextLayer extends BaseLayer {
@@ -73,6 +83,54 @@ const BLEND_MODES: { value: BlendMode; label: string }[] = [
   { value: 'color-burn',  label: 'Color Burn' },
   { value: 'color-dodge', label: 'Color Dodge' },
 ]
+
+// ── Texture Effects ─────────────────────────────────────────────────────────────
+// Apparel-graphic aesthetics (collegiate / sportswear / streetwear / vintage).
+// "grade" effects are CSS colour filters; "texture" effects are masked SVG-noise
+// overlays that break up the ink (distress / grunge / cracked-print look).
+
+// Procedural grayscale noise as a data-URI (no texture assets needed). encodeURIComponent
+// keeps it valid across browsers; the inner url(#n) becomes %23n once encoded.
+const noiseDataUri = (baseFrequency: number, octaves: number, seed: number) => {
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'>` +
+    `<filter id='n'>` +
+    `<feTurbulence type='fractalNoise' baseFrequency='${baseFrequency}' numOctaves='${octaves}' seed='${seed}' stitchTiles='stitch'/>` +
+    `<feColorMatrix type='saturate' values='0'/>` +
+    `</filter>` +
+    `<rect width='100%' height='100%' filter='url(#n)'/></svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
+interface EffectPreset {
+  label: string
+  kind: 'grade' | 'texture'
+  defaultIntensity: number
+  /** Colour-grade effects: CSS filter string at intensity t (0–1). */
+  grade?: (t: number) => string
+  /** Distress textures: noise + how it blends over the artwork. */
+  texture?: { uri: string; blend: BlendMode; maxOpacity: number }
+}
+
+const TEXTURE_PRESETS: Record<TextureEffectType, EffectPreset> = {
+  vintage:        { label: 'Vintage',      kind: 'grade', defaultIntensity: 60, grade: t => `sepia(${0.5 * t}) saturate(${1 - 0.3 * t}) contrast(${1 - 0.08 * t}) brightness(${1 + 0.05 * t})` },
+  faded:          { label: 'Faded',        kind: 'grade', defaultIntensity: 55, grade: t => `saturate(${1 - 0.45 * t}) contrast(${1 - 0.22 * t}) brightness(${1 + 0.1 * t}) opacity(${1 - 0.18 * t})` },
+  'washed-print': { label: 'Washed Print', kind: 'grade', defaultIntensity: 55, grade: t => `saturate(${1 - 0.6 * t}) contrast(${1 - 0.3 * t}) brightness(${1 + 0.08 * t})` },
+  distressed:     { label: 'Distressed',   kind: 'texture', defaultIntensity: 60, texture: { uri: noiseDataUri(0.6, 3, 7),   blend: 'overlay',  maxOpacity: 0.9 } },
+  grunge:         { label: 'Grunge',       kind: 'texture', defaultIntensity: 55, texture: { uri: noiseDataUri(0.32, 4, 21), blend: 'multiply', maxOpacity: 0.6 } },
+  'crack-print':  { label: 'Crack Print',  kind: 'texture', defaultIntensity: 60, texture: { uri: noiseDataUri(0.9, 2, 41),  blend: 'screen',   maxOpacity: 0.8 } },
+}
+
+const TEXTURE_EFFECT_ORDER: TextureEffectType[] = ['vintage', 'faded', 'washed-print', 'distressed', 'grunge', 'crack-print']
+
+// Build the combined CSS colour-grade filter from a layer's enabled grade effects.
+function gradeFilterFor(effects: TextureEffect[] | undefined): string {
+  if (!effects?.length) return ''
+  return effects
+    .filter(e => e.enabled && TEXTURE_PRESETS[e.type].kind === 'grade')
+    .map(e => TEXTURE_PRESETS[e.type].grade!(Math.max(0, Math.min(1, e.intensity / 100))))
+    .join(' ')
+}
 
 interface Props {
   state: AppState
@@ -661,6 +719,29 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     if (!selectedId) return
     snapshot()
     setLayers(ls => ls.map(l => l.id === selectedId ? { ...l, ...updates } as LogoLayer : l))
+  }
+
+  // ── Texture effects (non-destructive, stackable) ──────────────────────────
+  const effectOf = (l: ImageLayer, type: TextureEffectType) => (l.effects ?? []).find(e => e.type === type)
+
+  const toggleEffect = (type: TextureEffectType) => {
+    if (!selected || selected.type !== 'image') return
+    const cur = (selected as ImageLayer).effects ?? []
+    const found = cur.find(e => e.type === type)
+    const next = found
+      ? cur.map(e => e.type === type ? { ...e, enabled: !e.enabled } : e)
+      : [...cur, { type, enabled: true, intensity: TEXTURE_PRESETS[type].defaultIntensity }]
+    updateSelected({ effects: next })
+  }
+
+  const setEffectIntensity = (type: TextureEffectType, intensity: number) => {
+    if (!selected || selected.type !== 'image') return
+    const cur = (selected as ImageLayer).effects ?? []
+    const found = cur.find(e => e.type === type)
+    const next = found
+      ? cur.map(e => e.type === type ? { ...e, intensity, enabled: true } : e)
+      : [...cur, { type, enabled: true, intensity }]
+    updateSelected({ effects: next })
   }
 
   // Set arch amount and grow/shrink the layer box so the curved text stays fully
@@ -1257,6 +1338,40 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
     </div>
   )
 
+  // Texture Effects — stackable, non-destructive, intensity-controlled.
+  const effectsCard = (sel: ImageLayer) => (
+    <div className="card space-y-2">
+      <p className="text-xs font-medium text-gray-600">Texture Effects</p>
+      <p className="text-[10px] text-gray-400 leading-tight">Vintage, distressed &amp; worn-print looks for collegiate / streetwear graphics. Stackable and non-destructive — toggle off anytime to restore the clean artwork.</p>
+      <div className="space-y-1.5 pt-0.5">
+        {TEXTURE_EFFECT_ORDER.map(type => {
+          const fx = effectOf(sel, type)
+          const on = !!fx?.enabled
+          const intensity = fx?.intensity ?? TEXTURE_PRESETS[type].defaultIntensity
+          return (
+            <div key={type} className="rounded-lg border border-slate-200 px-2.5 py-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-700">{TEXTURE_PRESETS[type].label}</span>
+                <button onClick={() => toggleEffect(type)} aria-pressed={on} title={on ? 'Turn off' : 'Turn on'}
+                  className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${on ? 'bg-grace-ink' : 'bg-slate-300'}`}>
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${on ? 'left-[18px]' : 'left-0.5'}`}/>
+                </button>
+              </div>
+              {on && (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <input type="range" min={0} max={100} value={intensity}
+                    onChange={e => setEffectIntensity(type, parseInt(e.target.value))}
+                    className="flex-1 accent-brand-green"/>
+                  <span className="text-[10px] text-gray-500 w-8 text-right tabular-nums">{intensity}%</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   const layerControlsCard = () => (
     <div className="card">
       <p className="text-xs font-medium text-gray-600 mb-2">Layer Controls</p>
@@ -1360,7 +1475,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                 )}
               </div>
               {selected?.type === 'image' ? (
-                <>{transformCard(selected)}{blendCard(selected as ImageLayer)}{layerControlsCard()}</>
+                <>{transformCard(selected)}{blendCard(selected as ImageLayer)}{effectsCard(selected as ImageLayer)}{layerControlsCard()}</>
               ) : (
                 <div className="card"><div className="text-center py-6">
                   <Layers size={22} className="mx-auto text-gray-300 mb-2"/>
@@ -1734,6 +1849,10 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                 const fabricStrength = img?.fabricStrength ?? 0
                 const showFabric = !!img && previewMode && !!garmentTextureSrc && fabricStrength > 0
                 const fabricOpacity = Math.min(0.8, (fabricStrength / 100) * 0.8)
+                // Non-destructive texture effects: colour grades become a CSS filter on the
+                // artwork; distress textures become masked noise overlays on top of it.
+                const gradeFilter = img ? gradeFilterFor(img.effects) : ''
+                const textureFx = img ? (img.effects ?? []).filter(e => e.enabled && TEXTURE_PRESETS[e.type].kind === 'texture') : []
                 return (
                 <div key={layer.id}
                   onMouseDown={e => handlePointerDown(e, layer.id)}
@@ -1750,7 +1869,25 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                     )
                   ) : (
                     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                      <img src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl} alt="artwork" className="w-full h-full object-contain" draggable={false} style={{ display: 'block', pointerEvents: 'none' }}/>
+                      <img src={(layer.tintColor ? tintedDataUrls[`${layer.id}_${layer.tintColor}`] : undefined) ?? layer.dataUrl} alt="artwork" className="w-full h-full object-contain" draggable={false} style={{ display: 'block', pointerEvents: 'none', filter: gradeFilter || undefined }}/>
+                      {textureFx.map(fx => {
+                        const tx = TEXTURE_PRESETS[fx.type].texture!
+                        return (
+                          <div key={fx.type} aria-hidden style={{
+                            position: 'absolute', inset: 0, pointerEvents: 'none',
+                            backgroundImage: tx.uri,
+                            backgroundRepeat: 'repeat',
+                            backgroundSize: '180px 180px',
+                            WebkitMaskImage: `url("${(layer as ImageLayer).dataUrl}")`,
+                            maskImage: `url("${(layer as ImageLayer).dataUrl}")`,
+                            WebkitMaskSize: 'contain', maskSize: 'contain',
+                            WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                            WebkitMaskPosition: 'center', maskPosition: 'center',
+                            mixBlendMode: tx.blend as React.CSSProperties['mixBlendMode'],
+                            opacity: Math.max(0, Math.min(1, fx.intensity / 100)) * tx.maxOpacity,
+                          } as React.CSSProperties}/>
+                        )
+                      })}
                       {showFabric && (
                         <div aria-hidden style={{
                           position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -1924,6 +2061,7 @@ export default function Phase3Editor({ state, onComplete, onSetGarment, onLogoUp
                         onChange={e => updateSelected({ opacity: parseInt(e.target.value) })}
                         className="w-full accent-brand-green"/>
                     </div>
+                    {effectsCard(selected as ImageLayer)}
                   </div>
                 )}
               </div>

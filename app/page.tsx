@@ -18,6 +18,9 @@ import PhaseDesignStudio from '@/components/PhaseDesignStudio'
 import type { TechPackData } from '@/components/Phase6Production'
 import SectionView from '@/components/SectionView'
 import LandingPage from '@/components/LandingPage'
+import UploadProduction from '@/components/UploadProduction'
+import AssistantProvider, { useAssistant } from '@/components/assistant/AssistantProvider'
+import type { AssistantContext } from '@/lib/assistant/types'
 import CreativeDirectionForm from '@/components/CreativeDirectionForm'
 import AIPaywallModal from '@/components/AIPaywallModal'
 import { AICreditsProvider, useAICredits } from '@/lib/aiCreditsContext'
@@ -97,7 +100,7 @@ function App() {
     refreshCredits()
     window.history.replaceState({}, '', window.location.pathname + '?view=studio')
   }
-  const [view, setView] = useState<'landing' | 'studio' | 'creative-direction'>(initialView)
+  const [view, setView] = useState<'landing' | 'studio' | 'creative-direction' | 'upload-production'>(initialView)
   // Track previous user to detect sign-out
   const prevUserRef = useRef<{ id: string } | null>(null)
   const prevViewRef = useRef<'landing' | 'studio'>('landing')
@@ -111,6 +114,28 @@ function App() {
   const isExistingProjectRef = useRef(false)
   const [saveToast, setSaveToast] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Publish context to the GRACE Assistant so it can guide the user on any path.
+  // (UploadProduction enriches this with its prepress report.)
+  const { publish: publishAssistant } = useAssistant()
+  useEffect(() => {
+    const designState = { garment: state.garment?.type, hasLogo: !!state.logo, phase: state.currentPhase }
+    let partial: Partial<AssistantContext>
+    if (view === 'landing') partial = { pathType: 'landing' }
+    else if (view === 'creative-direction') partial = { pathType: 'creative' }
+    else if (view === 'upload-production') partial = { pathType: 'upload' }
+    else if (section === 'design') {
+      const p = state.currentPhase
+      partial = p <= 1 ? { pathType: 'studio', currentStage: 'route', designState }
+        : p === 2 ? { pathType: 'studio', currentStage: 'design', designState }
+        : p === 3 ? { pathType: 'studio', currentStage: 'preview', designState }
+        : p === 4 ? { pathType: 'techpack', currentStage: 'techpack', designState, missingItems: techPack ? [] : undefined }
+        : { pathType: 'checkout', currentStage: 'production', designState }
+    }
+    else if (section === 'orders') partial = { pathType: 'orders' }
+    else partial = { pathType: 'studio', currentStage: section, designState }
+    publishAssistant({ ...partial, projectId: projectIdRef.current })
+  }, [view, section, state.currentPhase, state.garment?.type, state.logo?.dataUrl, techPack, publishAssistant])
 
   // Resolve the user id from the live Supabase session, falling back to the
   // context user. Both save paths use this so a project can never be written
@@ -264,6 +289,16 @@ function App() {
     return <CreativeDirectionForm onBack={() => setView(prevViewRef.current)} />
   }
 
+  // Upload Production Files — AI prepress / production-readiness assistant
+  if (view === 'upload-production') {
+    return (
+      <UploadProduction
+        onBack={() => setView('landing')}
+        onContinue={() => { setSection('dashboard'); setView('studio') }}
+      />
+    )
+  }
+
   // Landing page
   if (view === 'landing') {
     return (
@@ -271,6 +306,7 @@ function App() {
         <LandingPage
           onSelfService={() => setView('studio')}
           onCreativeDirection={() => { prevViewRef.current = 'landing'; setView('creative-direction') }}
+          onUploadFiles={() => setView('upload-production')}
           onSignIn={() => { setAuthInitialMode('signin'); setAuthOpen(true) }}
           onSignUp={() => { setAuthInitialMode('signup'); setAuthOpen(true) }}
         />
@@ -399,7 +435,9 @@ export default function Home() {
   return (
     <AuthProvider>
       <AICreditsProvider>
-        <App />
+        <AssistantProvider>
+          <App />
+        </AssistantProvider>
       </AICreditsProvider>
     </AuthProvider>
   )
