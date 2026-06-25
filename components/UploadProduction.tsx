@@ -9,6 +9,7 @@ import { analyzeFiles } from '@/lib/prepress/analyze'
 import { runFix } from '@/lib/prepress/fixes'
 import { STATUS_WEIGHT } from '@/lib/prepress/checks'
 import { CATEGORY_LABEL, type CheckResult, type PrepressReport, type Severity, type UploadedFile } from '@/lib/prepress/types'
+import { useAssistant } from '@/components/assistant/AssistantProvider'
 
 interface Props {
   onBack: () => void
@@ -39,6 +40,18 @@ export default function UploadProduction({ onBack, onContinue }: Props) {
     const t = setInterval(() => setStepIdx(i => Math.min(i + 1, ANALYZING_STEPS.length - 1)), 650)
     return () => clearInterval(t)
   }, [phase])
+
+  // Feed the prepress report to the GRACE Assistant so it can advise on it.
+  const { publish } = useAssistant()
+  useEffect(() => {
+    publish({
+      pathType: 'upload',
+      currentStage: phase,
+      prepressReport: report,
+      uploadedFiles: report?.files.map(f => ({ name: f.name, kind: f.kind })),
+      missingItems: report ? report.results.filter(r => r.status === 'critical' || r.status === 'warning').map(r => r.label) : undefined,
+    })
+  }, [phase, report, publish])
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     const files = Array.from(fileList)
