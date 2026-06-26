@@ -334,6 +334,7 @@ function App() {
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
         onExpertHelp={() => { prevViewRef.current = 'studio'; setView('creative-direction') }}
+        onSignIn={() => { setAuthInitialMode('signin'); setAuthOpen(true) }}
         currentPhase={state.currentPhase}
         onPhaseChange={goToPhase}
         state={state}
@@ -427,6 +428,14 @@ function App() {
           )}
         </main>
       </div>
+
+      {/* Sign-in from inside the studio (guests can keep working or log in). */}
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onSuccess={() => setAuthOpen(false)}
+        initialMode={authInitialMode}
+      />
     </div>
   )
 }
