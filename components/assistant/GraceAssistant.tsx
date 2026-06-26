@@ -5,6 +5,7 @@ import { Sparkles, X, ArrowUp, Headset } from 'lucide-react'
 import { useAssistant } from './AssistantProvider'
 import { greet, reply } from '@/lib/assistant/advisor'
 import { runAction } from '@/lib/assistant/actions'
+import { buildGrounding } from '@/lib/assistant/grounding'
 import { downloadTextFile } from '@/lib/prepress/sizeSpec'
 import type { AssistantMessage, QuickAction } from '@/lib/assistant/types'
 
@@ -21,6 +22,7 @@ export default function GraceAssistant() {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<AssistantMessage[]>([])
   const [draft, setDraft] = useState('')
+  const [typing, setTyping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Re-greet whenever the meaningful context changes (path, stage, prepress result).
@@ -36,15 +38,42 @@ export default function GraceAssistant() {
 
   function push(...m: AssistantMessage[]) { setMessages(prev => [...prev, ...m]) }
 
+  // Ask the real, grounded AI. Falls back to the deterministic advisor if the
+  // route is unavailable, so the assistant always responds. `display` lets a
+  // quick-action button show its label while sending its underlying question.
+  async function ask(query: string, display = query) {
+    const clean = query.trim()
+    if (!clean || typing) return
+    push(userMsg(display))
+    setTyping(true)
+    const history = messages.slice(-8).map(m => ({ role: m.role, text: m.text }))
+    try {
+      const res = await fetch('/api/assistant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: clean, history, grounding: buildGrounding(context) }),
+      })
+      const json = await res.json().catch(() => ({ ok: false }))
+      if (json?.ok && json.text) {
+        // AI prose, grounded in real data, plus real contextual action buttons.
+        push({ id: `a${++uid}`, role: 'assistant', text: json.text, actions: reply(context, clean).actions })
+      } else {
+        push(reply(context, clean)) // graceful degrade
+      }
+    } catch {
+      push(reply(context, clean))
+    } finally {
+      setTyping(false)
+    }
+  }
+
   function send(text: string) {
-    const clean = text.trim()
-    if (!clean) return
+    if (!text.trim()) return
     setDraft('')
-    push(userMsg(clean), reply(context, clean))
+    ask(text)
   }
 
   function handleAction(a: QuickAction) {
-    if (a.say) { push(userMsg(a.label), reply(context, a.say)); return }
+    if (a.say) { ask(a.say, a.label); return }
     if (a.run) {
       push(userMsg(a.label))
       if (onAction?.(a.run)) { push({ id: `a${++uid}`, role: 'assistant', text: 'On it — taking you there. I’ll be right here if you need anything.' }); return }
@@ -115,6 +144,14 @@ export default function GraceAssistant() {
                 )}
               </div>
             ))}
+            {typing && (
+              <div className="flex items-center gap-1.5 text-grace-stone">
+                <span className="w-1.5 h-1.5 rounded-full bg-grace-stone/60 animate-bounce" style={{ animationDelay: '0ms' }}/>
+                <span className="w-1.5 h-1.5 rounded-full bg-grace-stone/60 animate-bounce" style={{ animationDelay: '120ms' }}/>
+                <span className="w-1.5 h-1.5 rounded-full bg-grace-stone/60 animate-bounce" style={{ animationDelay: '240ms' }}/>
+                <span className="text-[11px] ml-1">GRACE is thinking…</span>
+              </div>
+            )}
           </div>
 
           {/* Composer */}
@@ -128,7 +165,7 @@ export default function GraceAssistant() {
                 placeholder="Ask GRACE anything about your project…"
                 className="flex-1 bg-transparent resize-none text-[13px] text-grace-ink placeholder:text-grace-stone/60 focus:outline-none max-h-24"
               />
-              <button onClick={() => send(draft)} disabled={!draft.trim()}
+              <button onClick={() => send(draft)} disabled={!draft.trim() || typing}
                 className="w-7 h-7 rounded-lg bg-grace-ink text-white flex items-center justify-center disabled:opacity-30 hover:bg-zinc-800 transition-colors shrink-0"
                 aria-label="Send">
                 <ArrowUp size={15}/>
