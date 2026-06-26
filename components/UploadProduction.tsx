@@ -327,6 +327,8 @@ function FileRow({ file }: { file: UploadedFile }) {
   const kindIcon = file.kind === 'raster' ? <ImageIcon size={14}/> : file.kind === 'document' ? <FileText size={14}/> : file.kind === 'vector' ? <Sparkles size={14}/> : <Box size={14}/>
   const i = file.inspection
   // Real, parsed facts — shown so the inspection is visibly genuine.
+  const c = file.classification
+  const viewsSeen = c ? (['front', 'back', 'side'] as const).filter(v => c.views[v]) : []
   const facts = [
     file.width ? `${file.width}×${file.height}px` : null,
     i?.dpi ? `${i.dpi}dpi` : null,
@@ -335,6 +337,8 @@ function FileRow({ file }: { file: UploadedFile }) {
     i?.pageSizeIn ? `${i.pageSizeIn.w}×${i.pageSizeIn.h}in` : null,
     i?.hasLiveText ? 'live text' : null,
     i?.isSizeChart ? 'size chart' : null,
+    c?.isGarmentMockup ? 'garment mockup' : null,
+    viewsSeen.length ? viewsSeen.join('+') : null,
   ].filter(Boolean)
   return (
     <div className="flex items-center gap-3 rounded-xl border border-grace-border bg-white px-3 py-2.5">
