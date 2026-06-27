@@ -4,13 +4,15 @@ import { createClient } from '@supabase/supabase-js'
 import { transitionStage } from '@/lib/workflowEngine'
 import type { ProductionStage } from '@/types/productionStages'
 import {
-  ACTIVATION_FEE_CENTS,
   EXTRA_LOGO_FEE_CENTS,
   productionPriceCents,
   clampQuantity,
+  applyTierDiscount,
+  setupFeeCentsFor,
 } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
-import { addCredits, applyActivationUnlock } from '@/lib/aiCredits'
+import { addCredits, applyActivationUnlock, setUserSubscription, userIdForCustomer } from '@/lib/aiCredits'
+import { isValidTier, type Tier } from '@/lib/tiers'
 
 // The webhook runs as trusted server code with no user session. It MUST use the
 // service-role key to bypass row-level security — the anon key would be blocked
@@ -52,6 +54,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 })
   }
 
+  // Subscription lifecycle (Designer / Brand memberships).
+  if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+    await handleSubscriptionChange(event.data.object as Stripe.Subscription)
+    return NextResponse.json({ received: true })
+  }
+
   if (event.type !== 'checkout.session.completed') {
     return NextResponse.json({ received: true })
   }
@@ -69,7 +77,9 @@ export async function POST(req: NextRequest) {
   const { payment_type } = meta
   console.log('[stripe-webhook] session', fullSession.id, 'payment_type:', payment_type, 'metadata keys:', Object.keys(meta))
 
-  if (payment_type === 'credit_purchase') {
+  if (payment_type === 'subscription') {
+    await handleSubscriptionCheckout(fullSession, meta)
+  } else if (payment_type === 'credit_purchase') {
     await handleCreditPurchase(session, meta)
   } else if (payment_type === 'sample') {
     await handleSamplePayment(session, meta)
@@ -84,6 +94,41 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ received: true })
+}
+
+// ── Subscriptions ──────────────────────────────────────────────────────────
+function tierForPrice(priceId?: string | null): Tier | null {
+  if (!priceId) return null
+  if (priceId === process.env.STRIPE_DESIGNER_PRICE_ID) return 'designer'
+  if (priceId === process.env.STRIPE_BRAND_PRICE_ID) return 'brand'
+  return null
+}
+
+async function handleSubscriptionCheckout(
+  session: Stripe.Checkout.Session,
+  meta: Record<string, string>,
+) {
+  const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id ?? null
+  const userId = meta.user_id || (customerId ? await userIdForCustomer(customerId) : null)
+  const tier: Tier = isValidTier(meta.tier) ? meta.tier : 'free'
+  const subscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id ?? null
+  await setUserSubscription({ userId, stripeCustomerId: customerId, tier, subscriptionId, status: 'active' })
+  console.log('[stripe-webhook] subscription activated:', tier, 'for user', userId)
+}
+
+async function handleSubscriptionChange(sub: Stripe.Subscription) {
+  const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id
+  const userId = await userIdForCustomer(customerId)
+  const mapped = tierForPrice(sub.items.data[0]?.price?.id)
+  const active = sub.status === 'active' || sub.status === 'trialing'
+  const tier: Tier = active && mapped ? mapped : 'free'
+  const periodEnd = (sub as { current_period_end?: number }).current_period_end
+  await setUserSubscription({
+    userId, stripeCustomerId: customerId, tier,
+    subscriptionId: sub.id, status: sub.status,
+    currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
+  })
+  console.log('[stripe-webhook] subscription', sub.status, '→ tier', tier, 'for user', userId)
 }
 
 async function handleCreditPurchase(
@@ -111,7 +156,9 @@ async function handleSamplePayment(
 
   const { design_order_id, user_id, garment_type, is_uniform, is_reversible, extra_logos, size_breakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
-  const garmentPrice = productionPriceCents(garment_type, is_uniform === 'true', is_reversible === 'true')
+  const tier: Tier = isValidTier(meta.tier) ? meta.tier : 'free'
+  // Store tier-discounted unit prices so later deposit/final steps stay consistent.
+  const garmentPrice = applyTierDiscount(productionPriceCents(garment_type, is_uniform === 'true', is_reversible === 'true'), tier)
   const breakdown = normalizeBreakdown(size_breakdown ? JSON.parse(size_breakdown) : null)
   const sampleQty = Math.max(1, sumBreakdown(breakdown))
 
@@ -134,12 +181,12 @@ async function handleSamplePayment(
     sample_fee_cents: session.amount_total,
     sample_stripe_session_id: session.id,
     sample_paid_at: new Date().toISOString(),
-    activation_fee_cents: ACTIVATION_FEE_CENTS,
+    activation_fee_cents: setupFeeCentsFor(tier),
     garment_price_cents: garmentPrice,
     production_quantity: sampleQty,
     size_breakdown: breakdown,
     extra_logo_count: extraLogosCount,
-    extra_logo_fee_cents: extraLogosCount * EXTRA_LOGO_FEE_CENTS,
+    extra_logo_fee_cents: applyTierDiscount(extraLogosCount * EXTRA_LOGO_FEE_CENTS, tier),
     tech_pack_snapshot: techPack ?? {},
     status: 'paid',
   })
@@ -170,7 +217,8 @@ async function handleDirectDeposit(
 
   const { design_order_id, user_id, garment_type, is_uniform, is_reversible, extra_logos, quantity, size_breakdown: rawBreakdown } = meta
   const extraLogosCount = parseInt(extra_logos ?? '0', 10) || 0
-  const garmentPrice = productionPriceCents(garment_type, is_uniform === 'true', is_reversible === 'true')
+  const tier: Tier = isValidTier(meta.tier) ? meta.tier : 'free'
+  const garmentPrice = applyTierDiscount(productionPriceCents(garment_type, is_uniform === 'true', is_reversible === 'true'), tier)
   const breakdown = normalizeBreakdown(rawBreakdown ? JSON.parse(rawBreakdown) : null)
   const breakdownTotal = sumBreakdown(breakdown)
   const qty = clampQuantity(breakdownTotal > 0 ? breakdownTotal : (quantity ?? '1'))
@@ -199,7 +247,7 @@ async function handleDirectDeposit(
     production_quantity: qty,
     size_breakdown: breakdown,
     extra_logo_count: extraLogosCount,
-    extra_logo_fee_cents: extraLogosCount * EXTRA_LOGO_FEE_CENTS,
+    extra_logo_fee_cents: applyTierDiscount(extraLogosCount * EXTRA_LOGO_FEE_CENTS, tier),
     tech_pack_snapshot: techPack ?? {},
     status: 'in_production',
     paid_at: new Date().toISOString(),

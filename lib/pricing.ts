@@ -11,7 +11,11 @@
  *   • Each additional logo placement is a flat per-piece fee.
  */
 
-// One-time activation fee charged per production order.
+import type { Tier } from './tiers'
+import { tierPerks } from './tiers'
+
+// One-time setup fee charged per production order (Free tier only — waived for
+// Designer/Brand subscribers). Historically called the "activation fee".
 export const ACTIVATION_FEE_CENTS = 2_500 // $25.00
 
 // Flat fee per additional logo placement (beyond the first, which is included).
@@ -74,6 +78,27 @@ export function bulkSubtotalCents(
 ): number {
   const qty = clampQuantity(quantity)
   return (unitPriceCents + extraLogoFeeCents) * qty
+}
+
+// ─── Tier-aware adjustments ─────────────────────────────────────────────────
+// The setup fee is waived for subscribers; Brand gets a flat % off the
+// production order. Per-piece prices, 2× sample, $4/extra-logo and the 50/50
+// split are unchanged — these helpers just apply the membership layer on top.
+
+/** The setup fee actually due for a tier ($25 for Free, $0 for subscribers). */
+export function setupFeeCentsFor(tier: Tier): number {
+  return tierPerks(tier).setupWaived ? 0 : ACTIVATION_FEE_CENTS
+}
+
+/** Production discount fraction for a tier (e.g. 0.05 for Brand). */
+export function productionDiscount(tier: Tier): number {
+  return tierPerks(tier).productionDiscountPct / 100
+}
+
+/** Apply a tier's production discount to a cents amount (rounded). */
+export function applyTierDiscount(cents: number, tier: Tier): number {
+  const d = productionDiscount(tier)
+  return d > 0 ? Math.round(cents * (1 - d)) : cents
 }
 
 /** 50% deposit (cents), rounded to the nearest cent. */

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getRouteUser } from '@/lib/supabase-server'
-import { ACTIVATION_FEE_CENTS, EXTRA_LOGO_FEE_CENTS, samplePriceCents } from '@/lib/pricing'
+import { EXTRA_LOGO_FEE_CENTS, samplePriceCents, setupFeeCentsFor, applyTierDiscount } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
-import { getActivationOffset } from '@/lib/aiCredits'
+import { getUserTier } from '@/lib/aiCredits'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -35,14 +35,15 @@ export async function POST(req: NextRequest) {
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
   const extraLogosCount = Number(extra_logos) || 0
-  const sampleFeeCents = samplePriceCents(garment_type, !!is_uniform, !!is_reversible)
 
   const breakdown = normalizeBreakdown(size_breakdown)
   const sampleCount = Math.max(1, sumBreakdown(breakdown))
 
-  // Apply any prior AI credit spend toward the $25 activation fee
-  const { offsetCents } = await getActivationOffset(user.id)
-  const activationDueCents = Math.max(0, ACTIVATION_FEE_CENTS - offsetCents)
+  // Membership tier: subscribers' setup fee is waived; Brand gets 5% off production.
+  const tier = await getUserTier(user.id)
+  const activationDueCents = setupFeeCentsFor(tier)
+  const sampleUnit = applyTierDiscount(samplePriceCents(garment_type, !!is_uniform, !!is_reversible), tier)
+  const extraLogoUnit = applyTierDiscount(EXTRA_LOGO_FEE_CENTS, tier)
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = []
 
@@ -51,10 +52,8 @@ export async function POST(req: NextRequest) {
       price_data: {
         currency: 'usd',
         product_data: {
-          name: 'GRACE Order Activation Fee',
-          description: offsetCents > 0
-            ? `$25 activation · $${(offsetCents / 100).toFixed(2)} AI credit applied`
-            : 'One-time activation per production order',
+          name: 'GRACE Order Setup Fee',
+          description: 'One-time setup per production order (waived on Designer & Brand plans)',
         },
         unit_amount: activationDueCents,
       },
@@ -69,7 +68,7 @@ export async function POST(req: NextRequest) {
         name: `${garment_type} Sample`,
         description: style_name ? `Style: ${style_name}` : 'Sample production',
       },
-      unit_amount: sampleFeeCents,
+      unit_amount: sampleUnit,
     },
     quantity: sampleCount,
   })
@@ -82,7 +81,7 @@ export async function POST(req: NextRequest) {
           name: 'Additional Logo Placement',
           description: `${extraLogosCount} additional logo location${extraLogosCount > 1 ? 's' : ''} at $4 each`,
         },
-        unit_amount: EXTRA_LOGO_FEE_CENTS,
+        unit_amount: extraLogoUnit,
       },
       quantity: extraLogosCount * sampleCount,
     })
@@ -102,7 +101,7 @@ export async function POST(req: NextRequest) {
       extra_logos: String(extraLogosCount),
       size_breakdown: JSON.stringify(breakdown),
       notes: notes ?? '',
-      ai_spend_applied_cents: String(offsetCents),
+      tier,
     },
     success_url: `${origin}/track?payment=sample_success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/track?payment=cancelled`,

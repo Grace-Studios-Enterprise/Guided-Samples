@@ -8,9 +8,11 @@ import {
   clampQuantity,
   bulkSubtotalCents,
   depositCents,
+  setupFeeCentsFor,
+  applyTierDiscount,
 } from '@/lib/pricing'
 import { normalizeBreakdown, sumBreakdown } from '@/lib/sizes'
-import { getActivationOffset } from '@/lib/aiCredits'
+import { getUserTier } from '@/lib/aiCredits'
 
 export async function POST(req: NextRequest) {
   const secretKey = process.env.STRIPE_SECRET_KEY
@@ -43,12 +45,11 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     )
   }
-  const subtotal = bulkSubtotalCents(garmentPrice, extraLogoFee, qty)
+  // Membership tier: subscribers' setup fee is waived; Brand gets 5% off production.
+  const tier = await getUserTier(user.id)
+  const subtotal = applyTierDiscount(bulkSubtotalCents(garmentPrice, extraLogoFee, qty), tier)
   const depositAmount = depositCents(subtotal)
-
-  // Apply any prior AI credit spend toward the $25 activation fee
-  const { offsetCents } = await getActivationOffset(user.id)
-  const activationDueCents = Math.max(0, 2500 - offsetCents) // $25 = 2500 cents
+  const activationDueCents = setupFeeCentsFor(tier)
 
   const stripe = new Stripe(secretKey)
   const origin = req.headers.get('origin') ?? 'http://localhost:3000'
@@ -60,10 +61,8 @@ export async function POST(req: NextRequest) {
       price_data: {
         currency: 'usd',
         product_data: {
-          name: 'GRACE Order Activation Fee',
-          description: offsetCents > 0
-            ? `$25 activation · $${(offsetCents / 100).toFixed(2)} AI credit applied`
-            : 'One-time activation per production order',
+          name: 'GRACE Order Setup Fee',
+          description: 'One-time setup per production order (waived on Designer & Brand plans)',
         },
         unit_amount: activationDueCents,
       },
@@ -100,7 +99,7 @@ export async function POST(req: NextRequest) {
       quantity: String(qty),
       size_breakdown: JSON.stringify(breakdown),
       notes: notes ?? '',
-      ai_spend_applied_cents: String(offsetCents),
+      tier,
     },
     success_url: `${origin}/track?payment=direct_success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/track`,

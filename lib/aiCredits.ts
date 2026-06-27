@@ -5,25 +5,19 @@
 
 import { createClient } from '@supabase/supabase-js'
 import type { NextRequest } from 'next/server'
+import { isValidTier, tierPerks, type Tier } from './tiers'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/** Total free generations granted to every new user (3 logo + 3 garment + 3 edit). */
+/** Free generations granted to every Free-tier user before they must subscribe. */
 export const FREE_GENERATION_LIMIT = 3
-
-export const CREDIT_PACKS = [
-  { id: 'pack_25',  generations: 25,  price_cents: 900,  label: '25 Generations', price_label: '$9' },
-  { id: 'pack_60',  generations: 60,  price_cents: 1900, label: '60 Generations', price_label: '$19' },
-  { id: 'pack_150', generations: 150, price_cents: 3900, label: '150 Generations', price_label: '$39' },
-] as const
-
-export type CreditPack = typeof CREDIT_PACKS[number]
 
 export type UserCredits = {
   user_id: string
   free_generations_used: number
   ai_credit_balance: number
   ai_spend_cents: number
+  tier?: Tier
 }
 
 // ── Service-role client ────────────────────────────────────────────────────────
@@ -83,15 +77,6 @@ export async function checkAndConsume(
   const sb = serviceClient()
   if (!sb) return { allowed: true } // DB unavailable — don't block
 
-  // ── Project unlimited ────────────────────────────────────────────────────
-  if (projectId) {
-    const unlimited = await projectHasUnlimited(projectId)
-    if (unlimited) {
-      await logTransaction(sb, userId, 'credit_usage', 0, 0, 0, projectId, 'unlimited_project')
-      return { allowed: true }
-    }
-  }
-
   // ── Get or initialise credits row ────────────────────────────────────────
   let credits = await fetchCredits(userId)
   if (!credits) {
@@ -102,6 +87,22 @@ export async function checkAndConsume(
       ai_spend_cents: 0,
     })
     credits = { user_id: userId, free_generations_used: 0, ai_credit_balance: 0, ai_spend_cents: 0 }
+  }
+
+  // ── Subscriber (Designer / Brand) → unlimited AI ──────────────────────────
+  const tier: Tier = isValidTier(credits.tier) ? credits.tier : 'free'
+  if (tierPerks(tier).unlimitedAI) {
+    await logTransaction(sb, userId, 'credit_usage', 0, 0, 0, projectId, `unlimited_${tier}`)
+    return { allowed: true }
+  }
+
+  // ── Project unlimited (legacy: a paid production order on this project) ────
+  if (projectId) {
+    const unlimited = await projectHasUnlimited(projectId)
+    if (unlimited) {
+      await logTransaction(sb, userId, 'credit_usage', 0, 0, 0, projectId, 'unlimited_project')
+      return { allowed: true }
+    }
   }
 
   // ── Free generation ──────────────────────────────────────────────────────
@@ -165,24 +166,64 @@ export async function addCredits(
   await logTransaction(sb, userId, 'credit_purchase', amountCents, creditsAdded, 0, undefined, stripeSessionId)
 }
 
-/**
- * Compute the activation fee discount from prior AI credit spend.
- * Up to $25 of previous credit purchases offsets the activation fee.
- * Any spend above $25 stays as usable AI credits.
- */
-export async function getActivationOffset(userId: string): Promise<{
-  offsetCents: number
-  message?: string
-}> {
-  const credits = await fetchCredits(userId)
-  if (!credits || credits.ai_spend_cents === 0) {
-    return { offsetCents: 0 }
+/** The user's current membership tier (defaults to free). */
+export async function getUserTier(userId: string): Promise<Tier> {
+  const c = await fetchCredits(userId)
+  return isValidTier(c?.tier) ? (c!.tier as Tier) : 'free'
+}
+
+/** Persist the Stripe customer id on a user's credits row (at subscribe time). */
+export async function linkStripeCustomer(userId: string, stripeCustomerId: string): Promise<void> {
+  const sb = serviceClient()
+  if (!sb) return
+  const existing = await fetchCredits(userId)
+  if (!existing) {
+    await sb.from('user_credits').insert({
+      user_id: userId, free_generations_used: 0, ai_credit_balance: 0, ai_spend_cents: 0,
+      stripe_customer_id: stripeCustomerId,
+    })
+  } else {
+    await sb.from('user_credits').update({ stripe_customer_id: stripeCustomerId, updated_at: new Date().toISOString() }).eq('user_id', userId)
   }
-  const ACTIVATION = 2500
-  const offsetCents = Math.min(ACTIVATION, credits.ai_spend_cents)
-  return {
-    offsetCents,
-    message: `Your previous AI purchases have been applied toward activation.`,
+}
+
+/** Find the user linked to a Stripe customer (subscription webhooks). */
+export async function userIdForCustomer(stripeCustomerId: string): Promise<string | null> {
+  const sb = serviceClient()
+  if (!sb) return null
+  const { data } = await sb.from('user_credits').select('user_id').eq('stripe_customer_id', stripeCustomerId).single()
+  return (data?.user_id as string) ?? null
+}
+
+/** Set a user's tier + subscription linkage (called by the subscription webhook). */
+export async function setUserSubscription(opts: {
+  userId?: string | null
+  stripeCustomerId?: string | null
+  tier: Tier
+  subscriptionId?: string | null
+  status?: string | null
+  currentPeriodEnd?: string | null
+}): Promise<void> {
+  const sb = serviceClient()
+  if (!sb) return
+  const patch: Record<string, unknown> = {
+    tier: opts.tier,
+    stripe_subscription_id: opts.subscriptionId ?? null,
+    subscription_status: opts.status ?? null,
+    subscription_current_period_end: opts.currentPeriodEnd ?? null,
+    updated_at: new Date().toISOString(),
+  }
+  if (opts.stripeCustomerId) patch.stripe_customer_id = opts.stripeCustomerId
+
+  if (opts.userId) {
+    const existing = await fetchCredits(opts.userId)
+    if (!existing) {
+      await sb.from('user_credits').insert({ user_id: opts.userId, free_generations_used: 0, ai_credit_balance: 0, ai_spend_cents: 0, ...patch })
+    } else {
+      await sb.from('user_credits').update(patch).eq('user_id', opts.userId)
+    }
+  } else if (opts.stripeCustomerId) {
+    await sb.from('user_credits').update(patch).eq('stripe_customer_id', opts.stripeCustomerId)
   }
 }
 

@@ -7,6 +7,8 @@ import {
 import { AppState } from '@/app/page'
 import { useAuth } from '@/lib/auth'
 import { useAICredits } from '@/lib/aiCreditsContext'
+import { createClient } from '@/lib/supabase'
+import { tierPerks, type Tier } from '@/lib/tiers'
 import { listAllUserAssets } from '@/lib/projects'
 import SizingStudio from '@/components/sizing/SizingStudio'
 import TechnicalDrawing from '@/components/TechnicalDrawing'
@@ -349,50 +351,81 @@ function SettingsView() {
   )
 }
 
-// AI Credits summary on the Settings page — the persistent place to check
-// balance and top up, complementing the in-flow GenerationCounter/paywall.
+// Membership / Plans card on the Settings page — the persistent place to see
+// the current plan, AI usage, and upgrade.
 function CreditsCard() {
-  const { freeUsed, freeLimit, creditBalance, spendCents, openPaywall, refreshCredits } = useAICredits()
+  const { freeUsed, freeLimit, creditBalance, tier, refreshCredits } = useAICredits()
+  const perks = tierPerks(tier)
   const freeRemaining = Math.max(0, freeLimit - freeUsed)
-  const totalRemaining = freeRemaining + creditBalance
+  const isMember = tier !== 'free'
+  const [busy, setBusy] = useState<Tier | null>(null)
+  const [err, setErr] = useState('')
+
+  async function subscribe(t: Tier) {
+    setErr(''); setBusy(t)
+    try {
+      const sb = createClient()
+      const token = sb ? (await sb.auth.getSession()).data.session?.access_token : null
+      const res = await fetch('/api/checkout/subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ tier: t }),
+      })
+      const json = await res.json()
+      if (res.ok && json.url) { window.location.href = json.url; return }
+      setErr(json.error ?? 'Could not start checkout.')
+    } catch { setErr('Something went wrong. Please try again.') }
+    finally { setBusy(null) }
+  }
 
   return (
     <div className="card mb-4">
-      <div className="flex items-center gap-2 mb-1">
-        <Sparkles size={15} className="text-brand-green"/>
-        <p className="text-sm font-semibold text-gray-900">AI Credits</p>
-      </div>
-      <p className="text-xs text-gray-500 mb-4">
-        Pay-as-you-go — credits never expire. There is no recurring subscription.
-      </p>
-
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="rounded-xl bg-grace-mist p-3">
-          <p className="text-2xl font-bold text-gray-900">{freeRemaining}</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">Free left ({freeUsed}/{freeLimit} used)</p>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <Sparkles size={15} className="text-grace-ink"/>
+          <p className="text-sm font-semibold text-gray-900">Membership</p>
         </div>
-        <div className="rounded-xl bg-grace-mist p-3">
-          <p className="text-2xl font-bold text-gray-900">{creditBalance}</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">Paid credits</p>
-        </div>
-        <div className="rounded-xl bg-grace-mist p-3">
-          <p className="text-2xl font-bold text-gray-900">{totalRemaining}</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">Total generations</p>
-        </div>
+        <span className="text-[11px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-grace-mist text-grace-ink">
+          {perks.label} · ${(perks.monthlyPriceCents / 100).toFixed(0)}/mo
+        </span>
       </div>
 
-      {spendCents > 0 && (
-        <p className="text-[11px] text-gray-500 mb-3">
-          ${(spendCents / 100).toFixed(2)} in credits purchased to date · applies toward your $25 production activation fee.
-        </p>
+      {isMember ? (
+        <>
+          <p className="text-xs text-gray-500 mb-4">
+            Unlimited AI generations. {tier === 'brand'
+              ? 'Setup waived + 5% off production · unlimited size profiles · priority queue · Creative Direction included.'
+              : '$25 production setup fee waived.'}
+            {creditBalance > 0 ? ` You also have ${creditBalance} legacy AI credits.` : ''}
+          </p>
+          {tier === 'designer' && (
+            <button onClick={() => subscribe('brand')} disabled={!!busy} className="btn-secondary text-xs">
+              {busy === 'brand' ? 'Starting…' : 'Upgrade to Brand — $79/mo'}
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500 mb-4">
+            Free plan — {freeRemaining}/{freeLimit} AI generations left{creditBalance > 0 ? ` (+${creditBalance} legacy credits)` : ''}. Subscribe for unlimited AI.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+            <button onClick={() => subscribe('designer')} disabled={!!busy}
+              className="text-left rounded-xl border border-grace-ink bg-grace-ink text-white p-3 hover:bg-zinc-800 transition-colors disabled:opacity-60">
+              <div className="flex items-baseline justify-between"><span className="text-sm font-black">Designer</span><span className="text-sm font-black">$19/mo</span></div>
+              <span className="text-[11px] text-white/80">Unlimited AI · exports · 1 size profile</span>
+            </button>
+            <button onClick={() => subscribe('brand')} disabled={!!busy}
+              className="text-left rounded-xl border border-grace-border p-3 hover:border-grace-ink hover:bg-grace-mist transition-colors disabled:opacity-60">
+              <div className="flex items-baseline justify-between"><span className="text-sm font-black text-grace-ink">Brand</span><span className="text-sm font-black text-grace-ink">$79/mo</span></div>
+              <span className="text-[11px] text-grace-stone">Everything + 5% off production · unlimited profiles</span>
+            </button>
+          </div>
+        </>
       )}
 
-      <div className="flex items-center gap-2">
-        <button onClick={openPaywall} className="btn-primary flex items-center gap-2">
-          <Sparkles size={14}/> Buy more credits
-        </button>
-        <button onClick={refreshCredits} className="btn-secondary text-xs">Refresh</button>
-      </div>
+      {err && <p className="text-[11px] text-red-500 mb-2">{err}</p>}
+      <button onClick={refreshCredits} className="btn-secondary text-xs mt-1">Refresh</button>
     </div>
   )
 }

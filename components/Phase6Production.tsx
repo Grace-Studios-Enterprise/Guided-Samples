@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase'
 import AuthModal from '@/components/AuthModal'
 import SizeBreakdownPicker from '@/components/SizeBreakdownPicker'
 import { emptyBreakdown, sumBreakdown, type SizeBreakdown } from '@/lib/sizes'
-import { MIN_PRODUCTION_QUANTITY, ACTIVATION_FEE_CENTS } from '@/lib/pricing'
+import { MIN_PRODUCTION_QUANTITY } from '@/lib/pricing'
 import { useAICredits } from '@/lib/aiCreditsContext'
 
 const LOGO_FEE = 4
@@ -48,7 +48,7 @@ export interface TechPackData {
 }
 
 export default function Phase6Production({ state, techPack, onBack, projectId, onEnsureProject, onExpertHelp }: Props) {
-  const { spendCents } = useAICredits()
+  const { tier } = useAICredits()
   const [notes, setNotes] = useState('')
   const [sampleLoading, setSampleLoading] = useState(false)
   const [directLoading, setDirectLoading] = useState(false)
@@ -66,25 +66,33 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
   const garmentType = techPack.styleInfo.garmentType || state.garment?.type || 'T-Shirt'
   const isUniform = state.garment?.mode === 'uniform'
   const isReversible = state.garment?.uniformType === 'Reversible Jersey'
-  const garmentPrice = isReversible ? REVERSIBLE_JERSEY_PRICE : isUniform ? UNIFORM_PRICE : (GARMENT_PRICES[garmentType] ?? 35)
   const styleName = techPack.styleInfo.styleName ?? ''
+
+  // Membership pricing: subscribers' setup fee is waived; Brand gets 5% off production.
+  const isMember = tier !== 'free'
+  const setupFee = isMember ? 0 : ACTIVATION_FEE
+  const prodMult = tier === 'brand' ? 0.95 : 1
+  const round2 = (n: number) => Math.round(n * 100) / 100
+
+  const baseGarment = isReversible ? REVERSIBLE_JERSEY_PRICE : isUniform ? UNIFORM_PRICE : (GARMENT_PRICES[garmentType] ?? 35)
+  const garmentPrice = round2(baseGarment * prodMult)
 
   const logoCount = techPack.placements.length
   const extraLogos = Math.max(0, logoCount - 1)
-  const logoFeeTotal = extraLogos * LOGO_FEE
+  const logoFeeTotal = round2(extraLogos * LOGO_FEE * prodMult)
 
   // Sample fee is double the per-piece production price (one sample piece).
-  const sampleFee = garmentPrice * 2
+  const sampleFee = round2(baseGarment * 2 * prodMult)
   // Sample path: no MOQ but at least 1 piece must be explicitly selected
   const sampleRawQty = sumBreakdown(sampleBreakdown)
   const sampleQty = Math.max(1, sampleRawQty)
-  const sampleTotal = ACTIVATION_FEE + sampleFee * sampleQty + logoFeeTotal * sampleQty
+  const sampleTotal = setupFee + sampleFee * sampleQty + logoFeeTotal * sampleQty
 
   // DIRECT path: MOQ enforced, size breakdown drives quantity
   const directQty = sumBreakdown(directBreakdown)
   const directBelowMOQ = directQty < MIN_PRODUCTION_QUANTITY
   const productionTotal = (garmentPrice + logoFeeTotal) * Math.max(1, directQty)
-  const depositAmount = Math.round(productionTotal / 2 * 100) / 100
+  const depositAmount = round2(productionTotal / 2)
 
   const assets = [
     { label: 'Logo', image: logo, present: !!logo },
@@ -326,29 +334,21 @@ export default function Phase6Production({ state, techPack, onBack, projectId, o
                   />
                 </div>
 
-                {spendCents > 0 && (
+                {isMember && (
                   <div className="flex items-start gap-2 p-3 rounded-xl bg-grace-mist border border-grace-border mb-3">
                     <Sparkles size={12} className="text-grace-ink mt-0.5 shrink-0" />
-                    <div>
-                      <p className="text-[11px] font-semibold text-grace-ink leading-tight">
-                        Your previous AI purchases have been applied toward activation.
-                      </p>
-                      <p className="text-[10px] text-grace-stone mt-0.5">
-                        ${(Math.min(spendCents, ACTIVATION_FEE_CENTS) / 100).toFixed(2)} applied · ${(Math.max(0, ACTIVATION_FEE_CENTS - spendCents) / 100).toFixed(2)} due
-                      </p>
-                    </div>
+                    <p className="text-[11px] font-semibold text-grace-ink leading-tight">
+                      {tier === 'brand' ? 'Brand plan: setup waived + 5% off production.' : 'Designer plan: $25 setup fee waived.'}
+                    </p>
                   </div>
                 )}
                 <div className="border border-slate-100 rounded-xl p-3 mb-4 space-y-1.5 text-xs">
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-1">What you pay today</p>
                   <div className="flex justify-between text-gray-600">
-                    <span>Activation Fee</span>
-                    {spendCents >= ACTIVATION_FEE_CENTS
-                      ? <span className="line-through text-gray-300">${ACTIVATION_FEE}.00</span>
-                      : spendCents > 0
-                        ? <span>${(( ACTIVATION_FEE_CENTS - spendCents) / 100).toFixed(2)} <span className="text-grace-stone">(was ${ACTIVATION_FEE})</span></span>
-                        : <span>${ACTIVATION_FEE}.00</span>
-                    }
+                    <span>Setup Fee</span>
+                    {isMember
+                      ? <span className="text-green-600 font-semibold">Waived</span>
+                      : <span>${ACTIVATION_FEE}.00</span>}
                   </div>
                   <div className="flex justify-between text-gray-600">
                     <span>Sample Fee ({sampleQty} pc{sampleQty > 1 ? 's' : ''} × ${sampleFee})</span>

@@ -12,6 +12,8 @@ import {
   standardGarments, fitsFor, brandGarments, fromStandardFit, fromBrand, fromCsv, blankProfile, profileToCsv,
 } from '@/lib/sizing/sources'
 import type { SizeProfile, SizeRow } from '@/lib/sizing/types'
+import { useAICredits } from '@/lib/aiCreditsContext'
+import { tierPerks } from '@/lib/tiers'
 import { fileToDataUrl } from '@/lib/fileToDataUrl'
 import { downloadTextFile } from '@/lib/prepress/sizeSpec'
 import type { GarmentType } from '@/lib/fitBlocks/types'
@@ -183,6 +185,8 @@ function CreatePanel({ onCancel, onDraft }: { onCancel: () => void; onDraft: (p:
 function EditPanel({ profile, onCancel, onSaved }: { profile: SizeProfile; onCancel: () => void; onSaved: () => void }) {
   const [p, setP] = useState<SizeProfile>(profile)
   const [saved, setSaved] = useState(false)
+  const [limitMsg, setLimitMsg] = useState('')
+  const { tier } = useAICredits()
 
   const setCell = (ri: number, size: string, raw: string) => {
     const v = parseFloat(raw)
@@ -191,7 +195,17 @@ function EditPanel({ profile, onCancel, onSaved }: { profile: SizeProfile; onCan
   const setLabel = (ri: number, label: string) => setP(prev => ({ ...prev, rows: prev.rows.map((r, i) => i === ri ? { ...r, label } : r) }))
   const addRow = () => setP(prev => ({ ...prev, rows: [...prev.rows, { key: `m${prev.rows.length}`, label: 'New measurement', unit: prev.rows[0]?.unit ?? 'in', values: Object.fromEntries(prev.sizes.map(s => [s, 0])) }] }))
   const removeRow = (ri: number) => setP(prev => ({ ...prev, rows: prev.rows.filter((_, i) => i !== ri) }))
-  const save = () => { saveSizeProfile(p); setSaved(true); setTimeout(onSaved, 600) }
+  const save = () => {
+    // Enforce the plan's saved-profile limit (Brand = unlimited).
+    const limit = tierPerks(tier).sizeProfileLimit
+    const existing = listSizeProfiles()
+    const isNew = !existing.some(x => x.id === p.id)
+    if (isNew && limit !== null && existing.length >= limit) {
+      setLimitMsg(`Your plan includes ${limit} saved size profile${limit === 1 ? '' : 's'}. Upgrade to Brand for unlimited.`)
+      return
+    }
+    saveSizeProfile(p); setSaved(true); setTimeout(onSaved, 600)
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-4xl">
@@ -204,6 +218,7 @@ function EditPanel({ profile, onCancel, onSaved }: { profile: SizeProfile; onCan
           <button onClick={save} className="btn-primary flex items-center gap-1.5 text-xs">{saved ? <><Check size={13}/> Saved</> : <>Save profile</>}</button>
         </div>
       </div>
+      {limitMsg && <p className="text-[11px] text-amber-600 -mt-2 mb-3">{limitMsg}</p>}
 
       <div className="card p-0 overflow-x-auto">
         <table className="w-full text-xs">

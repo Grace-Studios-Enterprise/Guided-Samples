@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { createClient } from '@/lib/supabase'
 import { FREE_GENERATION_LIMIT, type UserCredits } from '@/lib/aiCredits'
+import { isValidTier, tierPerks, type Tier } from '@/lib/tiers'
 import { useAuth } from '@/lib/auth'
 
 const ANON_STORAGE_KEY = 'grace_ai_free_used'
@@ -14,8 +15,10 @@ type AICreditsContextType = {
   freeLimit: number
   /** Remaining paid AI credit balance. */
   creditBalance: number
-  /** Cumulative dollars (cents) spent on credit packs — used for activation offset. */
+  /** Cumulative dollars (cents) spent on credit packs (legacy; balances honored). */
   spendCents: number
+  /** Current membership tier. */
+  tier: Tier
   /** Whether the paywall modal is open. */
   isPaywallOpen: boolean
   openPaywall: () => void
@@ -41,6 +44,7 @@ export function AICreditsProvider({ children }: { children: ReactNode }) {
   const [freeUsed, setFreeUsed] = useState(0)
   const [creditBalance, setCreditBalance] = useState(0)
   const [spendCents, setSpendCents] = useState(0)
+  const [tier, setTier] = useState<Tier>('free')
   const [isPaywallOpen, setIsPaywallOpen] = useState(false)
 
   // Load from localStorage for anonymous users
@@ -58,14 +62,15 @@ export function AICreditsProvider({ children }: { children: ReactNode }) {
     if (!sb) return
     const { data } = await sb
       .from('user_credits')
-      .select('free_generations_used, ai_credit_balance, ai_spend_cents')
+      .select('free_generations_used, ai_credit_balance, ai_spend_cents, tier')
       .eq('user_id', user.id)
       .single()
     if (data) {
-      const c = data as Pick<UserCredits, 'free_generations_used' | 'ai_credit_balance' | 'ai_spend_cents'>
+      const c = data as Pick<UserCredits, 'free_generations_used' | 'ai_credit_balance' | 'ai_spend_cents' | 'tier'>
       setFreeUsed(c.free_generations_used)
       setCreditBalance(c.ai_credit_balance)
       setSpendCents(c.ai_spend_cents)
+      setTier(isValidTier(c.tier) ? c.tier : 'free')
     }
   }, [user])
 
@@ -76,10 +81,12 @@ export function AICreditsProvider({ children }: { children: ReactNode }) {
       loadAnon()
       setCreditBalance(0)
       setSpendCents(0)
+      setTier('free')
     }
   }, [user, loadFromDB])
 
   const canGenerate = (): boolean => {
+    if (tierPerks(tier).unlimitedAI) return true
     if (freeUsed < FREE_GENERATION_LIMIT) return true
     if (creditBalance > 0) return true
     return false
@@ -122,6 +129,7 @@ export function AICreditsProvider({ children }: { children: ReactNode }) {
       freeLimit: FREE_GENERATION_LIMIT,
       creditBalance,
       spendCents,
+      tier,
       isPaywallOpen,
       openPaywall: () => setIsPaywallOpen(true),
       closePaywall: () => setIsPaywallOpen(false),
