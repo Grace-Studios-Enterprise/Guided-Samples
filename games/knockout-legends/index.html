@@ -136,6 +136,28 @@ table.stats td:not(:first-child),table.stats th:not(:first-child){text-align:cen
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 52px);transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);padding:8px 14px;font-family:var(--font-ui);font-size:14px;max-width:calc(100% - 32px)}
 .touchmode .pausebtn{top:calc(env(safe-area-inset-top,0px) + 96px);bottom:auto}
 
+/* ---------- live editor */
+.le{position:fixed;top:0;bottom:0;right:0;width:min(420px,100%);pointer-events:auto;background:rgba(9,11,17,.94);border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:5;
+  padding-right:env(safe-area-inset-right,0px);padding-block:calc(env(safe-area-inset-top,0px) + 12px) calc(env(safe-area-inset-bottom,0px) + 12px)}
+.le header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 16px 10px;border-bottom:1px solid var(--line)}
+.le header b{font-family:var(--font-display);font-size:20px;letter-spacing:.03em}
+.le header small{font-family:var(--font-ui);color:var(--mute);letter-spacing:.12em;text-transform:uppercase;font-size:11px}
+.le .tabs{display:flex;border-bottom:1px solid var(--line)}
+.le .tabs button{flex:1;background:none;border:0;padding:10px 4px;font-family:var(--font-ui);font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px;color:var(--mute);border-bottom:2px solid transparent}
+.le .tabs button[aria-selected="true"]{color:var(--bone);border-bottom-color:var(--gold)}
+.le .body{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.le label.f{display:grid;grid-template-columns:110px 1fr 64px;gap:8px;align-items:center;font-family:var(--font-ui);font-size:13px;color:var(--mute)}
+.le label.f.wide{grid-template-columns:110px 1fr}
+.le input,.le select,.le textarea{background:#05060a;color:var(--bone);border:1px solid var(--line);font:inherit;font-size:13px;padding:5px 6px;min-width:0}
+.le input[type=range]{padding:0;accent-color:var(--gold)}
+.le input[type=color]{padding:0;height:28px;width:100%}
+.le textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45;min-height:220px;resize:vertical;tab-size:2}
+.le .log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:#cfd3dc}
+.le .log span{color:var(--mute)}
+.le .note{font-size:12px;color:var(--mute);line-height:1.45}
+.le .mini{background:transparent;border:1px solid var(--line);color:var(--bone);font-family:var(--font-ui);font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:7px 10px}
+.le .mini.go{background:var(--gold);color:#17120a;border-color:var(--gold)}
+.lebtn{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 110px);pointer-events:auto;background:var(--panel);border:1px solid var(--line);padding:5px 10px;font-family:var(--font-ui);font-weight:700;letter-spacing:.12em;font-size:11px;text-transform:uppercase;color:var(--mute)}
 @media (max-width:640px){
   .bar-top{grid-template-columns:1fr auto 1fr;gap:6px}
   .clock{min-width:72px;padding:4px 8px}
@@ -232,10 +254,10 @@ composer.addPass(bokeh);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, flash: { value: 0 }, hurt: { value: 0 }, desat: { value: 0 }, ca: { value: 1 } },
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, flash: { value: 0 }, hurt: { value: 0 }, desat: { value: 0 }, ca: { value: 1 }, grain: { value: .03 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float time, flash, hurt, desat, ca; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float time, flash, hurt, desat, ca, grain; varying vec2 vUv;
     void main(){
       vec2 c = vUv - 0.5; float r = length(c);
       float k = (0.004 + hurt * 0.014) * ca * r;
@@ -253,7 +275,7 @@ const grade = new ShaderPass({
       col = mix(col, col * vec3(1.25, 0.55, 0.55), hurt * (1.0 - vig) * 0.9);
       col += flash;
       float g = fract(sin(dot(vUv * vec2(12.9898, 78.233) + fract(time), vec2(1.0))) * 43758.5453);
-      col += (g - 0.5) * 0.03;
+      col += (g - 0.5) * grain;
       gl_FragColor = vec4(col, 1.0);
     }`,
 });
@@ -358,7 +380,7 @@ function buildRing() {
 buildRing();
 
 // lights ----------------------------------------------------------------
-scene.add(new THREE.HemisphereLight(0x29324a, 0x0b0805, .4));
+const hemi = new THREE.HemisphereLight(0x29324a, 0x0b0805, .4); scene.add(hemi);
 const key = new THREE.SpotLight(0xfff1df, 150, 0, .5, .55, 2);
 key.position.set(0, 10, 0); key.target.position.set(0, 0, 0);
 key.castShadow = true; key.shadow.bias = -.00015; key.shadow.normalBias = .02; key.shadow.camera.near = 5; key.shadow.camera.far = 14; key.shadow.radius = 3;
@@ -367,7 +389,7 @@ const sideSpots = [];
 [[6, 8.5, 6, 0xffd6a8], [-6, 8.5, -6, 0xffd6a8], [6, 8.5, -6, 0xbcd0ff], [-6, 8.5, 6, 0xbcd0ff]].forEach(([x, y, z, c]) => {
   const s = new THREE.SpotLight(c, 55, 0, .36, .6, 2); s.position.set(x, y, z); s.target.position.set(0, 1, 0); scene.add(s, s.target); sideSpots.push(s);
 });
-for (let s = 0; s < 4; s++) { const a = s * Math.PI / 2; const p = new THREE.PointLight(0xffb98a, 9, 0, 2); p.position.set(Math.sin(a) * 10, 5.5, Math.cos(a) * 10); scene.add(p); }
+const fills = []; for (let s = 0; s < 4; s++) { const a = s * Math.PI / 2; const p = new THREE.PointLight(0xffb98a, 9, 0, 2); p.position.set(Math.sin(a) * 10, 5.5, Math.cos(a) * 10); scene.add(p); fills.push(p); }
 
 // volumetric beams --------------------------------------------------------
 const beamMat = new THREE.ShaderMaterial({
@@ -1070,6 +1092,14 @@ const P1 = newFighter(FIGHTERS.vance, true);
 const P2 = newFighter(FIGHTERS.volkov, false);
 resetFighter(P1, 0, -1.0, true); resetFighter(P2, 0, 1.0, true);
 
+// Live Editor event bus: scripts subscribe with AddEventHandler(name, fn); '*' receives everything
+const LE_LOG = [], LE_HANDLERS = new Map();
+function leLog(...parts) { LE_LOG.push({ t: new Date().toLocaleTimeString(), text: parts.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ') }); if (LE_LOG.length > 300) LE_LOG.shift(); }
+function emit(name, data = {}) {
+  if (G.mode === 'menu') return;
+  for (const key of [name, '*']) for (const fn of LE_HANDLERS.get(key) || []) { try { key === '*' ? fn(name, data) : fn(data); } catch (err) { leLog(`script error in ${name} handler:`, String(err.message || err)); } }
+}
+const who = (f) => (f === P1 ? 1 : 2);
 function msg(text, kind = 'big') { G.msgs.push({ id: ++G.msgId, text, kind, at: performance.now() }); if (G.msgs.length > 8) G.msgs.shift(); }
 const dist = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z);
 const other = (f) => (f === P1 ? P2 : P1);
@@ -1084,6 +1114,7 @@ function startPunch(f, type) {
   f.stamina = Math.max(0, f.stamina - P.stam);
   f.blocking = false;
   f.stats.thrown++; if (P.power) f.stats.pThrown++;
+  emit('punch_thrown', { fighter: who(f), punch: type });
   sfx.whoosh(P.power ? 1 : .6);
   return true;
 }
@@ -1107,7 +1138,7 @@ function resolveHit(att, def, a) {
     def.stamina = Math.max(0, def.stamina - P.dmg * .45);
     def.rec.vp -= 1.5; att.rec.vp += .8;
     spray.burst(toHead ? def.headWorld : def.chestWorld, _d, 4, .5);
-    sfx.block(); return;
+    sfx.block(); emit('punch_blocked', { attacker: who(att), defender: who(def), punch: a.type }); return;
   }
   let dmg = P.dmg * .62 * (.45 + .55 * att.stamina / 100) * att.cfg.power;
   if (isCounter) { dmg *= 1.55; att.counterWin = 0; }
@@ -1136,6 +1167,7 @@ function resolveHit(att, def, a) {
   G.excite = Math.min(1, G.excite + .08 * k + (isCounter ? .15 : 0));
   if (k > .9) { sfx.roar(Math.min(1, k * .6)); for (let i = 0; i < 4; i++) spawnFlash(); }
   def.lastHitAt = G.time;
+  emit('punch_landed', { attacker: who(att), defender: who(def), punch: a.type, damage: +dmg.toFixed(2), counter: !!isCounter, head: toHead });
   if (def.invuln) return;
   if (toHead) { def.head -= dmg; def.headMax = Math.max(18, def.headMax - dmg * .2); }
   else { def.body -= dmg; def.bodyMax = Math.max(18, def.bodyMax - dmg * .22); def.stamina = Math.max(0, def.stamina - dmg * .8); }
@@ -1156,6 +1188,7 @@ function knockdown(def, att, P) {
   G.slow = 1.6; G.cine = { victim: def, attacker: att, t: 0 };
   G.flash = .35; G.excite = 1; sfx.roar(1); for (let i = 0; i < 14; i++) spawnFlash();
   msg(G.kd.tko ? 'Three down' : 'Down!', 'big gold');
+  emit('knockdown', { victim: who(def), attacker: who(att), knockdownsThisRound: def.kdRound, total: def.kdTotal });
 }
 
 /* --------------------------------------------------------------------------- AI */
@@ -1211,7 +1244,7 @@ function playerPunch(base) {
 }
 function playerSlip(dir) { if (G.mode !== 'fight' || P1.action || P1.down || P1.slip > 0 || P1.stamina < 3) return; P1.slip = .38; P1.slipDir = dir; P1.stamina -= 2.5; }
 addEventListener('keydown', (e) => {
-  if (e.target.closest && e.target.closest('input,textarea')) return;
+  if (e.target.closest && e.target.closest('input,textarea,select')) { if (e.code === 'F1') { e.preventDefault(); G.editor = false; } return; }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
@@ -1221,6 +1254,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyE') playerSlip(-1);
   else if (e.code === 'KeyC') game.setOpt('cam', G.cam === 'broadcast' ? 'side' : 'broadcast');
   else if (e.code === 'KeyP' || e.code === 'Escape') game.togglePause();
+  else if (e.code === 'F1' || e.code === 'Backquote') { e.preventDefault(); G.editor = !G.editor; }
   else if (e.code === 'Enter') { if (G.mode === 'intro') G.introT = 99; else if (G.mode === 'break' && G.breakT > 1.5) G.breakT = 99; }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -1520,6 +1554,7 @@ function finish(res) {
   for (const f of [P1, P2]) { f.action = null; f.queue.length = 0; f.blocking = false; f.autoTarget = null; f.input.fwd = f.input.side = 0; }
   if (res.winner) res.winner.victory = 1;
   sfx.bell(res.type === 'DEC' ? 3 : 5); sfx.roar(1); G.excite = 1;
+  emit('fight_over', { type: res.type, winner: res.winner ? who(res.winner) : 0, round: G.round });
 }
 function clockText() { const left = Math.max(0, 180 - G.roundT * (180 / G.roundLen)); const m = Math.floor(left / 60), s = Math.floor(left % 60); return `${m}:${String(s).padStart(2, '0')}`; }
 function beginRound() {
@@ -1528,9 +1563,10 @@ function beginRound() {
   resetFighter(P1, 0, -1.05, false); resetFighter(P2, 0, 1.05, false);
   P1.yaw = 0; P2.yaw = Math.PI;
   sfx.bell(1); msg(G.round === G.rounds ? 'Final round' : `Round ${G.round}`, 'big');
+  emit('round_start', { round: G.round });
 }
 function endRound() {
-  scoreRound(); sfx.bell(3);
+  scoreRound(); sfx.bell(3); emit('round_end', { round: G.round });
   if (G.round >= G.rounds) { decision(); return; }
   G.mode = 'break'; G.breakT = 0;
   P1.autoTarget = V(-2.45, 0, -2.45); P2.autoTarget = V(2.45, 0, 2.45);
@@ -1559,6 +1595,7 @@ function updateKnockdown(dt) {
     v.head = Math.max(8, Math.min(v.headMax, 58 - v.kdTotal * 12)); v.body = Math.max(v.body, Math.min(v.bodyMax, 40)); v.wobble = 1; v.stun = .6;
     k.attacker.autoTarget = null; G.kd = null; G.cine = null;
     msg(v.isPlayer ? 'Back on your feet' : `${v.cfg.last} beats the count`, 'small'); sfx.roar(.7);
+    emit('get_up', { fighter: who(v) });
     return;
   }
   if (k.count >= 10) finish({ type: 'KO', kind: 'Knockout · counted out', winner: k.attacker, loser: v });
@@ -1611,6 +1648,7 @@ function sim(rdt) {
     P1.invuln = P2.invuln = false;
     if (!G.kd) { G.roundT += dt; G.fightT += dt; }
     if (!P1.autoTarget) playerInput(); else P1.blocking = false;
+    emit('tick', { dt, round: G.round, roundTime: G.roundT });
     aiUpdate(P2, P1, dt, skill);
     updateKnockdown(dt);
     if (G.mode === 'fight' && !G.kd && G.roundT >= G.roundLen) endRound();
@@ -1678,7 +1716,7 @@ const game = {
       kd: G.kd ? { count: G.kd.count, player: G.kd.victim === P1, fill: G.kd.fill || 0, name: G.kd.victim.cfg.last } : null,
       breakT: G.breakT, introT: G.introT, cards: G.cards.map((c) => ({ ...c })), overT: G.overT,
       result: G.result ? { type: G.result.type, kind: G.result.kind, winner: G.result.winner ? `${G.result.winner.cfg.first} ${G.result.winner.cfg.last}` : null, playerWon: G.result.winner === P1, round: G.result.round, clock: G.result.clock, totals: G.result.totals } : null,
-      glLost: !!G.glLost, autoPaused: G.autoPaused,
+      glLost: !!G.glLost, autoPaused: G.autoPaused, editor: !!G.editor, leTick: LE_LOG.length + ':' + (LE_LOG[LE_LOG.length - 1]?.t || ''),
       toast: G.toast && now - G.toast.at < 6000 ? G.toast.text : null,
       opts: { difficulty: G.difficulty, rounds: G.rounds, quality: G.quality, cam: G.cam },
       tape: [FIGHTERS.vance, FIGHTERS.volkov],
@@ -1690,6 +1728,7 @@ const game = {
     G.round = 1; G.cards = []; G.result = null; G.kd = null; G.cine = null; G.fightT = 0; G.slow = 0; G.msgs = [];
     resetFighter(P1, 0, -1.6, true); resetFighter(P2, 0, 1.6, true);
     G.mode = 'intro'; G.introT = 0; sfx.roar(.8); G.excite = .9;
+    emit('fight_start', { rounds: G.rounds, difficulty: G.difficulty });
   },
   skipIntro() { if (G.mode === 'intro') G.introT = 99; },
   nextRound() { if (G.mode === 'break') resumeFromBreak(); },
@@ -1701,10 +1740,148 @@ const game = {
   punch(base) { sfx.init(); playerPunch(base); },
   slip(d) { playerSlip(d); },
   // look-dev hooks: KL.setSweat(0..1) and KL.setDamage(0..1) force the look; pass null to go back to the fight's own values
+  toggleEditor() { G.editor = !G.editor; },
   setSweat(v) { G.sweatOverride = v == null ? null : clamp(+v, 0, 1); },
   setDamage(v) { G.damageOverride = v == null ? null : clamp(+v, 0, 1); },
 };
 window.KL = game;
+
+/* =========================================================================
+   Live Editor: data tables with a record cursor, event hooks, scripts, presets.
+   Modelled on community live editors for EA titles (LE.db:GetTable, AddEventHandler),
+   but it only edits this game's own data.
+   ========================================================================= */
+const hex = (c) => '#' + c.getHexString();
+const num = (get, set, min, max, step = .01) => ({ get, set, min, max, step });
+const LE_TABLES = {
+  fighters: {
+    records: () => [P1, P2], label: (f) => `${f.cfg.first} ${f.cfg.last}`,
+    fields: {
+      head: num((f) => f.head, (f, v) => (f.head = v), 0, 100, 1), headmax: num((f) => f.headMax, (f, v) => (f.headMax = v), 0, 100, 1),
+      body: num((f) => f.body, (f, v) => (f.body = v), 0, 100, 1), bodymax: num((f) => f.bodyMax, (f, v) => (f.bodyMax = v), 0, 100, 1),
+      stamina: num((f) => f.stamina, (f, v) => (f.stamina = v), 0, 100, 1),
+      power: num((f) => f.cfg.power, (f, v) => (f.cfg.power = v), .3, 3), speed: num((f) => f.cfg.speed, (f, v) => (f.cfg.speed = v), .5, 1.6), chin: num((f) => f.cfg.chin, (f, v) => (f.cfg.chin = v), .3, 3),
+      knockdowns: { get: (f) => f.kdTotal, ro: true },
+      skincolor: { get: (f) => hex(f.rig.mats.skin.color), set: (f, v) => { f.rig.mats.skin.color.set(v); }, type: 'color' },
+    },
+    saved: ['power', 'speed', 'chin', 'skincolor'],
+  },
+  look: {
+    records: () => [G], label: () => 'Skin and sweat',
+    fields: {
+      sweat: num(() => G.sweatOverride ?? -1, (r, v) => (G.sweatOverride = v < 0 ? null : v), -1, 1), damage: num(() => G.damageOverride ?? -1, (r, v) => (G.damageOverride = v < 0 ? null : v), -1, 1),
+      pores: num(() => P1.rig.mats.skin.normalScale.x, (r, v) => [P1, P2].forEach((f) => f.rig.mats.skin.normalScale.setScalar(v)), 0, 1.5),
+      exposure: num(() => renderer.toneMappingExposure, (r, v) => (renderer.toneMappingExposure = v), .3, 2.5),
+    },
+    saved: ['sweat', 'damage', 'pores', 'exposure'], note: 'sweat and damage: -1 means automatic',
+  },
+  lights: {
+    records: () => [{ n: 'key (overhead)', l: key }, ...sideSpots.map((l, i) => ({ n: `side ${i + 1}`, l })), ...fills.map((l, i) => ({ n: `crowd fill ${i + 1}`, l })), { n: 'ambient (hemisphere)', l: hemi }], label: (r) => r.n,
+    fields: {
+      intensity: num((r) => r.l.intensity, (r, v) => (r.l.intensity = v), 0, 600, 1),
+      color: { get: (r) => hex(r.l.color), set: (r, v) => r.l.color.set(v), type: 'color' },
+    },
+    saved: ['intensity', 'color'],
+  },
+  post: {
+    records: () => [grade], label: () => 'Post-processing',
+    fields: {
+      bloom: num(() => bloom.strength, (r, v) => (bloom.strength = v), 0, 2), bloomradius: num(() => bloom.radius, (r, v) => (bloom.radius = v), 0, 1), bloomthreshold: num(() => bloom.threshold, (r, v) => (bloom.threshold = v), 0, 2),
+      chromatic: num(() => grade.uniforms.ca.value, (r, v) => (grade.uniforms.ca.value = v), 0, 3), grain: num(() => grade.uniforms.grain.value, (r, v) => (grade.uniforms.grain.value = v), 0, .15, .005),
+      ao: num(() => gtao.blendIntensity, (r, v) => (gtao.blendIntensity = v), 0, 1.5), dofaperture: num(() => bokeh.uniforms.aperture.value, (r, v) => (bokeh.uniforms.aperture.value = v), 0, .01, .0002),
+    },
+    saved: ['bloom', 'bloomradius', 'bloomthreshold', 'chromatic', 'grain', 'ao', 'dofaperture'],
+  },
+  match: {
+    records: () => [G], label: () => 'Match rules',
+    fields: {
+      rounds: num(() => G.rounds, (r, v) => (G.rounds = Math.round(v)), 1, 12, 1), roundseconds: num(() => G.roundLen, (r, v) => (G.roundLen = v), 15, 300, 5),
+      difficulty: { get: () => G.difficulty, set: (r, v) => DIFF[v] && (G.difficulty = v), type: 'enum', options: Object.keys(DIFF) },
+    },
+    saved: ['rounds', 'roundseconds', 'difficulty'],
+  },
+};
+class LETable {
+  constructor(name) { this.name = name; this.spec = LE_TABLES[name]; this.cur = 0; if (!this.spec) throw new Error(`no table "${name}" (tables: ${Object.keys(LE_TABLES).join(', ')})`); }
+  rec(r) { const rs = this.spec.records(); if (r < 1 || r > rs.length) throw new Error(`${this.name}: no record ${r}`); return rs[r - 1]; }
+  field(f) { const d = this.spec.fields[f]; if (!d) throw new Error(`${this.name}: no field "${f}" (fields: ${Object.keys(this.spec.fields).join(', ')})`); return d; }
+  GetRecordCount() { return this.spec.records().length; }
+  GetFirstRecord() { this.cur = this.GetRecordCount() ? 1 : 0; return this.cur; }
+  GetNextValidRecord() { this.cur = this.cur && this.cur < this.GetRecordCount() ? this.cur + 1 : 0; return this.cur; }
+  GetRecordLabel(r) { return this.spec.label(this.rec(r)); }
+  GetFields() { return Object.keys(this.spec.fields); }
+  GetRecordFieldValue(r, f) { return this.field(f).get(this.rec(r)); }
+  SetRecordFieldValue(r, f, v) {
+    const d = this.field(f); if (d.ro) throw new Error(`${this.name}.${f} is read-only`);
+    if (d.type === 'color' || d.type === 'enum') d.set(this.rec(r), String(v));
+    else { const n = Number(v); if (!Number.isFinite(n)) throw new Error(`${this.name}.${f} needs a number`); d.set(this.rec(r), clamp(n, d.min, d.max)); }
+  }
+}
+const LE_SCHEMA = 1; // bump when a table or field changes meaning; presets carry it, like a version map
+const LE = {
+  version: { editor: '1.0.0', schema: LE_SCHEMA },
+  db: { GetTable: (name) => new LETable(name), GetTableNames: () => Object.keys(LE_TABLES) },
+  snapshot() {
+    const out = { schema: LE_SCHEMA, tables: {} };
+    for (const [n, spec] of Object.entries(LE_TABLES)) { const t = new LETable(n); out.tables[n] = spec.records().map((_, i) => Object.fromEntries(spec.saved.map((f) => [f, t.GetRecordFieldValue(i + 1, f)]))); }
+    return out;
+  },
+  apply(p) {
+    if (!p || p.schema !== LE_SCHEMA) throw new Error(`preset schema ${p && p.schema} doesn't match editor schema ${LE_SCHEMA}`);
+    for (const [n, rows] of Object.entries(p.tables || {})) { if (!LE_TABLES[n]) continue; const t = new LETable(n); rows.forEach((row, i) => { if (i < t.GetRecordCount()) for (const [f, v] of Object.entries(row)) if (LE_TABLES[n].fields[f] && !LE_TABLES[n].fields[f].ro) t.SetRecordFieldValue(i + 1, f, v); }); }
+  },
+  presets() { return safeStore.get('kl-le-presets', {}); },
+  savePreset(name) { const all = LE.presets(); all[name] = LE.snapshot(); safeStore.set('kl-le-presets', all); leLog(`saved preset "${name}"`); },
+  loadPreset(name) { const p = LE.presets()[name]; if (!p) throw new Error(`no preset "${name}"`); LE.apply(p); leLog(`loaded preset "${name}"`); },
+  deletePreset(name) { const all = LE.presets(); delete all[name]; safeStore.set('kl-le-presets', all); },
+  run(code) {
+    const AddEventHandler = (ev, fn) => { if (typeof fn !== 'function') throw new Error('AddEventHandler needs a function'); if (!LE_HANDLERS.has(ev)) LE_HANDLERS.set(ev, []); LE_HANDLERS.get(ev).push(fn); };
+    try { new Function('LE', 'AddEventHandler', 'log', 'game', code)(LE, AddEventHandler, leLog, game); leLog('script ran'); }
+    catch (err) { leLog('script error:', String(err.message || err)); }
+  },
+  stopScripts() { LE_HANDLERS.clear(); leLog('all script event handlers removed'); },
+  handlerCount() { let n = 0; for (const v of LE_HANDLERS.values()) n += v.length; return n; },
+};
+const LE_EXAMPLES = {
+  'Log every event': `// Prints every game event to the log, so you can find hook points.
+AddEventHandler('*', (name, data) => { if (name !== 'tick') log(name, data); });`,
+  'Iron chin (keep my head at full)': `// Re-applies every tick, the same way a live editor keeps form at 100.
+const t = LE.db.GetTable('fighters');
+AddEventHandler('tick', () => {
+  t.SetRecordFieldValue(1, 'head', 100);
+  t.SetRecordFieldValue(1, 'headmax', 100);
+});`,
+  'Everyone hits harder': `// Walk every fighter record with the cursor and raise power.
+const t = LE.db.GetTable('fighters');
+let rec = t.GetFirstRecord();
+while (rec > 0) {
+  t.SetRecordFieldValue(rec, 'power', 1.6);
+  log(t.GetRecordLabel(rec), 'power ->', t.GetRecordFieldValue(rec, 'power'));
+  rec = t.GetNextValidRecord();
+}`,
+  'Sweat steps up each round': `// Sweat 0 in round 1, then +0.35 every round (overrides the automatic curve).
+const look = LE.db.GetTable('look');
+AddEventHandler('round_start', (e) => look.SetRecordFieldValue(1, 'sweat', Math.min(1, (e.round - 1) * 0.35)));`,
+  'Late-fight look (sweat and damage)': `// Preview the battered championship-rounds look.
+const look = LE.db.GetTable('look');
+look.SetRecordFieldValue(1, 'sweat', 1);
+look.SetRecordFieldValue(1, 'damage', 0.85);`,
+  'Broadcast lighting test': `// Brighter key, dimmer crowd fills, cooler sides.
+const L = LE.db.GetTable('lights');
+let r = L.GetFirstRecord();
+while (r > 0) {
+  const name = L.GetRecordLabel(r);
+  if (name.startsWith('key')) L.SetRecordFieldValue(r, 'intensity', 220);
+  if (name.startsWith('crowd')) L.SetRecordFieldValue(r, 'intensity', 3);
+  if (name.startsWith('side')) L.SetRecordFieldValue(r, 'color', '#b8ccff');
+  r = L.GetNextValidRecord();
+}
+LE.db.GetTable('post').SetRecordFieldValue(1, 'chromatic', 0);`,
+  'Count counter punches': `let counters = 0;
+AddEventHandler('punch_landed', (e) => { if (e.counter) log('counter #' + (++counters), 'by fighter', e.attacker, 'for', e.damage); });`,
+};
+window.LE = LE;
+
 game._debug = { P1, P2, G, camera, PUNCH, sim: (dt) => { sim(dt); const g = G.poseDt; G.poseDt = 0; poseFighter(P1, g, G.time); poseFighter(P2, g, G.time); } };
 
 /* =========================================================================
@@ -1779,6 +1956,7 @@ function Menu({ s }) {
       <kbd>Space</kbd><span>Block high (add Shift to block low)</span>
       <kbd>Q / E</kbd><span>Slip left / right, then counter for 1.5× damage</span>
       <kbd>C · P</kbd><span>Switch camera · pause</span>
+      <kbd>F1 or \`</kbd><span>Live Editor: tables, scripts, presets</span>
       <kbd>Gamepad</kbd><span>Flick the right stick to punch, L2 blocks, R2 goes to the body</span>
     </div>`}
     <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used. Head scan: Lee Perry-Smith by Infinite-Realities, CC BY 3.0.</div>
@@ -1867,6 +2045,54 @@ function Touch() {
 function Hint() {
   return html`<div className="hint"><span><kbd>J</kbd><kbd>K</kbd>straights</span><span><kbd>U</kbd><kbd>I</kbd>hooks</span><span><kbd>N</kbd><kbd>M</kbd>uppercuts</span><span><kbd>Shift</kbd>body</span><span><kbd>Space</kbd>block</span><span><kbd>Q</kbd><kbd>E</kbd>slip</span></div>`;
 }
+function LiveEditor({ s }) {
+  const [tab, setTab] = useState('tables');
+  const [tname, setT] = useState('fighters');
+  const [rec, setRec] = useState(1);
+  const [code, setCode] = useState(LE_EXAMPLES['Log every event']);
+  const [pname, setPname] = useState('my look');
+  const [io, setIo] = useState('');
+  const t = LE.db.GetTable(tname), n = t.GetRecordCount(), r = Math.min(rec, n);
+  const set = (f, v) => { try { t.SetRecordFieldValue(r, f, v); } catch (err) { leLog(String(err.message)); } };
+  const presets = Object.keys(LE.presets());
+  const copy = (text) => { const done = () => leLog('copied to clipboard'); try { navigator.clipboard.writeText(text).then(done, () => setIo(text)); } catch { setIo(text); } };
+  return html`<aside className="le" aria-label="Live editor">
+    <header><div><b>Live Editor</b><br/><small>v${LE.version.editor} · schema ${LE.version.schema} · F1 to close</small></div><button className="mini" onClick=${() => game.toggleEditor()}>Close</button></header>
+    <div className="tabs" role="tablist">${['tables', 'scripts', 'presets', 'log'].map((k) => html`<button key=${k} role="tab" aria-selected=${String(tab === k)} onClick=${() => setTab(k)}>${k}</button>`)}</div>
+    <div className="body">
+      ${tab === 'tables' && html`<${React.Fragment}>
+        <label className="f wide">Table<select id="le-table" value=${tname} onChange=${(e) => { setT(e.target.value); setRec(1); }}>${LE.db.GetTableNames().map((x) => html`<option key=${x} value=${x}>${x}</option>`)}</select></label>
+        ${n > 1 && html`<label className="f wide">Record<select id="le-rec" value=${r} onChange=${(e) => setRec(+e.target.value)}>${Array.from({ length: n }, (_, i) => html`<option key=${i} value=${i + 1}>${i + 1} · ${t.GetRecordLabel(i + 1)}</option>`)}</select></label>`}
+        ${LE_TABLES[tname].note && html`<div className="note">${LE_TABLES[tname].note}</div>`}
+        ${t.GetFields().map((f) => {
+          const d = LE_TABLES[tname].fields[f], v = t.GetRecordFieldValue(r, f), id = `le-${tname}-${f}`;
+          if (d.ro) return html`<label key=${f} className="f wide">${f}<input id=${id} value=${String(v)} readOnly/></label>`;
+          if (d.type === 'color') return html`<label key=${f} className="f wide">${f}<input id=${id} type="color" value=${v} onInput=${(e) => set(f, e.target.value)}/></label>`;
+          if (d.type === 'enum') return html`<label key=${f} className="f wide">${f}<select id=${id} value=${v} onChange=${(e) => set(f, e.target.value)}>${d.options.map((o) => html`<option key=${o} value=${o}>${o}</option>`)}</select></label>`;
+          return html`<label key=${f} className="f">${f}<input type="range" aria-label=${f} min=${d.min} max=${d.max} step=${d.step} value=${v} onInput=${(e) => set(f, e.target.value)}/><input id=${id} type="number" min=${d.min} max=${d.max} step=${d.step} value=${+(+v).toFixed(d.step < .01 ? 4 : 2)} onChange=${(e) => e.target.value !== '' && set(f, e.target.value)}/></label>`;
+        })}
+        <div className="note">Scripts use the same table: <code>LE.db.GetTable('${tname}').SetRecordFieldValue(${r}, '${t.GetFields()[0]}', …)</code></div>
+      <//>`}
+      ${tab === 'scripts' && html`<${React.Fragment}>
+        <label className="f wide">Example<select id="le-example" onChange=${(e) => e.target.value && setCode(LE_EXAMPLES[e.target.value])}><option value="">Pick an example…</option>${Object.keys(LE_EXAMPLES).map((k) => html`<option key=${k} value=${k}>${k}</option>`)}</select></label>
+        <textarea id="le-code" spellcheck="false" value=${code} onChange=${(e) => setCode(e.target.value)}></textarea>
+        <div className="row"><button className="mini go" onClick=${() => { LE.run(code); setTab('log'); }}>Run</button><button className="mini" onClick=${() => LE.stopScripts()}>Stop all handlers (${LE.handlerCount()})</button></div>
+        <div className="note">JavaScript with <code>LE.db</code>, <code>AddEventHandler(name, fn)</code> and <code>log()</code>. Events: fight_start, round_start, round_end, punch_thrown, punch_landed, punch_blocked, knockdown, get_up, fight_over, tick, or '*' for all of them.</div>
+      <//>`}
+      ${tab === 'presets' && html`<${React.Fragment}>
+        <label className="f wide">Name<input id="le-preset-name" value=${pname} onChange=${(e) => setPname(e.target.value)}/></label>
+        <div className="row"><button className="mini go" onClick=${() => pname.trim() && LE.savePreset(pname.trim())}>Save current look</button></div>
+        ${presets.length ? presets.map((p) => html`<div key=${p} className="row" style=${{ alignItems: 'center' }}><span style=${{ flex: 1, minWidth: 0 }}>${p}</span><button className="mini" onClick=${() => { try { LE.loadPreset(p); } catch (err) { leLog(String(err.message)); } }}>Load</button><button className="mini" onClick=${() => LE.deletePreset(p)}>Delete</button></div>`) : html`<div className="note">No presets saved yet. Saved presets live in this browser only.</div>`}
+        <div className="row"><button className="mini" onClick=${() => copy(JSON.stringify(LE.snapshot(), null, 1))}>Copy current as JSON</button><button className="mini" onClick=${() => { try { LE.apply(JSON.parse(io)); leLog('applied pasted preset'); } catch (err) { leLog('could not apply:', String(err.message)); } }}>Apply pasted JSON</button></div>
+        <textarea id="le-preset-io" spellcheck="false" placeholder="Paste a preset here to apply it, or copy one out to share" value=${io} onChange=${(e) => setIo(e.target.value)} style=${{ minHeight: '120px' }}></textarea>
+      <//>`}
+      ${tab === 'log' && html`<${React.Fragment}>
+        <div className="row"><button className="mini" onClick=${() => { LE_LOG.length = 0; }}>Clear</button></div>
+        <div className="log" aria-live="polite">${LE_LOG.length ? LE_LOG.slice(-120).map((l, i) => html`<div key=${i}><span>${l.t}</span> ${l.text}</div>`) : 'Nothing logged yet. Run the "Log every event" example, then start a fight.'}</div>
+      <//>`}
+    </div>
+  </aside>`;
+}
 function App() {
   const [s, setS] = useState(game.snapshot());
   useEffect(() => { const t = setInterval(() => setS(game.snapshot()), 50); return () => clearInterval(t); }, []);
@@ -1884,6 +2110,8 @@ function App() {
     ${s.mode === 'over' && s.result && html`<${Result} s=${s}/>`}
     ${s.mode === 'fight' && s.touch && html`<${Touch}/>`}
     ${s.mode === 'fight' && !s.touch && html`<${Hint}/>`}
+    ${s.editor && html`<${LiveEditor} s=${s}/>`}
+    ${!s.editor && !s.touch && html`<button className="lebtn" onMouseDown=${(e) => e.preventDefault()} onClick=${() => game.toggleEditor()}>Editor · F1</button>`}
     ${s.mode === 'fight' && html`<button className="pausebtn" onMouseDown=${(e) => e.preventDefault()} onClick=${() => game.togglePause()}>Pause</button>`}
   </div>`;
 }
