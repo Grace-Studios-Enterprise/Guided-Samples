@@ -183,9 +183,9 @@ try { await Promise.race([Promise.all([document.fonts.load('64px Anton'), docume
    renderer + post
    ========================================================================= */
 const QUALITY = {
-  perf:  { label: 'Performance', pr: 1,    shadow: 1024, bloom: false, crowd: .45, tv: false },
-  high:  { label: 'High',        pr: 1.5,  shadow: 2048, bloom: true,  crowd: .8,  tv: true },
-  ultra: { label: 'Ultra',       pr: 2,    shadow: 4096, bloom: true,  crowd: 1,   tv: true },
+  perf:  { label: 'Performance', pr: 1,    px: 1.3e6, shadow: 1024, bloom: false, crowd: .45, tv: false },
+  high:  { label: 'High',        pr: 1.5,  px: 2.6e6, shadow: 2048, bloom: true,  crowd: .8,  tv: true },
+  ultra: { label: 'Ultra',       pr: 2,    px: 4.5e6, shadow: 4096, bloom: true,  crowd: 1,   tv: true },
 };
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -206,6 +206,15 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture
 const msaaRT = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, msaaRT);
 composer.addPass(new RenderPass(scene, camera));
+// guard: one NaN/Inf pixel fed into bloom spreads over the whole frame and turns it black
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb;
+      if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
+      gl_FragColor = vec4(clamp(c, 0.0, 40.0), 1.0); }`,
+}));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.55, 0.85);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
@@ -280,10 +289,6 @@ const apronTex = canvasTex(1024, 128, (g, w, h) => {
   g.fillText('KNOCKOUT LEGENDS', w / 2, h / 2 + 4);
   g.fillStyle = '#c99a3c'; g.fillRect(0, 6, w, 4); g.fillRect(0, h - 10, w, 4);
 });
-const skinBump = canvasTex(512, 512, (g, w, h) => {
-  g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); noise(g, w, h, 70);
-  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(0,0,0,${rand(.05, .2)})`; g.beginPath(); g.arc(rand(0, w), rand(0, h), rand(.6, 1.6), 0, 7); g.fill(); }
-}, { srgb: false, repeat: [4, 4] });
 const dotTex = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.35, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
 
 /* =========================================================================
@@ -500,7 +505,7 @@ const UA = .3, FA = .28, TH = .46, SH = .45;
 function makeRig(cfg) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ'; scene.add(root);
   const body = new THREE.Group(); body.scale.setScalar(cfg.scale); root.add(body);
-  const skin = phys({ color: cfg.skin, roughness: .52, clearcoat: .2, clearcoatRoughness: .45, sheen: .45, sheenRoughness: .7, sheenColor: new THREE.Color(cfg.sheen), bumpMap: skinBump, bumpScale: .35, envMapIntensity: .4 });
+  const skin = phys({ color: cfg.skin, roughness: .52, clearcoat: .2, clearcoatRoughness: .45, sheen: .45, sheenRoughness: .7, sheenColor: new THREE.Color(cfg.sheen), envMapIntensity: .4 });
   const face = skin.clone();
   const trunks = phys({ color: cfg.trunks, roughness: .3, sheen: 1, sheenRoughness: .3, sheenColor: new THREE.Color(cfg.trim), envMapIntensity: .7 });
   const trim = phys({ color: cfg.trim, roughness: .4, metalness: .35, envMapIntensity: .35 });
@@ -1239,18 +1244,20 @@ function sim(rdt, now) {
 
 function applyQuality() {
   const q = QUALITY[G.quality];
-  const pr = Math.min(devicePixelRatio || 1, q.pr);
-  renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
   bloom.enabled = q.bloom;
   if (key.shadow.mapSize.x !== q.shadow) { key.shadow.mapSize.set(q.shadow, q.shadow); key.shadow.map?.dispose(); key.shadow.map = null; }
   onResize();
 }
 function onResize() {
-  const w = innerWidth, h = innerHeight;
+  const w = innerWidth, h = innerHeight, q = QUALITY[G.quality];
+  const pr = Math.max(.5, Math.min(devicePixelRatio || 1, q.pr, Math.sqrt(q.px / (w * h))));
+  renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
   renderer.setSize(w, h, false); composer.setSize(w, h); bloom.setSize(w, h);
   camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 addEventListener('resize', onResize);
+canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); G.glLost = true; });
+canvas.addEventListener('webglcontextrestored', () => { G.glLost = false; applyQuality(); });
 applyQuality();
 requestAnimationFrame(frame);
 
@@ -1267,6 +1274,7 @@ const game = {
       kd: G.kd ? { count: G.kd.count, player: G.kd.victim === P1, fill: G.kd.fill || 0, name: G.kd.victim.cfg.last } : null,
       breakT: G.breakT, introT: G.introT, cards: G.cards.map((c) => ({ ...c })), overT: G.overT,
       result: G.result ? { type: G.result.type, kind: G.result.kind, winner: G.result.winner ? `${G.result.winner.cfg.first} ${G.result.winner.cfg.last}` : null, playerWon: G.result.winner === P1, round: G.result.round, clock: G.result.clock, totals: G.result.totals } : null,
+      glLost: !!G.glLost,
       opts: { difficulty: G.difficulty, rounds: G.rounds, quality: G.quality, cam: G.cam },
       tape: [FIGHTERS.vance, FIGHTERS.volkov],
     };
@@ -1461,6 +1469,7 @@ function App() {
     ${s.kd && html`<${Count} s=${s}/>`}
     ${s.mode === 'break' && html`<${Corner} s=${s}/>`}
     ${s.mode === 'paused' && html`<${Pause}/>`}
+    ${s.glLost && html`<div className="sheet"><div className="card" style=${{ width: 'min(420px,100%)' }}><div className="h2">The graphics card reset</div><div className="p">Your browser dropped the 3D view, usually from running low on GPU memory. Pick Performance graphics and reload the page.</div><div className="row"><button className="btn" onClick=${() => { game.setOpt('quality', 'perf'); location.reload(); }}>Switch to Performance</button></div></div></div>`}
     ${s.mode === 'over' && s.result && html`<${Result} s=${s}/>`}
     ${s.mode === 'fight' && s.touch && html`<${Touch}/>`}
     ${s.mode === 'fight' && !s.touch && html`<${Hint}/>`}
