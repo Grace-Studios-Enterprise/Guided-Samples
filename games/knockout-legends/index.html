@@ -813,7 +813,9 @@ function ik(S, T, a, b, hint, E, W) {
 const HEAD = { geo: null, map: null, normal: null, avg: null, eyes: [], scale: .054 };
 try {
   const tl = new THREE.TextureLoader();
-  const [gltf, map, normal] = await Promise.all([new GLTFLoader().loadAsync('assets/LeePerrySmith.glb'), tl.loadAsync('assets/Map-COL.jpg'), tl.loadAsync('assets/Infinite-Level_02_Tangent_SmoothUV.jpg')]);
+  const glb = (await import('./assets/LeePerrySmith.glb.js')).default; // base64 so it can be served as a script
+  const bytes = Uint8Array.from(atob(glb), (ch) => ch.charCodeAt(0));
+  const [gltf, map, normal] = await Promise.all([new GLTFLoader().parseAsync(bytes.buffer, ''), tl.loadAsync('assets/Map-COL.jpg'), tl.loadAsync('assets/Infinite-Level_02_Tangent_SmoothUV.jpg')]);
   const src = gltf.scene.getObjectByName('LeePerrySmith') || gltf.scene.getObjectByProperty('isMesh', true);
   const g = src.geometry.clone(), pos = g.attributes.position, ix = g.index.array, keep = [];
   for (let t = 0; t < ix.length; t += 3) if (pos.getY(ix[t]) > -1.3 && pos.getY(ix[t + 1]) > -1.3 && pos.getY(ix[t + 2]) > -1.3) keep.push(ix[t], ix[t + 1], ix[t + 2]);
