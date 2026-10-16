@@ -161,6 +161,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 
 /* =========================================================================
    utils
@@ -183,9 +186,9 @@ try { await Promise.race([Promise.all([document.fonts.load('64px Anton'), docume
    renderer + post
    ========================================================================= */
 const QUALITY = {
-  perf:  { label: 'Performance', pr: 1,    px: 1.3e6, shadow: 1024, bloom: false, crowd: .45, tv: false },
-  high:  { label: 'High',        pr: 1.5,  px: 2.6e6, shadow: 2048, bloom: true,  crowd: .8,  tv: true },
-  ultra: { label: 'Ultra',       pr: 2,    px: 4.5e6, shadow: 4096, bloom: true,  crowd: 1,   tv: true },
+  perf:  { label: 'Performance', pr: 1,    px: 1.3e6, shadow: 1024, ao: false, dof: false, bloom: false, crowd: .45, tv: false },
+  high:  { label: 'High',        pr: 1.5,  px: 2.6e6, shadow: 2048, ao: true,  dof: true,  bloom: true,  crowd: .8,  tv: true },
+  ultra: { label: 'Ultra',       pr: 2,    px: 4.5e6, shadow: 4096, ao: true,  dof: true,  bloom: true,  crowd: 1,   tv: true },
 };
 const canvas = document.getElementById('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -206,6 +209,12 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture
 const msaaRT = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 });
 const composer = new EffectComposer(renderer, msaaRT);
 composer.addPass(new RenderPass(scene, camera));
+const FX = []; // additive effects that must not write depth/normals for AO and depth of field
+const hideFX = (pass) => { const r = pass.render.bind(pass); pass.render = (...a) => { FX.forEach((o) => (o.userData.v = o.visible, o.visible = false)); r(...a); FX.forEach((o) => (o.visible = o.userData.v)); }; return pass; };
+const gtao = hideFX(new GTAOPass(scene, camera, innerWidth, innerHeight));
+gtao.updateGtaoMaterial({ radius: .32, distanceExponent: 1, thickness: 1, scale: 1.15, samples: 16, distanceFallOff: 1, screenSpaceRadius: false });
+gtao.blendIntensity = .9;
+composer.addPass(gtao);
 // guard: one NaN/Inf pixel fed into bloom spreads over the whole frame and turns it black
 composer.addPass(new ShaderPass({
   uniforms: { tDiffuse: { value: null } },
@@ -216,6 +225,9 @@ composer.addPass(new ShaderPass({
       gl_FragColor = vec4(clamp(c, 0.0, 40.0), 1.0); }`,
 }));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.55, 0.85);
+const bokeh = hideFX(new BokehPass(scene, camera, { focus: 3, aperture: .0022, maxblur: .011 }));
+bokeh.enabled = false;
+composer.addPass(bokeh);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = new ShaderPass({
@@ -345,7 +357,7 @@ function buildRing() {
 buildRing();
 
 // lights ----------------------------------------------------------------
-scene.add(new THREE.HemisphereLight(0x29324a, 0x0b0805, .55));
+scene.add(new THREE.HemisphereLight(0x29324a, 0x0b0805, .4));
 const key = new THREE.SpotLight(0xfff1df, 150, 0, .5, .55, 2);
 key.position.set(0, 10, 0); key.target.position.set(0, 0, 0);
 key.castShadow = true; key.shadow.bias = -.00015; key.shadow.normalBias = .02; key.shadow.camera.near = 5; key.shadow.camera.far = 14; key.shadow.radius = 3;
@@ -371,7 +383,7 @@ function beam(from, to, radius, strength, color) {
   const m = beamMat.clone(); m.uniforms.strength.value = strength; m.uniforms.color.value = new THREE.Color(color);
   const cone = new THREE.Mesh(new THREE.ConeGeometry(radius, h, 48, 1, true), m);
   cone.position.y = -h / 2;
-  const g = new THREE.Group(); g.position.copy(from); g.quaternion.setFromUnitVectors(V(0, -1, 0), to.clone().sub(from).normalize()); g.add(cone); scene.add(g);
+  const g = new THREE.Group(); g.position.copy(from); g.quaternion.setFromUnitVectors(V(0, -1, 0), to.clone().sub(from).normalize()); g.add(cone); scene.add(g); FX.push(g);
   return m;
 }
 const beams = [beam(V(0, 10, 0), V(0, 0, 0), 5.0, .085, 0xfff1df)];
@@ -418,7 +430,7 @@ const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(.105, 12, 10),
   const shirts = [0x1b1d24, 0x2a2f3a, 0x101114, 0x4a1a20, 0x1d2d4f, 0x3b3b3b, 0x6d6658, 0x0f2a24, 0x8a8a8a, 0x5a1414];
   const skins = [0x5a3a24, 0x8d5a3b, 0xc49a7a, 0xe0b899, 0x3b2618, 0xa87454];
   const c = new THREE.Color();
-  people.forEach((p, i) => { bodyMesh.setColorAt(i, c.set(pick(shirts)).multiplyScalar(rand(.6, 1.1))); headMesh.setColorAt(i, c.set(pick(skins))); });
+  people.forEach((p, i) => { bodyMesh.setColorAt(i, c.set(pick(shirts)).multiplyScalar(rand(.6, 1.1))); headMesh.setColorAt(i, c.set(pick(skins)).multiplyScalar(.55)); });
 }
 scene.add(bodyMesh, headMesh);
 const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = V(), _p = V();
@@ -441,7 +453,7 @@ function updateCrowd(t, excite) {
 
 // camera flashes
 const flashes = [];
-for (let i = 0; i < 48; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: new THREE.Color(1, 1, 1).multiplyScalar(8), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); s.visible = false; scene.add(s); flashes.push({ s, life: 0 }); }
+for (let i = 0; i < 48; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex, color: new THREE.Color(1, 1, 1).multiplyScalar(8), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); s.visible = false; scene.add(s); FX.push(s); flashes.push({ s, life: 0 }); }
 function spawnFlash() {
   const f = flashes.find((f) => f.life <= 0); if (!f) return;
   const p = people[(Math.random() * Math.floor(CROWD_N * QUALITY[G.quality].crowd)) | 0];
@@ -454,7 +466,7 @@ const dust = (() => {
   for (let i = 0; i < n; i++) { const r = Math.sqrt(Math.random()) * 4.2, a = rand(0, 7); pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = rand(.2, 9); pos[i * 3 + 2] = Math.sin(a) * r; }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const p = new THREE.Points(g, new THREE.PointsMaterial({ size: .022, map: dotTex, transparent: true, opacity: .4, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xfff0d8 }));
-  scene.add(p); return p;
+  scene.add(p); FX.push(p); return p;
 })();
 
 // sweat spray on impact
@@ -463,7 +475,7 @@ const spray = (() => {
   const pos = new Float32Array(SPRAY_N * 3).fill(-999), vel = new Float32Array(SPRAY_N * 3), life = new Float32Array(SPRAY_N);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: .035, map: dotTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: new THREE.Color(.85, .92, 1).multiplyScalar(1.6) }));
-  pts.frustumCulled = false; scene.add(pts);
+  pts.frustumCulled = false; scene.add(pts); FX.push(pts);
   let cursor = 0;
   return {
     burst(at, dir, n, power) {
@@ -488,86 +500,301 @@ const spray = (() => {
 })();
 
 /* =========================================================================
-   fighters: procedural rig, IK arms and legs
+   fighters: sculpted SDF anatomy -> one seamless skinned mesh per fighter,
+   a scanned head, and IK-driven bones
    ========================================================================= */
 const FIGHTERS = {
-  vance: { first: 'Marcus', last: 'Vance', nick: 'Iron', corner: 'red', from: 'Philadelphia, PA', record: '27–1–0', kos: 21, height: `6'2"`, reach: '78"', weight: '224 lb', stance: 'Orthodox',
-    skin: 0x6a3f27, sheen: 0x8a5a3e, trunks: 0x7d0c18, trim: 0xd9a441, glove: 0xa8101c, cuff: 0xf2efe6, shoe: 0xf0ede6, hair: 0x0c0a08, beard: true, scale: 1.0, power: 1.05, speed: 1.0, chin: 1.0 },
-  volkov: { first: 'Dmitri', last: 'Volkov', nick: 'The Glacier', corner: 'blue', from: 'Yekaterinburg, RU', record: '31–0–0', kos: 24, height: `6'5"`, reach: '80"', weight: '238 lb', stance: 'Orthodox',
-    skin: 0xe0b394, sheen: 0xffd0b8, trunks: 0x0d2b5e, trim: 0xe6e6ee, glove: 0x15336a, cuff: 0xe6e6ee, shoe: 0x14151a, hair: 0xa8804e, beard: false, scale: 1.035, power: 1.08, speed: .94, chin: 1.04 },
+  vance: { id: 'vance', first: 'Marcus', last: 'Vance', nick: 'Iron', corner: 'red', from: 'Philadelphia, PA', record: '27–1–0', kos: 21, height: `6'2"`, reach: '78"', weight: '224 lb', stance: 'Orthodox',
+    skin: 0x5c3421, trunks: 0x7a0b16, trim: 0xd9a441, glove: 0xa30f1b, cuff: 0xf2efe6, shoe: 0xf0ede6, bulk: 1.06, scale: 1.0, power: 1.05, speed: 1.0, chin: 1.0 },
+  volkov: { id: 'volkov', first: 'Dmitri', last: 'Volkov', nick: 'The Glacier', corner: 'blue', from: 'Yekaterinburg, RU', record: '31–0–0', kos: 24, height: `6'5"`, reach: '80"', weight: '238 lb', stance: 'Orthodox',
+    skin: null /* matches the head scan */, trunks: 0x0c2a5c, trim: 0xe6e6ee, glove: 0x14326a, cuff: 0xe6e6ee, shoe: 0x14151a, bulk: 1.0, scale: 1.035, power: 1.08, speed: .94, chin: 1.04 },
 };
-const SPH = new THREE.SphereGeometry(1, 32, 24);
-const HEMI = new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI * .56);
-const cylCache = {};
-const cyl = (rt, rb) => cylCache[rt + ',' + rb] || (cylCache[rt + ',' + rb] = new THREE.CylinderGeometry(rt, rb, 1, 22, 1));
 const UA = .3, FA = .28, TH = .46, SH = .45;
+const P_Y = .95, CHEST_DY = .015, HEAD_Y = .56;
+const SHO = [V(.19, .445, 0), V(-.19, .445, 0)];
+const HIP = [V(.1, -.075, 0), V(-.1, -.075, 0)];
+const FOOT = [V(.17, .085, .25), V(-.15, .085, -.25)];
+const ONE = V(1, 1, 1);
+
+// bind pose (body space, metres, facing +Z, fighter's left = +X): A-pose arms, straight legs
+const BIND = (() => {
+  const C = V(0, P_Y + CHEST_DY, 0), P = V(0, P_Y, 0);
+  const arm = (i) => { const s = i ? -1 : 1; const S = SHO[i].clone().add(C); const E = S.clone().addScaledVector(V(s * .62, -.785, 0).normalize(), UA); const W = E.clone().addScaledVector(V(s * .5, -.82, .26).normalize(), FA); return { S, E, W, perp: V(0, 0, -1) }; };
+  const leg = (i) => { const s = i ? -1 : 1; const H = HIP[i].clone().add(P); const K = H.clone().addScaledVector(V(s * .05, -1, 0).normalize(), TH); const A = K.clone().addScaledVector(V(0, -1, -.02).normalize(), SH); return { H, K, A, perp: V(0, 0, 1) }; };
+  return { C, P, arms: [arm(0), arm(1)], legs: [leg(0), leg(1)] };
+})();
+
+// --- signed distance primitives -------------------------------------------
+function sdEll(x, y, z, c, r) {
+  const a = (x - c[0]) / r[0], b = (y - c[1]) / r[1], d = (z - c[2]) / r[2];
+  const k0 = Math.sqrt(a * a + b * b + d * d), a1 = a / r[0], b1 = b / r[1], d1 = d / r[2], k1 = Math.sqrt(a1 * a1 + b1 * b1 + d1 * d1);
+  return k1 > 1e-9 ? k0 * (k0 - 1) / k1 : -Math.min(r[0], r[1], r[2]);
+}
+function sdCone(x, y, z, a, b, r1, r2) {
+  const bx = b[0] - a[0], by = b[1] - a[1], bz = b[2] - a[2], qx = x - a[0], qy = y - a[1], qz = z - a[2];
+  let t = (qx * bx + qy * by + qz * bz) / (bx * bx + by * by + bz * bz); t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const dx = qx - bx * t, dy = qy - by * t, dz = qz - bz * t;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) - (r1 + (r2 - r1) * t);
+}
+const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * .25; };
+const arr = (v) => [v.x, v.y, v.z];
+const lerpA = (a, b, t, off = [0, 0, 0]) => [a[0] + (b[0] - a[0]) * t + off[0], a[1] + (b[1] - a[1]) * t + off[1], a[2] + (b[2] - a[2]) * t + off[2]];
+function ell(c, r, k) { const m = Math.max(...r) + k; return { k, lo: [c[0] - m, c[1] - m, c[2] - m], hi: [c[0] + m, c[1] + m, c[2] + m], f: (x, y, z) => sdEll(x, y, z, c, r) }; }
+function cone(a, b, r1, r2, k) { const m = Math.max(r1, r2) + k; return { k, lo: [0, 1, 2].map((i) => Math.min(a[i], b[i]) - m), hi: [0, 1, 2].map((i) => Math.max(a[i], b[i]) + m), f: (x, y, z) => sdCone(x, y, z, a, b, r1, r2) }; }
+function evalPrims(ps, x, y, z) {
+  let d = 1;
+  for (let i = 0; i < ps.length; i++) { const p = ps[i]; if (x < p.lo[0] || x > p.hi[0] || y < p.lo[1] || y > p.hi[1] || z < p.lo[2] || z > p.hi[2]) continue; d = smin(d, p.f(x, y, z), p.k); }
+  return d;
+}
+
+// a heavyweight's musculature, one primitive per muscle group
+function anatomy(bulk, withHead) {
+  const b = bulk, P = [];
+  P.push(ell([0, .935, -.005], [.155 * b, .115, .11 * b], .05));
+  for (const s of [1, -1]) P.push(ell([s * .07, .905, -.062], [.08 * b, .085, .07 * b], .04));
+  P.push(ell([0, 1.07, .005], [.135 * b, .15, .1 * b], .06));
+  for (const s of [1, -1]) P.push(ell([s * .1, 1.06, 0], [.06 * b, .11, .075 * b], .04));
+  P.push(ell([0, 1.255, -.005], [.168 * b, .185, .118 * b], .06));
+  for (const s of [1, -1]) {
+    P.push(ell([s * .082, 1.318, .058], [.092 * b, .07 * b, .056 * b], .03));
+    P.push(ell([s * .13, 1.22, -.025], [.062 * b, .14, .082 * b], .04));
+    P.push(cone([s * .03, 1.47, -.025], [s * .165, 1.43, -.015], .046 * b, .04 * b, .04));
+    for (const y of [1.02, 1.09, 1.16]) P.push(ell([s * .038, y, .094 * b], [.035, .028, .02], .016));
+    P.push(ell([s * .095, 1.13, .06 * b], [.035, .06, .03], .025)); // serratus/oblique ridge
+  }
+  P.push(ell([0, 1.38, -.032], [.15 * b, .072, .08 * b], .05));
+  P.push(cone([0, 1.4, -.015], [0, 1.565, .005], .07 * b, .058, .04));
+  for (const a of BIND.arms) {
+    const S = arr(a.S), E = arr(a.E), W = arr(a.W), s = Math.sign(S[0]);
+    P.push(ell([S[0] + s * .012, S[1] - .005, S[2]], [.066 * b, .072 * b, .074 * b], .035));
+    P.push(cone(S, E, .058 * b, .043 * b, .03));
+    P.push(cone(lerpA(S, E, .25, [0, 0, .018]), lerpA(S, E, .7, [0, 0, .014]), .042 * b, .036 * b, .025));
+    P.push(cone(lerpA(S, E, .12, [0, 0, -.02]), lerpA(S, E, .75, [0, 0, -.018]), .042 * b, .034 * b, .025));
+    P.push(cone(E, W, .046 * b, .032, .025));
+    P.push(cone(lerpA(E, W, .06), lerpA(E, W, .45), .043 * b, .036 * b, .02));
+  }
+  for (const l of BIND.legs) {
+    const H = arr(l.H), K = arr(l.K), A = arr(l.A);
+    P.push(cone(H, K, .094 * b, .055 * b, .05));
+    P.push(cone(lerpA(H, K, .2, [0, 0, .028]), lerpA(H, K, .82, [0, 0, .022]), .066 * b, .045 * b, .04));
+    P.push(cone(lerpA(H, K, .15, [0, 0, -.026]), lerpA(H, K, .75, [0, 0, -.02]), .062 * b, .045 * b, .04));
+    P.push(ell(K, [.05, .055, .056], .03));
+    P.push(cone(K, A, .05 * b, .033, .03));
+    P.push(cone(lerpA(K, A, .1, [0, 0, -.03]), lerpA(K, A, .5, [0, 0, -.022]), .052 * b, .038 * b, .03));
+  }
+  if (withHead) { P.push(ell([0, 1.66, .005], [.088, .112, .102], .04)); P.push(ell([0, 1.6, .045], [.065, .05, .06], .03)); }
+  return P;
+}
+function shortsPrims(b) {
+  const P = [ell([0, .935, -.006], [.19 * b, .14, .14 * b], .04)];
+  for (const l of BIND.legs) { const H = arr(l.H), K = arr(l.K); P.push(cone(lerpA(H, K, .02), lerpA(H, K, .38), .122 * b, .112 * b, .04)); }
+  return P;
+}
+const SHORTS_TOP = 1.04, SHORTS_HEM = .73;
+const shortsSDF = (ps, x, y, z) => Math.max(evalPrims(ps, x, y, z), y - SHORTS_TOP, SHORTS_HEM - y);
+
+// bones and their bind-space influence capsules
+const BONES = ['hips', 'abdomen', 'chest', 'neck', 'head', 'uarmL', 'uarmR', 'farmL', 'farmR', 'thighL', 'thighR', 'shinL', 'shinR'];
+const INFL = [
+  [V(0, .84, 0), V(0, .98, 0), .12], [V(0, .98, 0), V(0, 1.14, 0), .11], [V(0, 1.14, 0), V(0, 1.4, 0), .155], [V(0, 1.43, 0), V(0, 1.53, 0), .035], [V(0, 1.54, 0), V(0, 1.78, 0), .04],
+  [BIND.arms[0].S, BIND.arms[0].E, .035], [BIND.arms[1].S, BIND.arms[1].E, .035], [BIND.arms[0].E, BIND.arms[0].W, .03], [BIND.arms[1].E, BIND.arms[1].W, .03],
+  [BIND.legs[0].H, BIND.legs[0].K, .055], [BIND.legs[1].H, BIND.legs[1].K, .055], [BIND.legs[0].K, BIND.legs[0].A, .035], [BIND.legs[1].K, BIND.legs[1].A, .035],
+];
+const _sp = V();
+function segDist(p, a, b) { _sp.subVectors(b, a); const t = clamp(_tmp.subVectors(p, a).dot(_sp) / _sp.lengthSq(), 0, 1); return _tmp.copy(a).addScaledVector(_sp, t).distanceTo(p); }
+
+// --- surface nets mesher -------------------------------------------------------
+function buildBodyGeometry(cfg, withHead) {
+  const prims = anatomy(cfg.bulk, withHead), shorts = shortsPrims(cfg.bulk);
+  const sdf = (x, y, z) => smin(evalPrims(prims, x, y, z), shortsSDF(shorts, x, y, z), .006);
+  const h = .0085, lo = [-.66, BIND.legs[0].A.y - .06, -.24], hi = [.66, withHead ? 1.82 : 1.6, .24];
+  const nx = Math.ceil((hi[0] - lo[0]) / h) + 1, ny = Math.ceil((hi[1] - lo[1]) / h) + 1, nz = Math.ceil((hi[2] - lo[2]) / h) + 1;
+  const F = new Float32Array(nx * ny * nz);
+  for (let k = 0, n = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++, n++) {
+    const y = lo[1] + j * h;
+    // cut the leg stumps at the ankle (the boots cover them)
+    F[n] = Math.max(sdf(lo[0] + i * h, y, lo[2] + k * h), BIND.legs[0].A.y + .02 - y);
+  }
+  const at = (i, j, k) => F[i + nx * (j + ny * k)];
+  const cellV = new Int32Array(nx * ny * nz).fill(-1);
+  const pos = [];
+  const corner = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+  const edges = []; for (let a = 0; a < 8; a++) for (const bit of [1, 2, 4]) if (!(a & bit)) edges.push([a, a | bit]);
+  const v = new Float32Array(8);
+  for (let k = 0; k < nz - 1; k++) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    let mask = 0;
+    for (let c = 0; c < 8; c++) { v[c] = at(i + corner[c][0], j + corner[c][1], k + corner[c][2]); if (v[c] < 0) mask |= 1 << c; }
+    if (mask === 0 || mask === 255) continue;
+    let sx = 0, sy = 0, sz = 0, cnt = 0;
+    for (const [a, b] of edges) {
+      if ((v[a] < 0) === (v[b] < 0)) continue;
+      const t = v[a] / (v[a] - v[b]);
+      sx += corner[a][0] + (corner[b][0] - corner[a][0]) * t; sy += corner[a][1] + (corner[b][1] - corner[a][1]) * t; sz += corner[a][2] + (corner[b][2] - corner[a][2]) * t; cnt++;
+    }
+    cellV[i + nx * (j + ny * k)] = pos.length / 3;
+    pos.push(lo[0] + (i + sx / cnt) * h, lo[1] + (j + sy / cnt) * h, lo[2] + (k + sz / cnt) * h);
+  }
+  const quads = [];
+  const cv = (i, j, k) => cellV[i + nx * (j + ny * k)];
+  for (let k = 1; k < nz - 1; k++) for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
+    const s0 = at(i, j, k) < 0;
+    if (s0 !== (at(i + 1, j, k) < 0)) quads.push(cv(i, j - 1, k - 1), cv(i, j, k - 1), cv(i, j, k), cv(i, j - 1, k));
+    if (s0 !== (at(i, j + 1, k) < 0)) quads.push(cv(i - 1, j, k - 1), cv(i, j, k - 1), cv(i, j, k), cv(i - 1, j, k));
+    if (s0 !== (at(i, j, k + 1) < 0)) quads.push(cv(i - 1, j - 1, k), cv(i, j - 1, k), cv(i, j, k), cv(i - 1, j, k));
+  }
+  // normals from the field gradient, regions, colours, skin weights
+  const nv = pos.length / 3, nrm = new Float32Array(nv * 3), col = new Float32Array(nv * 3), sIdx = new Uint16Array(nv * 4), sW = new Float32Array(nv * 4), region = new Uint8Array(nv);
+  const e = .0015, trunkC = new THREE.Color(cfg.trunks), trimC = new THREE.Color(cfg.trim), p = V(), d = new Float32Array(BONES.length);
+  for (let n = 0; n < nv; n++) {
+    const x = pos[n * 3], y = pos[n * 3 + 1], z = pos[n * 3 + 2];
+    let gx = sdf(x + e, y, z) - sdf(x - e, y, z), gy = sdf(x, y + e, z) - sdf(x, y - e, z), gz = sdf(x, y, z + e) - sdf(x, y, z - e);
+    const gl = Math.hypot(gx, gy, gz) || 1; gx /= gl; gy /= gl; gz /= gl;
+    nrm[n * 3] = gx; nrm[n * 3 + 1] = gy; nrm[n * 3 + 2] = gz;
+    const inShorts = shortsSDF(shorts, x, y, z) <= evalPrims(prims, x, y, z) + .002;
+    region[n] = inShorts ? 1 : 0;
+    let c = new THREE.Color(1, 1, 1);
+    if (inShorts) c = (y > SHORTS_TOP - .055 || y < SHORTS_HEM + .022 || (Math.abs(gx) > .86 && y < SHORTS_TOP - .07)) ? trimC : trunkC;
+    col[n * 3] = c.r; col[n * 3 + 1] = c.g; col[n * 3 + 2] = c.b;
+    p.set(x, y, z);
+    let dmin = 1e9;
+    for (let b = 0; b < BONES.length; b++) { d[b] = Math.max(0, segDist(p, INFL[b][0], INFL[b][1]) - INFL[b][2]); dmin = Math.min(dmin, d[b]); }
+    const ws = Array.from(d, (dv, b) => [b, Math.exp(-(dv - dmin) / .018)]).sort((A, B) => B[1] - A[1]).slice(0, 4);
+    const tot = ws.reduce((s, w) => s + w[1], 0);
+    ws.forEach(([b, w], q) => { sIdx[n * 4 + q] = b; sW[n * 4 + q] = w / tot; });
+  }
+  const idx = [[], []];
+  for (let q = 0; q < quads.length; q += 4) {
+    const a = quads[q], b = quads[q + 1], c = quads[q + 2], dd = quads[q + 3];
+    if (a < 0 || b < 0 || c < 0 || dd < 0) continue;
+    for (const [i0, i1, i2] of [[a, b, c], [a, c, dd]]) {
+      // orient each triangle along the field gradient
+      const ax = pos[i1 * 3] - pos[i0 * 3], ay = pos[i1 * 3 + 1] - pos[i0 * 3 + 1], az = pos[i1 * 3 + 2] - pos[i0 * 3 + 2];
+      const bx = pos[i2 * 3] - pos[i0 * 3], by = pos[i2 * 3 + 1] - pos[i0 * 3 + 1], bz = pos[i2 * 3 + 2] - pos[i0 * 3 + 2];
+      const fx = ay * bz - az * by, fy = az * bx - ax * bz, fz = ax * by - ay * bx;
+      const dot = fx * (nrm[i0 * 3] + nrm[i1 * 3] + nrm[i2 * 3]) + fy * (nrm[i0 * 3 + 1] + nrm[i1 * 3 + 1] + nrm[i2 * 3 + 1]) + fz * (nrm[i0 * 3 + 2] + nrm[i1 * 3 + 2] + nrm[i2 * 3 + 2]);
+      const g = region[i0] + region[i1] + region[i2] >= 2 ? 1 : 0;
+      if (dot >= 0) idx[g].push(i0, i1, i2); else idx[g].push(i0, i2, i1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(sIdx, 4));
+  geo.setAttribute('skinWeight', new THREE.BufferAttribute(sW, 4));
+  geo.setIndex([...idx[0], ...idx[1]]);
+  geo.addGroup(0, idx[0].length, 0); geo.addGroup(idx[0].length, idx[1].length, 1);
+  return geo;
+}
+
+// --- bone matrices (body space) --------------------------------------------------------
+const _bx = V(), _by = V(), _bz = V(), _bq1 = new THREE.Quaternion(), _bq2 = new THREE.Quaternion(), _bq3 = new THREE.Quaternion(), _bp = V(), _bs = V(), _bm = new THREE.Matrix4(), _bzr = V();
+function limbMatrix(out, A, B, zRef) {
+  _by.subVectors(B, A).normalize(); _bx.crossVectors(_by, zRef);
+  if (_bx.lengthSq() < 1e-8) _bx.set(1, 0, 0); _bx.normalize(); _bz.crossVectors(_bx, _by);
+  out.makeBasis(_bx, _by, _bz); out.setPosition(A); return out;
+}
+function boneLocals(out, hipsM, chestM, headRel, arms, legs) {
+  out[0].copy(hipsM); out[2].copy(chestM);
+  out[4].multiplyMatrices(chestM, headRel);
+  hipsM.decompose(_bp, _bq1, _bs); chestM.decompose(_bp, _bq2, _bs);
+  out[1].compose(_bp, _bq3.copy(_bq1).slerp(_bq2, .5), ONE);
+  out[4].decompose(_bs, _bq1, _bs);
+  _bp.set(0, .5, 0).applyMatrix4(chestM);
+  out[3].compose(_bp, _bq3.copy(_bq2).slerp(_bq1, .5), ONE);
+  for (let i = 0; i < 2; i++) {
+    const a = arms[i]; _bzr.copy(a.perp).negate();
+    limbMatrix(out[5 + i], a.S, a.E, _bzr); limbMatrix(out[7 + i], a.E, a.W, _bzr);
+    const l = legs[i];
+    limbMatrix(out[9 + i], l.H, l.K, l.perp); limbMatrix(out[11 + i], l.K, l.A, l.perp);
+  }
+}
+const BIND_INV = (() => {
+  const out = BONES.map(() => new THREE.Matrix4());
+  boneLocals(out, new THREE.Matrix4().makeTranslation(0, P_Y, 0), new THREE.Matrix4().makeTranslation(0, P_Y + CHEST_DY, 0), new THREE.Matrix4().makeTranslation(0, HEAD_Y, .012), BIND.arms, BIND.legs);
+  return out.map((m) => m.clone().invert());
+})();
+
+// --- materials -------------------------------------------------------------------------
+// skin: per-channel wrapped diffuse so light bleeds red past the terminator (cheap subsurface scattering)
+function skinMaterial(o) {
+  const m = phys(Object.assign({ roughness: .5, sheen: .35, sheenRoughness: .55, sheenColor: new THREE.Color(0x7a3b2a), clearcoat: .2, clearcoatRoughness: .4, envMapIntensity: .35 }, o));
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_physical_pars_fragment>', THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+      'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );',
+      'float ndlRaw = dot( geometryNormal, directLight.direction ); vec3 wrapW = vec3( 0.42, 0.17, 0.09 ); vec3 sssNdl = clamp( ( vec3( ndlRaw ) + wrapW ) / ( 1.0 + wrapW ), 0.0, 1.0 ); reflectedLight.directDiffuse += sssNdl * sssNdl * ( 3.0 - 2.0 * sssNdl ) * directLight.color * BRDF_Lambert( material.diffuseColor );'));
+  };
+  m.customProgramCacheKey = () => 'skin-sss-v2';
+  return m;
+}
+function superEllipsoid(e, sx, sy, sz, taper = 0) {
+  const g = new THREE.SphereGeometry(1, 48, 36), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    x = Math.sign(x) * Math.pow(Math.abs(x), e); y = Math.sign(y) * Math.pow(Math.abs(y), e); z = Math.sign(z) * Math.pow(Math.abs(z), e);
+    const t = 1 - taper * (1 - (y + 1) / 2);
+    p.setXYZ(i, x * sx * t, y * sy, z * sz * t);
+  }
+  g.computeVertexNormals(); return g;
+}
+const SPH = new THREE.SphereGeometry(1, 32, 24);
+const GLOVE_GEO = superEllipsoid(.72, .086, .112, .098, .22);
+const THUMB_GEO = new THREE.CapsuleGeometry(.024, .05, 8, 16);
+const FOOT_GEO = superEllipsoid(.7, .058, .045, .13);
+const BODY_GEO = {};
 
 function makeRig(cfg) {
   const root = new THREE.Group(); root.rotation.order = 'YXZ'; scene.add(root);
   const body = new THREE.Group(); body.scale.setScalar(cfg.scale); root.add(body);
-  const skin = phys({ color: cfg.skin, roughness: .52, clearcoat: .2, clearcoatRoughness: .45, sheen: .45, sheenRoughness: .7, sheenColor: new THREE.Color(cfg.sheen), envMapIntensity: .4 });
-  const face = skin.clone();
-  const trunks = phys({ color: cfg.trunks, roughness: .3, sheen: 1, sheenRoughness: .3, sheenColor: new THREE.Color(cfg.trim), envMapIntensity: .7 });
-  const trim = phys({ color: cfg.trim, roughness: .4, metalness: .35, envMapIntensity: .35 });
-  const glove = phys({ color: cfg.glove, roughness: .3, clearcoat: 1, clearcoatRoughness: .1, envMapIntensity: .9 });
-  const cuff = phys({ color: cfg.cuff, roughness: .5 });
-  const shoe = phys({ color: cfg.shoe, roughness: .42, clearcoat: .5, clearcoatRoughness: .3 });
-  const hair = new THREE.MeshStandardMaterial({ color: cfg.hair, roughness: .95 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x0b0b0b, roughness: .25 });
-  const guard = phys({ color: cfg.corner === 'red' ? 0xe23a3a : 0x2e7be0, roughness: .2, clearcoat: 1 });
-  const mk = (geo, mat, parent, s = [1, 1, 1], p = [0, 0, 0]) => { const m = shadowy(new THREE.Mesh(geo, mat)); m.scale.set(...s); m.position.set(...p); parent.add(m); return m; };
-
   const chest = new THREE.Group(); chest.rotation.order = 'YXZ'; body.add(chest);
-  mk(SPH, skin, chest, [.155, .15, .118], [0, .13, .012]);
-  mk(SPH, skin, chest, [.165, .11, .115], [0, .035, 0]);
-  mk(SPH, skin, chest, [.205, .205, .135], [0, .32, 0]);
-  for (const s of [1, -1]) {
-    mk(SPH, skin, chest, [.098, .072, .062], [s * .086, .37, .082]);
-    mk(SPH, skin, chest, [.085, .16, .095], [s * .125, .27, -.03]);
-    mk(SPH, skin, chest, [.06, .1, .05], [s * .12, .12, .05]);
-    for (const y of [.06, .135, .21]) mk(SPH, skin, chest, [.038, .031, .022], [s * .039, y, .112]);
-  }
-  mk(SPH, skin, chest, [.2, .09, .115], [0, .455, -.02]);
-  mk(cyl(.058, .07), skin, chest, [1, .14, 1], [0, .53, -.005]);
-  const chestMark = new THREE.Object3D(); chestMark.position.set(0, .3, .13); chest.add(chestMark);
-
-  const head = new THREE.Group(); head.rotation.order = 'YXZ'; head.position.set(0, .6, .012); chest.add(head);
-  const skull = mk(SPH, face, head, [.098, .118, .112], [0, .08, 0]);
-  mk(SPH, face, head, [.079, .062, .088], [0, .014, .026]);
-  mk(SPH, face, head, [.02, .03, .026], [0, .068, .113]);
-  mk(SPH, face, head, [.03, .012, .02], [0, .022, .108]);
-  const brow = mk(SPH, face, head, [.086, .022, .036], [0, .104, .086]);
-  const cheeks = [];
-  for (const s of [1, -1]) {
-    mk(SPH, face, head, [.018, .032, .013], [s * .098, .07, 0]);
-    mk(SPH, dark, head, [.012, .009, .008], [s * .038, .084, .1]);
-    cheeks.push(mk(SPH, face, head, [.03, .026, .02], [s * .052, .058, .09]));
-  }
-  mk(SPH, guard, head, [.045, .014, .012], [0, .03, .104]).visible = false;
-  mk(HEMI, hair, head, [.102, .124, .116], [0, .078, -.006]);
-  if (cfg.beard) mk(SPH, hair, head, [.074, .05, .08], [0, .0, .036]);
-
+  const head = new THREE.Group(); head.rotation.order = 'YXZ'; head.position.set(0, HEAD_Y, .012); chest.add(head);
   const hips = new THREE.Group(); hips.rotation.order = 'YXZ'; body.add(hips);
-  mk(cyl(.172, .19), trunks, hips, [1, .27, 1], [0, -.065, 0]);
-  mk(cyl(.177, .177), trim, hips, [1, .065, 1], [0, .085, 0]);
+  const chestMark = new THREE.Object3D(); chestMark.position.set(0, .3, .13); chest.add(chestMark);
+  const skinCol = cfg.skin != null ? new THREE.Color(cfg.skin) : (HEAD.avg ? HEAD.avg.clone() : new THREE.Color(0xd9a98e));
+  const skin = skinMaterial({ color: skinCol });
+  const trunks = phys({ color: 0xffffff, vertexColors: true, roughness: .34, sheen: 1, sheenRoughness: .3, sheenColor: new THREE.Color(cfg.trim).multiplyScalar(.6), envMapIntensity: .6 });
+  const mesh = shadowy(new THREE.SkinnedMesh(BODY_GEO[cfg.id], [skin, trunks]));
+  mesh.frustumCulled = false; scene.add(mesh);
+  const bones = BONES.map(() => { const b = new THREE.Object3D(); b.matrixAutoUpdate = false; return b; });
+  mesh.bind(new THREE.Skeleton(bones, BIND_INV.map((m) => m.clone())), new THREE.Matrix4());
+  const boneLocal = BONES.map(() => new THREE.Matrix4());
 
-  const limb = (rt, rb, mat) => mk(cyl(rt, rb), mat, body);
-  const arms = [1, -1].map((s) => {
+  // head: the scan, retinted to the fighter's skin; falls back to sculpted head in the body mesh
+  let face = null, headMark = new THREE.Object3D();
+  if (HEAD.geo) {
+    face = skinMaterial({ map: HEAD.map, normalMap: HEAD.normal, normalScale: new THREE.Vector2(.9, .9), color: 0xffffff, roughness: .52 });
+    if (cfg.skin != null && HEAD.avg) { const t = new THREE.Color(cfg.skin); face.color.setRGB(t.r / HEAD.avg.r, t.g / HEAD.avg.g, t.b / HEAD.avg.b); }
+    const s = HEAD.scale, m = shadowy(new THREE.Mesh(HEAD.geo, face));
+    m.scale.setScalar(s); m.position.set(0, 1.0 * s - .03, .5 * s); head.add(m);
+    const eyeM = phys({ color: 0x120c0a, roughness: .08, clearcoat: 1, clearcoatRoughness: .05 });
+    for (const ey of HEAD.eyes) { const e = new THREE.Mesh(SPH, eyeM); e.scale.set(.26, .055, .05); e.position.copy(ey); e.rotation.y = Math.sign(ey.x) * .25; m.add(e); }
+    headMark.position.set(0, 1.55, .3); m.add(headMark);
+  } else { headMark.position.set(0, .1, .02); head.add(headMark); }
+  const baseFace = face ? face.color.clone() : null;
+
+  const glove = phys({ color: cfg.glove, roughness: .34, clearcoat: 1, clearcoatRoughness: .12, envMapIntensity: .8 });
+  const cuff = phys({ color: cfg.cuff, roughness: .55 });
+  const trim = phys({ color: cfg.trim, roughness: .4, metalness: .3, envMapIntensity: .35 });
+  const shoe = phys({ color: cfg.shoe, roughness: .45, clearcoat: .5, clearcoatRoughness: .3 });
+  const mk = (geo, mat, parent, s = [1, 1, 1], p = [0, 0, 0]) => { const m = shadowy(new THREE.Mesh(geo, mat)); m.scale.set(...s); m.position.set(...p); parent.add(m); return m; };
+  const gloves = [1, -1].map((s) => {
     const g = new THREE.Group(); body.add(g);
-    mk(SPH, glove, g, [.088, .112, .096], [0, .088, .006]);
-    mk(SPH, glove, g, [.034, .066, .036], [-s * .07, .07, .036]);
-    mk(cyl(.059, .054), cuff, g, [1, .12, 1], [0, -.005, 0]);
-    mk(cyl(.0605, .0605), trim, g, [1, .022, 1], [0, .03, 0]);
-    return { upper: limb(.05, .066, skin), fore: limb(.042, .053, skin), delt: mk(SPH, skin, body, [.086, .08, .086]), bicep: mk(SPH, skin, body, [.058, .1, .06]), elbow: mk(SPH, skin, body, [.05, .05, .05]), glove: g };
+    mk(GLOVE_GEO, glove, g, [1, 1, 1], [0, .088, .008]);
+    const th = mk(THUMB_GEO, glove, g, [1, 1, 1], [-s * .06, .075, .05]); th.rotation.set(-.35, 0, s * .2);
+    mk(new THREE.CylinderGeometry(.05, .056, .12, 48), cuff, g, [1, 1, 1], [0, -.03, 0]);
+    mk(new THREE.CylinderGeometry(.0535, .0545, .022, 48), trim, g, [1, 1, 1], [0, .0, 0]);
+    return g;
   });
-  const legs = [1, -1].map((s) => {
-    const foot = new THREE.Group(); body.add(foot);
-    mk(cyl(.058, .062), shoe, foot, [1, .2, 1], [0, .02, 0]);
-    mk(SPH, shoe, foot, [.058, .045, .128], [0, -.045, .05]);
-    mk(cyl(.059, .059), trim, foot, [1, .02, 1], [0, .12, 0]);
-    return { thigh: limb(.068, .098, skin), shin: limb(.045, .062, skin), knee: mk(SPH, skin, body, [.064, .064, .064]), calf: mk(SPH, skin, body, [.062, .11, .068]), trunk: limb(.11, .13, trunks), foot };
+  const feet = [1, -1].map(() => {
+    const f = new THREE.Group(); body.add(f);
+    mk(new THREE.CylinderGeometry(.058, .064, .22, 28), shoe, f, [1, 1, 1], [0, .04, -.005]);
+    mk(FOOT_GEO, shoe, f, [1, 1, 1], [0, -.05, .045]);
+    mk(new THREE.CylinderGeometry(.06, .06, .02, 28), trim, f, [1, 1, 1], [0, .14, -.005]);
+    return f;
   });
-  return { root, body, chest, head, hips, arms, legs, skull, chestMark, brow, cheeks, mats: { skin, face }, baseFace: new THREE.Color(cfg.skin) };
+  return { root, body, chest, head, hips, mesh, bones, boneLocal, gloves, feet, skull: headMark, chestMark, mats: { skin, face }, baseFace,
+    arms: [{ S: V(), E: V(), W: V(), perp: V() }, { S: V(), E: V(), W: V(), perp: V() }], legs: [{ H: V(), K: V(), A: V(), perp: V() }, { H: V(), K: V(), A: V(), perp: V() }],
+    headRel: new THREE.Matrix4() };
 }
 
 const _a = V(), _b = V(), _c = V(), _d = V(), _e = V(), _w = V(), _h = V(), _hint = V(), _dir = V(), _perp = V(), _tmp = V();
@@ -581,12 +808,26 @@ function ik(S, T, a, b, hint, E, W) {
   _perp.normalize();
   E.copy(S).addScaledVector(_dir, a * c).addScaledVector(_perp, a * sn);
 }
-function seg(m, A, B, w = 1) {
-  _tmp.subVectors(B, A); const L = _tmp.length() || 1e-4;
-  m.position.copy(A).addScaledVector(_tmp, .5);
-  m.quaternion.setFromUnitVectors(UP, _tmp.multiplyScalar(1 / L));
-  m.scale.set(w, L, w);
-}
+
+// the scanned head (Lee Perry-Smith by Infinite-Realities, CC BY 3.0), trimmed at the neck
+const HEAD = { geo: null, map: null, normal: null, avg: null, eyes: [], scale: .054 };
+try {
+  const tl = new THREE.TextureLoader();
+  const [gltf, map, normal] = await Promise.all([new GLTFLoader().loadAsync('assets/LeePerrySmith.glb'), tl.loadAsync('assets/Map-COL.jpg'), tl.loadAsync('assets/Infinite-Level_02_Tangent_SmoothUV.jpg')]);
+  const src = gltf.scene.getObjectByName('LeePerrySmith') || gltf.scene.getObjectByProperty('isMesh', true);
+  const g = src.geometry.clone(), pos = g.attributes.position, ix = g.index.array, keep = [];
+  for (let t = 0; t < ix.length; t += 3) if (pos.getY(ix[t]) > -1.3 && pos.getY(ix[t + 1]) > -1.3 && pos.getY(ix[t + 2]) > -1.3) keep.push(ix[t], ix[t + 1], ix[t + 2]);
+  g.setIndex(keep);
+  // find the lid surface in front of each eye socket
+  HEAD.eyes = [.52, -.52].map((ex) => { let best = -1e9; for (let i = 0; i < pos.count; i++) { if (Math.hypot(pos.getX(i) - ex, pos.getY(i) - 1.72) < .14) best = Math.max(best, pos.getZ(i)); } return V(ex, 1.7, best - .015); });
+  map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  HEAD.geo = g; HEAD.map = map; HEAD.normal = normal;
+  const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.drawImage(map.image, 0, 0, 64, 64);
+  const d = x.getImageData(0, 0, 64, 64).data, col = new THREE.Color(); let r = 0, gg = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) { if (d[i] + d[i + 1] + d[i + 2] < 150) continue; col.setRGB(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255, THREE.SRGBColorSpace); r += col.r; gg += col.g; b += col.b; n++; }
+  if (n) HEAD.avg = new THREE.Color(r / n, gg / n, b / n);
+} catch (err) { console.warn('Head scan unavailable; using sculpted heads.', err); }
+for (const k in FIGHTERS) BODY_GEO[k] = buildBodyGeometry(FIGHTERS[k], !HEAD.geo);
 
 /* =========================================================================
    punches + fighter state
@@ -943,12 +1184,9 @@ function constrain() {
 }
 
 /* --------------------------------------------------------------------------- posing */
-const SHO = [V(.19, .445, 0), V(-.19, .445, 0)];
-const HIP = [V(.1, -.075, 0), V(-.1, -.075, 0)];
-const FOOT = [V(.17, .085, .25), V(-.15, .085, -.25)];
-const _lv = V();
+const _lv = V(), _gq = V();
 function poseFighter(f, dt, time) {
-  const R = f.rig, ps = f.ps, a = f.action, P = a ? PUNCH[a.type] : null, r = f.rec, s0 = 1 / f.cfg.scale;
+  const R = f.rig, ps = f.ps, a = f.action, P = a ? PUNCH[a.type] : null, r = f.rec;
   const e = a ? extCurve(a.t / a.dur, a.hitP) : 0, ep = Math.max(0, e);
   const sp = Math.hypot(f.vel.x, f.vel.z);
   f.phase += dt * (5.5 + sp * 5);
@@ -968,6 +1206,7 @@ function poseFighter(f, dt, time) {
   ps.lean = damp(ps.lean, lean, P ? 30 : 12, dt);
   ps.side = damp(ps.side, side, 16, dt);
   ps.shift = damp(ps.shift, shift, 16, dt);
+  const breath = Math.sin(time * 2.2 + f.phase * .1) * .006;
   const bounce = Math.abs(Math.sin(f.phase)) * (.016 + Math.min(sp, 1.5) * .012) * (1 - f.fall);
   const lunge = P ? (P.kind === 'straight' ? .1 : .05) * ep : 0;
   const pelvisY = .93 - ps.crouch + bounce;
@@ -977,19 +1216,19 @@ function poseFighter(f, dt, time) {
   R.root.rotation.set(-1.42 * fe, f.yaw, fe * .18);
   R.hips.position.set(ps.shift, pelvisY, lunge * .6);
   R.hips.rotation.set(0, ps.twist * .45, ps.side * .4);
-  R.chest.position.set(ps.shift, pelvisY + .015, lunge * .6);
-  R.chest.rotation.set(ps.lean + r.p * .35 + fe * .15, ps.twist + r.y * .3, ps.side + r.r * .3);
+  R.chest.position.set(ps.shift, pelvisY + CHEST_DY, lunge * .6);
+  R.chest.rotation.set(ps.lean + r.p * .35 + fe * .15 + breath, ps.twist + r.y * .3, ps.side + r.r * .3);
   R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3, r.y - ps.twist * .75, r.r * .6 - ps.side * .45);
   R.root.updateMatrixWorld(true);
 
-  // aim points in this fighter's body space (scaled group)
+  // aim points in this fighter's body space
   const o = other(f);
   f.aimHead.copy(o.headWorld); R.body.worldToLocal(f.aimHead);
   f.aimBody.copy(o.chestWorld); R.body.worldToLocal(f.aimBody);
 
   for (let i = 0; i < 2; i++) {
-    const s = i === 0 ? 1 : -1, A = R.arms[i];
-    _a.copy(SHO[i]).applyMatrix4(R.chest.matrix);
+    const s = i === 0 ? 1 : -1, J = R.arms[i];
+    J.S.copy(SHO[i]).applyMatrix4(R.chest.matrix);
     if (f.fall > .25) _b.set(s * .3, .02, .14 + f.fall * .2);
     else if (f.victory > 0) _b.set(s * (.2 + Math.sin(time * 6 + i) * .03), 1.02, .06);
     else if (f.blocking && f.blockLow) _b.set(s * .09, .3, .25);
@@ -1001,27 +1240,23 @@ function poseFighter(f, dt, time) {
     _hint.set(s * .45, -1, -.25);
     if (P && P.hand === s && f.fall < .2) {
       _c.copy(P.body ? f.aimBody : f.aimHead);
-      _dir.subVectors(_c, _a).normalize(); _c.addScaledVector(_dir, -.17);
+      _dir.subVectors(_c, J.S).normalize(); _c.addScaledVector(_dir, -.17);
       const ec = clamp(e, -.2, 1), arc = Math.sin(clamp(e, 0, 1) * Math.PI);
       _h.copy(_b).lerp(_c, ec);
       if (P.kind === 'hook') { _h.x += s * .36 * arc; _h.z -= .1 * arc; _hint.set(s, .2 * ep, -.35); }
       else if (P.kind === 'upper') { _h.y -= .3 * arc; _h.z -= .04 * arc; _hint.set(s * .3, -1, .1); }
       else { _h.y += .03 * arc; _hint.set(s * .25, -1, -.15); }
     } else _h.copy(_b);
-    ik(_a, _h, UA, FA, _hint, _e, _w);
-    seg(A.upper, _a, _e); seg(A.fore, _e, _w);
-    A.delt.position.copy(_a).y += .02; A.delt.quaternion.copy(A.upper.quaternion);
-    A.elbow.position.copy(_e);
-    A.bicep.position.copy(_a).lerp(_e, .45); A.bicep.quaternion.copy(A.upper.quaternion);
-    A.glove.position.copy(_w); A.glove.quaternion.copy(A.fore.quaternion);
+    ik(J.S, _h, UA, FA, _hint, J.E, J.W);
+    J.perp.copy(_perp);
   }
   // legs: feet planted, footwork cycle while moving
   const fx = Math.sin(f.yaw), fz = Math.cos(f.yaw);
   const lz = (f.vel.x * fx + f.vel.z * fz), lx = (f.vel.x * fz - f.vel.z * fx);
   const step = Math.min(1, sp * 1.1);
   for (let i = 0; i < 2; i++) {
-    const s = i === 0 ? 1 : -1, L = R.legs[i];
-    _a.copy(HIP[i]).applyMatrix4(R.hips.matrix);
+    const s = i === 0 ? 1 : -1, J = R.legs[i];
+    J.H.copy(HIP[i]).applyMatrix4(R.hips.matrix);
     const ph = f.phase + i * Math.PI;
     _w.copy(FOOT[i]);
     _w.x += ps.shift * .5 + (lx / (sp || 1)) * Math.sin(ph) * .09 * step;
@@ -1029,25 +1264,25 @@ function poseFighter(f, dt, time) {
     _w.y += Math.max(0, Math.cos(ph)) * .055 * step;
     if (P && P.kind !== 'straight' && i === 1) _w.z += .04 * ep;
     _hint.set(s * .25, 0, 1);
-    ik(_a, _w, TH, SH, _hint, _e, _c);
-    seg(L.thigh, _a, _e); seg(L.shin, _e, _c);
-    seg(L.trunk, _a, _lv.copy(_a).lerp(_e, .42));
-    L.knee.position.copy(_e);
-    L.calf.position.copy(_e).lerp(_c, .3); L.calf.quaternion.copy(L.shin.quaternion); L.calf.position.z -= .02;
-    L.foot.position.copy(_c); L.foot.rotation.set(0, i === 0 ? -.12 : -.65, 0);
+    ik(J.H, _w, TH, SH, _hint, J.K, J.A);
+    J.perp.copy(_perp);
+    R.feet[i].position.copy(J.A); R.feet[i].rotation.set(0, i === 0 ? -.12 : -.65, 0);
   }
+  // drive the skinned body
+  R.hips.updateMatrix(); R.chest.updateMatrix(); R.head.updateMatrix();
+  boneLocals(R.boneLocal, R.hips.matrix, R.chest.matrix, R.head.matrix, R.arms, R.legs);
+  for (let i = 0; i < R.bones.length; i++) R.bones[i].matrixWorld.multiplyMatrices(R.body.matrixWorld, R.boneLocal[i]);
+  for (let i = 0; i < 2; i++) { R.boneLocal[7 + i].decompose(_lv, R.gloves[i].quaternion, _gq); R.gloves[i].position.copy(R.arms[i].W); }
   R.root.updateMatrixWorld(true);
   f.headWorld.setFromMatrixPosition(R.skull.matrixWorld);
   f.chestWorld.setFromMatrixPosition(R.chestMark.matrixWorld);
   // damage on the face, sweat on the skin
   const dmg = clamp((1 - f.headMax / 100) * .9 + (1 - Math.max(0, f.head) / 100) * .25, 0, 1);
-  R.mats.face.color.copy(R.baseFace).lerp(_bruise, dmg * .45);
-  R.brow.scale.y = .022 + dmg * .016; R.brow.scale.z = .036 + dmg * .012;
-  for (const c of R.cheeks) c.scale.set(.03 + dmg * .014, .026 + dmg * .014, .02 + dmg * .012);
+  if (R.mats.face) R.mats.face.color.copy(R.baseFace).multiply(_bruiseMix.setRGB(1, 1, 1).lerp(_bruise, dmg * .5));
   const sweat = clamp(G.fightT / 200, 0, 1);
-  for (const m of [R.mats.skin, R.mats.face]) { m.clearcoat = .15 + sweat * .7; m.clearcoatRoughness = .45 - sweat * .33; }
+  for (const m of [R.mats.skin, R.mats.face]) if (m) { m.clearcoat = .18 + sweat * .7; m.clearcoatRoughness = .42 - sweat * .3; }
 }
-const _bruise = new THREE.Color(0x7a2a3a);
+const _bruise = new THREE.Color(1.0, .55, .6), _bruiseMix = new THREE.Color();
 
 /* --------------------------------------------------------------------------- camera */
 const camPos = V(4, 2.2, 4), camLook = V(0, 1.2, 0), _cp = V(), _cl = V();
@@ -1089,15 +1324,19 @@ function updateCamera(rdt) {
     _cl.set(mid.x, 1.25, mid.z); fov = 40;
   } else {
     const dx = P2.pos.x - P1.pos.x, dz = P2.pos.z - P1.pos.z, dl = Math.hypot(dx, dz) || 1, fx = dx / dl, fz = dz / dl;
-    _cp.set(P1.pos.x - fx * 1.95 - fz * .5, 1.92, P1.pos.z - fz * 1.95 + fx * .5);
+    _cp.set(P1.pos.x - fx * 2.3 - fz * .55, 2.0, P1.pos.z - fz * 2.3 + fx * .55);
     _cl.set(mid.x + fx * .35, 1.32, mid.z + fz * .35);
     fov = 44; lambda = 6;
   }
+  if (G.debugCam) { _cp.copy(G.debugCam.pos); _cl.copy(G.debugCam.look); lambda = 1e3; fov = G.debugCam.fov || fov; }
   camPos.x = damp(camPos.x, _cp.x, lambda, rdt); camPos.y = damp(camPos.y, _cp.y, lambda, rdt); camPos.z = damp(camPos.z, _cp.z, lambda, rdt);
   camLook.x = damp(camLook.x, _cl.x, lambda * 1.4, rdt); camLook.y = damp(camLook.y, _cl.y, lambda * 1.4, rdt); camLook.z = damp(camLook.z, _cl.z, lambda * 1.4, rdt);
   camera.position.copy(camPos);
   if (G.shake > 0) { camera.position.x += rand(-1, 1) * G.shake; camera.position.y += rand(-1, 1) * G.shake; G.shake = Math.max(0, G.shake - rdt * .5); }
   camera.lookAt(camLook);
+  const cinematic = !!(G.cine || G.kd) || G.mode === 'menu' || G.mode === 'intro' || G.mode === 'over' || G.mode === 'break';
+  bokeh.enabled = QUALITY[G.quality].dof && cinematic;
+  if (bokeh.enabled) bokeh.uniforms.focus.value = camera.position.distanceTo(camLook);
   if (camera.aspect < 1) fov = Math.min(80, fov * (1 + (1 - camera.aspect) * .9)); // portrait phones see more of the ring
   camera.fov = damp(camera.fov, fov, 3, rdt); camera.updateProjectionMatrix();
   // broadcast feed for the jumbotron: always the side angle
@@ -1244,7 +1483,7 @@ function sim(rdt, now) {
 
 function applyQuality() {
   const q = QUALITY[G.quality];
-  bloom.enabled = q.bloom;
+  bloom.enabled = q.bloom; gtao.enabled = q.ao;
   if (key.shadow.mapSize.x !== q.shadow) { key.shadow.mapSize.set(q.shadow, q.shadow); key.shadow.map?.dispose(); key.shadow.map = null; }
   onResize();
 }
@@ -1372,7 +1611,7 @@ function Menu({ s }) {
       <kbd>C · P</kbd><span>Switch camera · pause</span>
       <kbd>Gamepad</kbd><span>Flick the right stick to punch, L2 blocks, R2 goes to the body</span>
     </div>`}
-    <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used.</div>
+    <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used. Head scan: Lee Perry-Smith by Infinite-Realities, CC BY 3.0.</div>
   </div>`;
 }
 function Intro({ s }) {
