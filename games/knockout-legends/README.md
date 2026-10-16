@@ -34,5 +34,11 @@ An in-game overlay modelled on the community live editors for EA titles, editing
 | C / P | Camera / pause |
 | F1 or ` | Live Editor |
 
+## Bodies, trunks and boots
+- **Bodies:** the MakeHuman base mesh (CC0), shaped per fighter with MakeHuman's own targets: race, maximum muscle, height and ideal proportions. It's smoothed at load with one Catmull-Clark pass and skinned with MakeHuman's artist weights, folded onto the game's 15 bones (the two new ones are foot bones). `tools/mh_convert.py` regenerates `assets/mhbody.js` from a MakeHuman checkout.
+- **Trunks:** cut from each fighter's own hips and thighs, pushed out into loose flared legs. They're satin (sheen, clearcoat and a weave normal map), with a waistband, side stripes, real fringe strands, and a spring so the hem and fringe sway with the hips.
+- **Boots:** lofted from cross-sections measured off each fighter's foot and calf: a rounded toe box and heel, a flat rubber sole, a foxing stripe, a padded collar, and a laced tongue panel. They're skinned to the shin and foot bones.
+
 ## Credits
+- Bodies: MakeHuman base mesh, rig weights and shape targets, CC0 1.0 ([makehumancommunity/makehuman](https://github.com/makehumancommunity/makehuman)). See `assets/MakeHuman_LICENSE_CC0.md`.
 - Head scan: "Infinite, 3D Head Scan" by Lee Perry-Smith (Infinite-Realities), licensed CC BY 3.0. It's based on a work at triplegangers.com, and the license text is in `assets/LeePerrySmith_License.txt`.
