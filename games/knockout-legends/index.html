@@ -1406,14 +1406,14 @@ function newFighter(cfg, isPlayer) {
     cfg, isPlayer, rig: makeRig(cfg), feetW: [0, 1].map(() => ({ p: V(), from: V(), to: V(), t: 1, dur: .2, init: false })), pos: V(), vel: V(), yaw: 0, input: { fwd: 0, side: 0 },
     head: 100, body: 100, headMax: 100, bodyMax: 100, stamina: 100, staminaMax: 100,
     action: null, queue: [], blocking: false, blockLow: false, slip: 0, slipDir: 0, counterWin: 0, stun: 0, wobble: 0, invuln: false,
-    rec: { p: 0, y: 0, r: 0, vp: 0, vy: 0, vr: 0 }, fall: 0, down: false, rising: false, kdRound: 0, kdTotal: 0, victory: 0,
+    rec: { p: 0, y: 0, r: 0, vp: 0, vy: 0, vr: 0 }, react: { x: { p: 0, y: 0, z: 0, d: 0, g: 0, b: 0 }, v: { p: 0, y: 0, z: 0, d: 0, g: 0, b: 0 } }, fall: 0, down: false, rising: false, kdRound: 0, kdTotal: 0, victory: 0,
     stats: blankStats(), roundStart: blankStats(), phase: Math.random() * 6, ps: { crouch: .03, twist: -.32, htwist: -.32, lean: .2, side: 0, shift: 0 },
     ai: { t: .5, pref: 1.0, strafe: 0, strafeT: 0, blockT: 0, reacted: null, reactAt: null, counterNext: false },
     aimHead: V(), aimBody: V(), headWorld: V(0, 1.6, 0), chestWorld: V(0, 1.3, 0), autoTarget: null, lastHitAt: 0,
   };
 }
 function resetFighter(f, x, z, full) {
-  f.pos.set(x, 0, z); f.vel.set(0, 0, 0); f.action = null; f.queue.length = 0; f.blocking = false; f.slip = 0; f.stun = 0; f.down = false; f.rising = false; f.fall = 0; f.victory = 0; f.autoTarget = null; f.counterWin = 0;
+  f.pos.set(x, 0, z); f.vel.set(0, 0, 0); for (const k in f.react.x) f.react.x[k] = f.react.v[k] = 0; f.action = null; f.queue.length = 0; f.blocking = false; f.slip = 0; f.stun = 0; f.down = false; f.rising = false; f.fall = 0; f.victory = 0; f.autoTarget = null; f.counterWin = 0;
   if (full) { f.head = f.body = f.headMax = f.bodyMax = f.stamina = f.staminaMax = 100; f.kdRound = f.kdTotal = 0; f.wobble = 0; f.stats = blankStats(); f.roundStart = blankStats(); }
 }
 
@@ -1512,6 +1512,16 @@ function startPunch(f, type) {
   return true;
 }
 
+// reaction springs: stiffness and damping ratio per channel. p chest pitch (+ folds forward), y chest yaw, z hips back (m),
+// d knee dip (m), g guard drop (0..1), b guard pushed back into the face by a block (m)
+const REACT_K = { p: 120, y: 110, z: 90, d: 140, g: 55, b: 160 }, REACT_Z = { p: .38, y: .4, z: .5, d: .45, g: .6, b: .5 };
+// impulses per punch kind for a hit of strength 1 (a jab lands at about .6, a counter hook at 2+)
+const REACT_HIT = {
+  straight: { head: [-10, 0, 0], p: -3.8, y: 0, z: -1.3, d: 1.1, g: 10 },
+  hook:     { head: [-2.5, 11, 5], p: -1.2, y: 4.8, z: -.6, d: 1.2, g: 12 },
+  upper:    { head: [-14, 0, 0], p: -3.2, y: 0, z: -.8, d: -.8, g: 9 },
+  body:     { head: [4, 0, 0], p: 5.2, y: .8, z: -.9, d: 2, g: 15 },
+};
 function resolveHit(att, def, a) {
   const P = PUNCH[a.type];
   if (def.down || def.rising) return;
@@ -1530,6 +1540,9 @@ function resolveHit(att, def, a) {
   if (blocked) {
     def.stamina = Math.max(0, def.stamina - P.dmg * .45);
     def.rec.vp -= 1.5; att.rec.vp += .8;
+    // the guard gets driven back into the face, the chest rocks and he gives a little ground
+    const bk = P.power ? 1 : .6, R2 = def.react.v; R2.b += 1.1 * bk; R2.p -= .7 * bk; R2.d += .15 * bk; R2.y += P.kind === 'hook' ? P.hand * .8 * bk : 0;
+    def.vel.addScaledVector(_d, .45 * bk);
     spray.burst(toHead ? def.headWorld : def.chestWorld, _d, 4, .5);
     sfx.block(); emit('punch_blocked', { attacker: who(att), defender: who(def), punch: a.type }); return;
   }
@@ -1541,16 +1554,17 @@ function resolveHit(att, def, a) {
   if (toHead) dmg /= def.cfg.chin;
   att.stats.landed++; if (P.power) att.stats.pLanded++; att.stats.dmg += dmg;
   const k = dmg / 7;
-  // reaction springs: hooks turn the head, uppercuts lift the chin, straights snap it back
-  const side = P.hand;
-  if (toHead) {
-    if (P.kind === 'hook') { def.rec.vy += side * 9 * k; def.rec.vr += side * 4 * k; def.rec.vp -= 2 * k; }
-    else if (P.kind === 'upper') { def.rec.vp -= 11 * k; }
-    else { def.rec.vp -= 7 * k; def.rec.vy += side * 2 * k; }
-  } else { def.rec.vp += 5 * k; }
-  def.vel.addScaledVector(_d, .8 * k);
+  // reactions move the whole body: straights snap the head and rock the chest back, hooks turn head and shoulders away,
+  // uppercuts lift the chin, body shots fold him forward. A floor keeps a jab visible; counters and power shots go bigger.
+  const side = P.hand, kr = clamp(k, .6, 2.6) * (isCounter ? 1.3 : 1) * (P.power ? 1.1 : 1), RX = toHead ? REACT_HIT[P.kind] : REACT_HIT.body, RV = def.react.v;
+  def.rec.vp += RX.head[0] * kr; def.rec.vy += side * RX.head[1] * kr; def.rec.vr += side * RX.head[2] * kr;
+  RV.p += RX.p * kr; RV.y += side * RX.y * kr; RV.z += RX.z * kr; RV.d += RX.d * kr; RV.g += RX.g * kr;
+  // knocked back: the feet step to catch the weight
+  def.vel.addScaledVector(_d, .55 + .5 * kr);
+  // hit-stop: both fighters freeze for a few frames on a clean hit, longer for power shots and counters
+  G.hitStop = Math.max(G.hitStop || 0, (2 + (P.power ? 1 : 0) + (isCounter || kr > 1.6 ? 2 : 0)) / 60);
   if (dmg > 5) { def.action = null; def.queue.length = 0; }
-  if (dmg > 7 || (isCounter && dmg > 5)) def.stun = Math.max(def.stun, .3 + k * .2);
+  if (dmg > 7 || (isCounter && dmg > 5)) def.stun = Math.max(def.stun, .45 + k * .35);
   // effects
   spray.burst(toHead ? def.headWorld : def.chestWorld, _d, Math.round(10 + k * 26), .6 + k * .5);
   const toCam = def.isPlayer || att.isPlayer;
@@ -1714,6 +1728,10 @@ function updateFighter(f, o, dt) {
   // spring for hit reactions
   const r = f.rec;
   for (const k of ['p', 'y', 'r']) { const v = 'v' + k; r[v] += (-110 * r[k] - 12 * r[v]) * dt; r[k] += r[v] * dt; }
+  // whole-body reaction: underdamped so the body rocks, overshoots a little and settles; a stunned fighter recovers slower
+  { const X = f.react.x, Vv = f.react.v, soft = f.stun > 0 || f.wobble > .3 ? .5 : 1;
+    for (const k in X) { const K = REACT_K[k] * soft; Vv[k] += (-K * X[k] - 2 * REACT_Z[k] * Math.sqrt(K) * Vv[k]) * dt; X[k] += Vv[k] * dt; }
+    X.g = Math.max(-.1, X.g); }
   if (f.down) { f.fall = Math.min(1, f.fall + dt * 1.5); f.vel.multiplyScalar(Math.exp(-6 * dt)); f.pos.addScaledVector(f.vel, dt); return; }
   if (f.rising) { f.fall -= dt * .9; if (f.fall <= 0) { f.fall = 0; f.rising = false; } return; }
   f.slip = Math.max(0, f.slip - dt); f.counterWin = Math.max(0, f.counterWin - dt); f.stun = Math.max(0, f.stun - dt); f.wobble = Math.max(0, f.wobble - dt * .12);
@@ -1730,6 +1748,7 @@ function updateFighter(f, o, dt) {
   const rx = -fz, rz = fx; // fighter's right
   f.vel.x = damp(f.vel.x, (fx * fwd + rx * side) * spd, 10, dt);
   f.vel.z = damp(f.vel.z, (fz * fwd + rz * side) * spd, 10, dt);
+  if (f.stun > 0 || f.wobble > .3) { const st = Math.max(clamp(f.stun / .6, 0, 1), f.wobble); f.vel.x += Math.sin(G.time * 3.1 + f.phase) * st * 1.4 * dt; f.vel.z += Math.cos(G.time * 2.3) * st * 1.4 * dt; }
   f.pos.addScaledVector(f.vel, dt);
   // the action
   if (f.action) {
@@ -1768,7 +1787,9 @@ function poseFighter(f, dt, time) {
   }
   if (f.slip > 0) { const s = Math.sin(clamp(f.slip / .38, 0, 1) * Math.PI); side = -f.slipDir * .34 * s; shift = f.slipDir * .12 * s; crouch += .07 * s; }
   if (f.wobble > 0) { side += Math.sin(time * 2.3) * .12 * f.wobble; shift += Math.sin(time * 1.7) * .06 * f.wobble; }
-  if (f.stun > 0) crouch += .03;
+  // stun: knees go soft and wobble, the guard sags
+  const stunA = Math.max(clamp(f.stun / .6, 0, 1), f.wobble * .8);
+  if (stunA > 0) { crouch += .03 * stunA + .025 * stunA * (.5 + .5 * Math.sin(time * 6.5 + f.phase)); side += Math.sin(time * 3.7) * .1 * stunA; }
   for (let i = 0; i < 2; i++) { const ft = f.feetW[i]; if (ft.t < 1) { const k = Math.sin(ft.t * Math.PI); shift -= (i === 0 ? 1 : -1) * .025 * k; crouch += .012 * k; } }
   ps.crouch = damp(ps.crouch, crouch, P ? 30 : 14, dt);
   ps.htwist = damp(ps.htwist ?? twist, twist, P ? 70 : 10, dt); // hips turn first, the shoulders follow
@@ -1779,15 +1800,16 @@ function poseFighter(f, dt, time) {
   const breath = Math.sin(time * 2.2 + f.phase * .1) * .006;
   const bounce = Math.abs(Math.sin(f.phase)) * (.01 + Math.min(sp, 1.5) * .008) * (1 - f.fall);
   const lunge = P ? (P.kind === 'straight' ? .1 : .05) * ep : 0;
-  const pelvisY = R.sk.P.y - .03 - ps.crouch + bounce;
+  const X = f.react.x;
+  const pelvisY = R.sk.P.y - .03 - ps.crouch + bounce - X.d;
 
   const fe = ease(f.fall);
   R.root.position.set(f.pos.x, fe * .14, f.pos.z);
   R.root.rotation.set(-1.42 * fe, f.yaw, fe * .18);
-  R.hips.position.set(ps.shift, pelvisY, lunge * .6);
-  R.hips.rotation.set(0, ps.htwist * .5, ps.side * .4);
-  R.chest.position.set(ps.shift, pelvisY + CHEST_DY, lunge * .6);
-  R.chest.rotation.set(ps.lean + r.p * .35 + fe * .15 + breath, ps.twist + r.y * .3, ps.side + r.r * .3);
+  R.hips.position.set(ps.shift, pelvisY, lunge * .6 + X.z);
+  R.hips.rotation.set(X.p * .25, ps.htwist * .5 + X.y * .45, ps.side * .4);
+  R.chest.position.set(ps.shift, pelvisY + CHEST_DY, lunge * .6 + X.z * 1.3);
+  R.chest.rotation.set(ps.lean + X.p + r.p * .35 + fe * .15 + breath, ps.twist + X.y + r.y * .3, ps.side + r.r * .3);
   R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3, r.y - ps.twist * .75, r.r * .6 - ps.side * .45);
   R.root.updateMatrixWorld(true);
 
@@ -1806,6 +1828,11 @@ function poseFighter(f, dt, time) {
     else if (i === 0) _b.set(.11, .56, .31);
     else _b.set(-.095, .6, .19);
     if (!f.victory) { _b.y += Math.sin(time * 3.1 + i * 1.3) * .012; _b.z += Math.cos(time * 2.3 + i) * .01; }
+    if (f.fall < .25 && !f.victory) {
+      const gd = clamp(X.g, 0, 1.2) + stunA * .55;
+      _b.y -= .2 * gd; _b.x += s * .05 * gd; _b.z -= .06 * gd;
+      _b.z -= X.b; _b.y += X.b * .4;
+    }
     _b.applyMatrix4(R.chest.matrix);
     _hint.set(s * .45, -1, -.25);
     if (P && P.hand === s && f.fall < .2) {
@@ -2063,6 +2090,7 @@ function sim(rdt) {
   // slow motion on knockdowns
   if (G.slow > 0) { G.slow -= rdt; G.timeScale = damp(G.timeScale, .16, 12, rdt); if (G.slow <= 0 && G.cine && (!G.kd || !G.kd.tko)) G.cine = null; }
   else G.timeScale = damp(G.timeScale, 1, 6, rdt);
+  if (G.hitStop > 0) { G.hitStop -= rdt; return; }
   const dt = rdt * G.timeScale;
   G.time += dt; G.poseDt += dt;
   const skill = G.mode === 'fight' ? DIFF[G.difficulty] : DIFF.pro;
