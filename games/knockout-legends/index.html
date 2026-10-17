@@ -1414,7 +1414,7 @@ function newFighter(cfg, isPlayer) {
     action: null, queue: [], buffer: null, hands: [{ e: 0, kind: 'straight', body: false }, { e: 0, kind: 'straight', body: false }], blocking: false, blockLow: false, slip: 0, slipDir: 0, counterWin: 0, stun: 0, wobble: 0, invuln: false,
     rec: { p: 0, y: 0, r: 0, vp: 0, vy: 0, vr: 0 }, react: { x: { p: 0, y: 0, z: 0, d: 0, g: 0, b: 0 }, v: { p: 0, y: 0, z: 0, d: 0, g: 0, b: 0 } }, fall: 0, down: false, rising: false, kdRound: 0, kdTotal: 0, victory: 0,
     stats: blankStats(), roundStart: blankStats(), phase: Math.random() * 6, ps: { crouch: .03, twist: -.32, htwist: -.32, lean: .2, side: 0, shift: 0 },
-    ai: { t: .5, pref: 1.0, strafe: 0, strafeT: 0, blockT: 0, reacted: null, reactAt: null, counterNext: false },
+    ai: { t: .5, pref: 1.0, strafe: 0, strafeT: 0, blockT: 0, backT: 0, reacted: null, reactAt: null, counterNext: false, counterWith: null, parryFor: null, mem: {} },
     aimHead: V(), aimBody: V(), headWorld: V(0, 1.6, 0), chestWorld: V(0, 1.3, 0), autoTarget: null, lastHitAt: 0,
   };
 }
@@ -1475,9 +1475,11 @@ const sfx = {
    game state
    ========================================================================= */
 const DIFF = {
-  amateur:  { label: 'Amateur',  block: .18, slip: .05, aggr: .42, react: .25, combo: .3, dealt: .7,  taken: 1.25 },
-  pro:      { label: 'Pro',      block: .34, slip: .1,  aggr: .62, react: .17, combo: .5, dealt: 1,   taken: 1.05 },
-  champion: { label: 'Champion', block: .5,  slip: .17, aggr: .82, react: .12, combo: .7, dealt: 1.2, taken: .95 },
+  // read: chance to see a punch coming from the wind-up; adapt: extra read per recent repeat of the same punch;
+  // parry/counter: chances to parry a read punch and to fire back after defending
+  amateur:  { label: 'Amateur',  block: .18, slip: .05, aggr: .42, react: .25, combo: .3, dealt: .7,  taken: 1.25, read: .12, adapt: .05, parry: .05, counter: .3 },
+  pro:      { label: 'Pro',      block: .34, slip: .1,  aggr: .62, react: .17, combo: .5, dealt: 1,   taken: 1.05, read: .25, adapt: .09, parry: .15, counter: .5 },
+  champion: { label: 'Champion', block: .5,  slip: .17, aggr: .82, react: .12, combo: .7, dealt: 1.2, taken: .95,  read: .4,  adapt: .12, parry: .3,  counter: .7 },
 };
 const COMBOS = [['jab'], ['jab', 'jab'], ['jab', 'cross'], ['jab', 'jab', 'cross'], ['jab', 'cross', 'lhook'], ['cross', 'lhook', 'cross'], ['lhook_b', 'lhook'], ['jab', 'rupper'], ['lupper', 'cross'], ['jab', 'cross_b', 'lhook'], ['jab_b', 'cross'], ['rhook'], ['lhook', 'rhook']];
 const saved = safeStore.get('kl-opts', {});
@@ -1512,7 +1514,7 @@ function startPunch(f, type) {
 function beginPunch(f, type) {
   const P = PUNCH[type], sp = f.cfg.speed, tired = 1 + (1 - f.stamina / 100) * .3; // tiredness only slows the recovery
   const w = P.w * PUNCH_PACE / sp, st = P.s * PUNCH_PACE / sp, r = P.r * PUNCH_PACE * tired / sp;
-  f.action = { type, t: 0, w, s: st, r, hit: w + st, dur: w + st + PUNCH_HOLD + r, done: false, e0: f.hands[P.hand > 0 ? 0 : 1].e };
+  f.action = { type, t: 0, w, s: st, r, hit: w + st, dur: w + st + PUNCH_HOLD + r, done: false, e0: f.hands[P.hand > 0 ? 0 : 1].e, aim: targetOf(other(f), P.body, V()) };
   f.stamina = Math.max(0, f.stamina - P.stam);
   f.blocking = false;
   // footwork around punches: step in behind the jab (and a little on the cross); count the combo for stepping out after
@@ -1549,23 +1551,66 @@ const REACT_HIT = {
   upper:    { head: [-14, 0, 0], p: -3.2, y: 0, z: -.8, d: -.8, g: 9 },
   body:     { head: [4, 0, 0], p: 5.2, y: .8, z: -.9, d: 2, g: 15 },
 };
+// --- contact: where the punch was aimed, where the target actually is at impact, and whether a glove or forearm is in
+// the way. Straights travel along the line from the shoulder, hooks arrive from the side, uppercuts from below.
+// glove: a held block covers its full size; a relaxed guard has gaps (passive). jitter: how far off the aim point a punch lands
+const CONTACT = { fist: .06, glove: .095, passive: .078, arm: .05, block: -.01, glance: .035, jitter: .035 };
+const _ct = V(), _cf = V(), _co = V(), _cs = V(), _ce = V(), _cg = V(), _cq = V(), _cx = V();
+function targetOf(def, body, out) { return out.copy(body ? def.chestWorld : def.headWorld).add(_cq.set(0, body ? -.14 : -.04, 0)); }
+function segDist(p, a, b) { const d = _cx.subVectors(b, a), l2 = d.lengthSq() || 1; const t = clamp(((p.x - a.x) * d.x + (p.y - a.y) * d.y + (p.z - a.z) * d.z) / l2, 0, 1); return Math.hypot(a.x + d.x * t - p.x, a.y + d.y * t - p.y, a.z + d.z * t - p.z); }
+function punchContact(att, def, a, P) {
+  const tgt = targetOf(def, P.body, _ct), aim = a.aim || tgt, lunge = P.kind === 'straight' ? .1 : .05;
+  // reach and target movement: a pull back, slip or step out leaves the fist short or beside the head
+  _cf.subVectors(aim, att.pos).setY(0).normalize();
+  _co.subVectors(tgt, aim); const along = _co.dot(_cf); _co.addScaledVector(_cf, -along); const lat = _co.length();
+  const latTol = P.kind === 'hook' ? .17 : P.kind === 'upper' ? .13 : .1;
+  if (Math.hypot(aim.x - att.pos.x, aim.z - att.pos.z) > P.reach + lunge - .08 || along > .09 || lat > latTol) return { miss: true, lat, along };
+  let glance = lat > latTol * .6 || along > .05;
+  // the path the glove travels in its last stretch
+  const hs = P.hand > 0 ? 0 : 1, lx = Math.cos(att.yaw), lz = -Math.sin(att.yaw);
+  if (P.kind === 'hook') _cs.copy(tgt).add(_cq.set(lx * P.hand * .32, 0, lz * P.hand * .32)).addScaledVector(_cf, -.06);
+  else if (P.kind === 'upper') _cs.copy(tgt).add(_cq.set(0, -.32, 0)).addScaledVector(_cf, -.12);
+  else _cs.copy(tgt).addScaledVector(_cf, -.45);
+  _ce.copy(tgt).addScaledVector(_cq.subVectors(_cs, tgt).normalize(), .06); // stop just short of the target itself
+  // no two punches find exactly the same spot
+  const j = CONTACT.jitter; _cq.set(rand(-j, j), rand(-j, j) * .8, 0); _cs.add(_cq); _ce.add(_cq);
+  const gr = def.blocking ? CONTACT.glove : CONTACT.passive;
+  let cover = 9;
+  for (let i = 0; i < 2; i++) {
+    const R2 = def.rig; _cg.set(0, .09, 0); R2.gloves[i].localToWorld(_cg);
+    cover = Math.min(cover, segDist(_cg, _cs, _ce) - gr - CONTACT.fist);
+    const J = R2.arms[i];
+    for (let k = 0; k <= 4; k++) { _cg.lerpVectors(J.E, J.W, k / 4); R2.body.localToWorld(_cg); cover = Math.min(cover, segDist(_cg, _cs, _ce) - CONTACT.arm - CONTACT.fist); }
+  }
+  if (cover < CONTACT.block) return { blocked: true, cover };
+  if (cover < CONTACT.glance) glance = true;
+  return { glance, cover, lat, along };
+}
 function resolveHit(att, def, a) {
   const P = PUNCH[a.type];
   if (def.down || def.rising) return;
-  const lunge = P.kind === 'straight' ? .1 : .05;
-  if (dist(att, def) > P.reach + lunge) return; // whiff
-  const toHead = !P.body;
-  if (toHead && def.slip > .05 && P.kind !== 'upper' && (P.kind === 'straight' || Math.random() < .5)) {
-    def.counterWin = .7;
-    if (def.isPlayer && G.mode === 'fight') msg('Slipped', 'small');
-    return;
+  const toHead = !P.body, C = punchContact(att, def, a, P);
+  const oc = C.miss ? 'miss' : C.blocked ? 'blocked' : C.glance ? 'glance' : 'clean'; att.stats.out = att.stats.out || {}; att.stats.out[oc] = (att.stats.out[oc] || 0) + 1; const ot = (att.stats.byType ??= {})[P.kind + (P.body ? '_b' : '')] ??= {}; ot[oc] = (ot[oc] || 0) + 1;
+  if (C.miss) {
+    if (def.slip > .05) { def.counterWin = .7; if (def.isPlayer && G.mode === 'fight') msg('Slipped', 'small'); }
+    emit('punch_missed', { attacker: who(att), defender: who(def), punch: a.type }); return;
   }
   const isCounter = (def.action && !def.action.done) || att.counterWin > 0;
-  const blocked = def.blocking && (toHead ? !def.blockLow : def.blockLow);
+  const blocked = C.blocked;
   const dirX = def.pos.x - att.pos.x, dirZ = def.pos.z - att.pos.z, dl = Math.hypot(dirX, dirZ) || 1;
   _d.set(dirX / dl, 0, dirZ / dl);
   if (blocked) {
-    def.stamina = Math.max(0, def.stamina - P.dmg * .45);
+    // parry: block raised just before impact (within 0.15 s) knocks a head punch aside and leaves the attacker open
+    const parry = def.blocking && toHead && P.kind !== 'upper' && G.time - (def.blockAt ?? -9) <= .15 && (def.isPlayer || def.ai.parryFor === a);
+    if (parry) {
+      att.react.v.y -= P.hand * 3; att.react.v.g += 5; att.counterWin = 0; def.counterWin = .7; att.stats.out.parried = (att.stats.out.parried || 0) + 1;
+      if (att.action === a) a.r *= 1.6, a.dur = a.hit + PUNCH_HOLD + a.r; // the arm is knocked wide: a slower way home
+      sfx.block(); if (G.mode === 'fight' && (def.isPlayer || att.isPlayer)) msg(def.isPlayer ? 'Parried' : 'Parried by ' + def.cfg.last, 'small');
+      emit('punch_parried', { attacker: who(att), defender: who(def), punch: a.type }); return;
+    }
+    // held block takes nothing; a passive guard absorbs most of it but some gets through
+    if (!def.blocking && !def.invuln) { const chip = P.dmg * .62 * .15 * att.cfg.power; if (toHead) def.head -= chip; else def.body -= chip; }
+    def.stamina = Math.max(0, def.stamina - P.dmg * (def.blocking ? .12 : .2));
     def.rec.vp -= 1.5; att.rec.vp += .8;
     // the guard gets driven back into the face, the chest rocks and he gives a little ground
     const bk = P.power ? 1 : .6, R2 = def.react.v; R2.b += 1.1 * bk; R2.p -= .7 * bk; R2.d += .15 * bk; R2.y += P.kind === 'hook' ? P.hand * .8 * bk : 0;
@@ -1574,6 +1619,7 @@ function resolveHit(att, def, a) {
     sfx.block(); emit('punch_blocked', { attacker: who(att), defender: who(def), punch: a.type }); return;
   }
   let dmg = P.dmg * .62 * (.45 + .55 * att.stamina / 100) * att.cfg.power;
+  if (C.glance) dmg *= .4;
   if (isCounter) { dmg *= 1.55; att.counterWin = 0; }
   if (def.stun > 0) dmg *= 1.15;
   if (def.blocking) dmg *= .8; // guard in the wrong place still absorbs a bit
@@ -1583,15 +1629,16 @@ function resolveHit(att, def, a) {
   const k = dmg / 7;
   // reactions move the whole body: straights snap the head and rock the chest back, hooks turn head and shoulders away,
   // uppercuts lift the chin, body shots fold him forward. A floor keeps a jab visible; counters and power shots go bigger.
-  const side = P.hand, kr = clamp(k, .6, 2.6) * (isCounter ? 1.3 : 1) * (P.power ? 1.1 : 1), RX = toHead ? REACT_HIT[P.kind] : REACT_HIT.body, RV = def.react.v;
+  const side = P.hand, kr = clamp(k, .6, 2.6) * (isCounter ? 1.3 : 1) * (P.power ? 1.1 : 1) * (C.glance ? .55 : 1), RX = toHead ? REACT_HIT[P.kind] : REACT_HIT.body, RV = def.react.v;
   def.rec.vp += RX.head[0] * kr; def.rec.vy += side * RX.head[1] * kr; def.rec.vr += side * RX.head[2] * kr;
   RV.p += RX.p * kr; RV.y += side * RX.y * kr; RV.z += RX.z * kr; RV.d += RX.d * kr; RV.g += RX.g * kr;
   // knocked back: the feet step to catch the weight
   def.vel.addScaledVector(_d, .55 + .5 * kr);
   // hit-stop: both fighters freeze for a few frames on a clean hit, longer for power shots and counters
-  G.hitStop = Math.max(G.hitStop || 0, (2 + (P.power ? 1 : 0) + (isCounter || kr > 1.6 ? 2 : 0)) / 60);
+  if (!C.glance) G.hitStop = Math.max(G.hitStop || 0, (2 + (P.power ? 1 : 0) + (isCounter || kr > 1.6 ? 2 : 0)) / 60);
   if (dmg > 5) { def.action = null; def.queue.length = 0; def.buffer = null; }
-  if (dmg > 7 || (isCounter && dmg > 5)) def.stun = Math.max(def.stun, .45 + k * .35);
+  if (!def.isPlayer && def.stamina > 40 && Math.random() < DIFF[G.difficulty].aggr * .35) { def.ai.counterNext = true; def.ai.t = 0; } // fires back
+  if (!C.glance && (dmg > 7 || (isCounter && dmg > 5))) def.stun = Math.max(def.stun, .45 + k * .35);
   // effects
   spray.burst(toHead ? def.headWorld : def.chestWorld, _d, Math.round(10 + k * 26), .6 + k * .5);
   const toCam = def.isPlayer || att.isPlayer;
@@ -1634,33 +1681,51 @@ function aiUpdate(f, o, dt, skill) {
   let want = a.pref;
   if (f.stamina < 28) want = 1.35;
   if (o.head < 30 || o.wobble > .4) want = .95; // smell blood
+  if (a.t < .25 && f.stamina > 25) want = Math.min(want, .92); // closing in to throw
   f.input.fwd = clamp((d - want) * 2.6, -1, 1);
+  if ((a.backT -= dt) > 0) f.input.fwd = -1;
   if (a.strafeT <= 0) { a.strafe = Math.random() < .65 ? rand(-1, 1) : 0; a.strafeT = rand(.5, 1.8); a.pref = rand(.95, 1.15); }
   f.input.side = a.strafe;
   // escape the ropes
   if (Math.hypot(f.pos.x, f.pos.z) > BOUND - .3) f.input.side = (a.strafe >= 0 ? 1 : -1);
-  // defence: react to incoming punches after a reaction delay
-  if (o.action && !o.action.done) {
-    if (a.reacted !== o.action) { a.reacted = o.action; a.reactAt = skill.react + rand(0, .12); }
+  // defence. Reading the wind-up (more likely the more often he's thrown that punch lately) reacts almost at once;
+  // otherwise the plain reaction time applies, which is too slow for a jab and about right for a hook
+  for (const k in a.mem) a.mem[k] *= Math.exp(-dt / 7);
+  if (o.action && !o.action.done && a.reacted !== o.action) {
+    const base = o.action.type.replace('_b', ''), seen = a.mem[base] || 0;
+    a.reacted = o.action; a.readOk = Math.random() < clamp(skill.read + seen * skill.adapt, 0, .9);
+    a.reactAt = a.readOk ? skill.react * .3 : skill.react + rand(0, .1); a.mem[base] = seen + 1;
   }
-  if (a.reactAt != null && a.reacted === o.action && o.action) {
+  if (a.reactAt != null && o.action && a.reacted === o.action) {
     a.reactAt -= dt;
     if (a.reactAt <= 0) {
       a.reactAt = null;
-      const r = Math.random(), P = PUNCH[o.action.type];
-      if (r < skill.block && !f.action) { a.blockT = .42; f.blockLow = P.body; }
-      else if (r < skill.block + skill.slip && !P.body && !f.action) { f.slip = .38; f.slipDir = Math.random() < .5 ? 1 : -1; a.counterNext = true; }
+      const P = PUNCH[o.action.type], seen = a.mem[o.action.type.replace('_b', '')] || 0, bonus = a.readOk ? .35 : 0, r = Math.random();
+      // the punch he keeps throwing gets countered: a jab with the straight right, anything else with a hook
+      a.counterWith = P.kind === 'straight' && P.hand > 0 ? (Math.random() < .5 ? ['cross'] : ['cross', 'lhook']) : ['lhook', 'cross'];
+      if (P.kind === 'straight' && !P.body && !f.action && r < skill.slip + (a.readOk ? seen * .05 : 0)) { f.slip = .38; f.slipDir = Math.random() < .5 ? 1 : -1; a.counterNext = f.stamina > 22; }
+      else if (P.kind === 'upper' && a.readOk && Math.random() < .5) { a.backT = .3; }
+      else if (!f.action && r < skill.block + bonus) {
+        a.blockT = .42; f.blockLow = P.body; a.parryFor = a.readOk && Math.random() < skill.parry ? o.action : null;
+        a.counterNext = f.stamina > 22 && Math.random() < skill.counter;
+      }
     }
   }
   if (f.head < 28 && !f.action && Math.random() < dt * 1.5) { a.blockT = Math.max(a.blockT, .7); f.blockLow = false; }
+  if (a.counterNext && (!o.action || o.action.done) && a.blockT > 0) a.blockT = Math.min(a.blockT, .05); // drop the block to fire back
+  // between exchanges in range, the AI shells up now and then instead of standing open
+  if (!f.action && d < 1.15 && a.blockT <= 0 && !a.counterNext && Math.random() < dt * skill.block * .8) { a.blockT = rand(.25, .6); f.blockLow = Math.random() < .25; }
   f.blocking = a.blockT > 0 && !f.action;
   // offence
-  if (!f.action && !f.queue.length && a.t <= 0 && d < 1.12 && !f.blocking && f.stamina > 8 && f.stun <= 0) {
-    if (Math.random() < skill.aggr || a.counterNext) {
+  if (!f.action && !f.queue.length && (a.t <= 0 || a.counterNext) && d < 1.12 && !f.blocking && f.stamina > 8 && f.stun <= 0) {
+    if (Math.random() < skill.aggr * clamp(f.stamina / 60, .35, 1) || a.counterNext) { // paces himself as he tires
       const pool = Math.random() < skill.combo ? COMBOS : COMBOS.filter((c) => c.length === 1 || (c.length === 2 && Math.random() < .5));
-      const combo = pick(pool.length ? pool : COMBOS);
+      // range: from outside, lead with straights (the jab steps in); hooks and uppercuts only from close
+      const inRange = (c) => d < .98 || PUNCH[c[0]].kind === 'straight';
+      const opts = (pool.length ? pool : COMBOS).filter(inRange);
+      const combo = a.counterNext && a.counterWith && inRange(a.counterWith) ? a.counterWith : pick(opts.length ? opts : [['jab']]);
       if (startPunch(f, combo[0])) f.queue.push(...combo.slice(1));
-      a.counterNext = false;
+      a.counterNext = false; a.counterWith = null;
     }
     a.t = rand(.3, 1.0) * (1.45 - skill.aggr);
   }
@@ -1786,6 +1851,7 @@ function updateFighter(f, o, dt) {
   // the action
   if (f.action) {
     const a = f.action; a.t += dt;
+    if (!a.done && a.t < a.w + a.s * .5) targetOf(o, PUNCH[a.type].body, a.aim); // committed after mid-strike
     if (!a.done && a.t >= a.hit) { a.done = true; resolveHit(f, o, a); }
     // cancel window: once the hold is over, whatever's buffered cuts the recovery short
     if (f.action === a && canCancel(a) && (f.buffer || f.queue.length)) takeBuffered(f);
@@ -1897,7 +1963,7 @@ function poseFighter(f, dt, time) {
       const o = i === 0 ? 12 : 15; _b.x += MG[o] * mgW; _b.y += MG[o + 1] * mgW; _b.z += MG[o + 2] * mgW;
     }
     if (f.fall < .25 && !f.victory) {
-      const gd = clamp(X.g, 0, 1.2) + stunA * .55;
+      const gd = clamp(X.g, 0, 1.2) + stunA * .55 + (f.blocking ? 0 : clamp((45 - f.stamina) / 45, 0, 1) * .45); // tired arms sag
       _b.y -= .2 * gd; _b.x += s * .05 * gd; _b.z -= .06 * gd;
       _b.z -= X.b; _b.y += X.b * .4;
     }
@@ -2196,6 +2262,7 @@ function sim(rdt) {
     G.overT += rdt; P1.input.fwd = P2.input.fwd = P1.input.side = P2.input.side = 0;
     if (G.result?.loser && !G.result.loser.down && G.result.type !== 'DEC') G.result.loser.down = true;
   }
+  for (const f of [P1, P2]) { if (f.blocking && !f.wasBlocking) f.blockAt = G.time; f.wasBlocking = f.blocking; }
   updateFighter(P1, P2, dt); updateFighter(P2, P1, dt); constrain();
 }
 function visuals(rdt, now) {
@@ -2423,7 +2490,7 @@ AddEventHandler('punch_landed', (e) => { if (e.counter) log('counter #' + (++cou
 };
 window.LE = LE;
 
-game._debug = { P1, P2, G, camera, PUNCH, sim: (dt) => { sim(dt); const g = G.poseDt; G.poseDt = 0; poseFighter(P1, g, G.time); poseFighter(P2, g, G.time); } };
+game._debug = { P1, P2, G, camera, PUNCH, startPunch, sim: (dt) => { sim(dt); const g = G.poseDt; G.poseDt = 0; poseFighter(P1, g, G.time); poseFighter(P2, g, G.time); } };
 
 /* =========================================================================
    HUD (React)
