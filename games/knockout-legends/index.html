@@ -1388,7 +1388,7 @@ const BASE_PUNCH = {
   lupper: { hand: 1,  kind: 'upper',    w: .07, s: .09, r: .27, dmg: 11,   stam: 7.5, reach: .88,  twist: -.45, power: true,  label: 'Lead uppercut' },
   rupper: { hand: -1, kind: 'upper',    w: .08, s: .1,  r: .3,  dmg: 13.5, stam: 9,   reach: .88,  twist: .65,  power: true,  label: 'Rear uppercut' },
 };
-const PUNCH_HOLD = .035, BUFFER_WINDOW = .15;
+const PUNCH_PACE = 1.25, PUNCH_HOLD = .035 * PUNCH_PACE, BUFFER_WINDOW = .15; // PUNCH_PACE scales every punch's timing
 const PUNCH = {};
 for (const [k, b] of Object.entries(BASE_PUNCH)) {
   PUNCH[k] = { ...b, key: k, body: false };
@@ -1509,10 +1509,14 @@ function startPunch(f, type) {
 }
 function beginPunch(f, type) {
   const P = PUNCH[type], sp = f.cfg.speed, tired = 1 + (1 - f.stamina / 100) * .3; // tiredness only slows the recovery
-  const w = P.w / sp, st = P.s / sp, r = P.r * tired / sp;
+  const w = P.w * PUNCH_PACE / sp, st = P.s * PUNCH_PACE / sp, r = P.r * PUNCH_PACE * tired / sp;
   f.action = { type, t: 0, w, s: st, r, hit: w + st, dur: w + st + PUNCH_HOLD + r, done: false, e0: f.hands[P.hand > 0 ? 0 : 1].e };
   f.stamina = Math.max(0, f.stamina - P.stam);
   f.blocking = false;
+  // footwork around punches: step in behind the jab (and a little on the cross); count the combo for stepping out after
+  const fwX = Math.sin(f.yaw), fwZ = Math.cos(f.yaw), inStep = P.hand > 0 && P.kind === 'straight' ? .9 : P.kind === 'straight' ? .4 : 0;
+  f.vel.x += fwX * inStep; f.vel.z += fwZ * inStep;
+  f.combo = G.time - (f.lastPunchAt ?? -9) < .8 ? (f.combo || 0) + 1 : 1; f.lastPunchAt = G.time;
   f.stats.thrown++; if (P.power) f.stats.pThrown++;
   emit('punch_thrown', { fighter: who(f), punch: type });
   sfx.whoosh(P.power ? 1 : .6);
@@ -1783,7 +1787,11 @@ function updateFighter(f, o, dt) {
     if (!a.done && a.t >= a.hit) { a.done = true; resolveHit(f, o, a); }
     // cancel window: once the hold is over, whatever's buffered cuts the recovery short
     if (f.action === a && canCancel(a) && (f.buffer || f.queue.length)) takeBuffered(f);
-    else if (f.action === a && a.t >= a.dur) { f.action = null; takeBuffered(f); }
+    else if (f.action === a && a.t >= a.dur) {
+      f.action = null;
+      // combo over: step back out of range
+      if (!takeBuffered(f) && f.combo >= 2) { f.vel.x -= Math.sin(f.yaw) * 1.1; f.vel.z -= Math.cos(f.yaw) * 1.1; f.combo = 0; }
+    }
   } else if (f.buffer) takeBuffered(f);
   // recovery
   f.staminaMax = 100 - (100 - f.bodyMax) * .5;
@@ -1801,6 +1809,12 @@ function constrain() {
 
 /* --------------------------------------------------------------------------- posing */
 const _lv = V(), _gq = V();
+// second-order follow: lags behind a moving target, overshoots a little and settles (zeta < 1); fine steps keep it stable
+function follow(o, k, target, w, zeta, dt) {
+  const v = o.v || (o.v = {}); let x = o[k] ?? target, vel = v[k] || 0;
+  for (let rem = Math.min(dt, .1); rem > 1e-6; rem -= 1 / 240) { const h = Math.min(rem, 1 / 240); vel += (w * w * (target - x) - 2 * zeta * w * vel) * h; x += vel * h; }
+  o[k] = x; v[k] = vel;
+}
 function poseFighter(f, dt, time) {
   const R = f.rig, ps = f.ps, a = f.action, P = a ? PUNCH[a.type] : null, r = f.rec;
   const e = a ? punchCurve(a, a.t) : 0, ep = Math.max(0, e);
@@ -1819,14 +1833,19 @@ function poseFighter(f, dt, time) {
   const stunA = Math.max(clamp(f.stun / .6, 0, 1), f.wobble * .8);
   if (stunA > 0) { crouch += .03 * stunA + .025 * stunA * (.5 + .5 * Math.sin(time * 6.5 + f.phase)); side += Math.sin(time * 3.7) * .1 * stunA; }
   for (let i = 0; i < 2; i++) { const ft = f.feetW[i]; if (ft.t < 1) { const k = Math.sin(ft.t * Math.PI); shift -= (i === 0 ? 1 : -1) * .025 * k; crouch += .012 * k; } }
-  ps.crouch = damp(ps.crouch, crouch, P ? 30 : 14, dt);
-  // the body leads the arm: hips run 50 ms ahead on the punch curve, shoulders 25 ms, the fist on time
-  const twH = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .05) : 0), twC = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .025) : 0);
-  ps.htwist = damp(ps.htwist ?? twH, twH, P ? 90 : 10, dt);
-  ps.twist = damp(ps.twist, twC, P ? 70 : 9, dt);
-  ps.lean = damp(ps.lean, lean, P ? 30 : 12, dt);
-  ps.side = damp(ps.side, side, 16, dt);
-  ps.shift = damp(ps.shift, shift, 16, dt);
+  // weight: onto the lead foot behind straights and the rear hook, back onto the rear foot for the lead hook,
+  // toward the direction of travel when moving
+  const fx0 = Math.sin(f.yaw), fz0 = Math.cos(f.yaw), lz0 = f.vel.x * fx0 + f.vel.z * fz0, lx0 = f.vel.x * fz0 - f.vel.z * fx0;
+  if (P) shift += ep * (P.kind === 'straight' ? (P.hand > 0 ? .02 : .055) : P.kind === 'hook' ? (P.hand > 0 ? -.045 : .045) : (P.hand > 0 ? .02 : .035));
+  shift += clamp(lx0 * .035, -.04, .04); lean += clamp(lz0 * .05, -.06, .06);
+  follow(ps, 'crouch', crouch, P ? 26 : 14, .55, dt);
+  // the body leads the arm: hips run ahead on the punch curve, then the shoulders, the fist on time
+  const twH = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .06) : 0), twC = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .03) : 0);
+  follow(ps, 'htwist', twH, P ? 42 : 11, .5, dt);
+  follow(ps, 'twist', twC, P ? 34 : 10, .42, dt);  // shoulders lag the hips a touch and overshoot on the follow-through
+  follow(ps, 'lean', lean, P ? 26 : 12, .5, dt);
+  follow(ps, 'side', side, 15, .55, dt);
+  follow(ps, 'shift', shift, 13, .6, dt);
   const breath = Math.sin(time * 2.2 + f.phase * .1) * .006;
   const bounce = Math.abs(Math.sin(f.phase)) * (.01 + Math.min(sp, 1.5) * .008) * (1 - f.fall);
   const lunge = P ? (P.kind === 'straight' ? .1 : .05) * ep : 0;
@@ -1857,13 +1876,22 @@ function poseFighter(f, dt, time) {
     else if (f.blocking) _b.set(s * .072, .675, .245);
     else if (i === 0) _b.set(.11, .56, .31);
     else _b.set(-.095, .6, .19);
-    if (!f.victory) { _b.y += Math.sin(time * 3.1 + i * 1.3) * .012; _b.z += Math.cos(time * 2.3 + i) * .01; }
+    if (!f.victory) {
+      // the guard breathes with the chest and the lead hand paws in rhythm with the bounce
+      _b.y += Math.sin(time * 2.2 + f.phase * .1) * .012 + Math.sin(time * 3.1 + i * 1.3) * .006;
+      _b.z += (i === 0 ? .022 : .008) * Math.sin(f.phase * .5 + i * 2.1) * (P ? .3 : 1);
+      _b.x += s * .008 * Math.sin(time * 1.3 + i);
+    }
     if (f.fall < .25 && !f.victory) {
       const gd = clamp(X.g, 0, 1.2) + stunA * .55;
       _b.y -= .2 * gd; _b.x += s * .05 * gd; _b.z -= .06 * gd;
       _b.z -= X.b; _b.y += X.b * .4;
     }
     _b.applyMatrix4(R.chest.matrix);
+    // the gloves ride on a spring behind the body, so they trail and settle when the fighter moves or turns
+    { const g = f.guardS || (f.guardS = [{}, {}]), q = g[i];
+      if (q.x === undefined || f.fall > .25) { q.x = _b.x; q.y = _b.y; q.z = _b.z; q.v = {}; }
+      follow(q, 'x', _b.x, 24, .5, dt); follow(q, 'y', _b.y, 24, .5, dt); follow(q, 'z', _b.z, 24, .5, dt); _b.set(q.x, q.y, q.z); }
     _hint.set(s * .45, -1, -.25);
     // each hand keeps its own extension, so a cancelled punch's arm finishes coming home while the other one fires
     const H = f.hands[i], active = P && P.hand === s && f.fall < .2;
@@ -1895,7 +1923,14 @@ function poseFighter(f, dt, time) {
   }
   if (FT[0].t >= 1 && FT[1].t >= 1 || FT[0].t > .55 || FT[1].t > .55) {
     const i = need[0] >= need[1] ? 0 : 1;
-    if (need[i] > .07 && FT[1 - i].t > .55) { const ft = FT[i]; ft.from.copy(ft.p); ft.to.copy(want[i]); ft.t = 0; ft.dur = clamp(.21 - sp * .04, .13, .21); }
+    if (need[i] > .07 && FT[1 - i].t > .55) { const ft = FT[i]; ft.from.copy(ft.p); ft.to.copy(want[i]); ft.t = 0; ft.dur = clamp(.21 - sp * .04, .13, .21); f.stepClock = 0; }
+  }
+  // standing still a boxer keeps shuffling: small rhythm steps, alternating feet, never flat-footed for long
+  f.stepClock = (f.stepClock || 0) + dt;
+  if (planted && !P && sp < .35 && FT[0].t >= 1 && FT[1].t >= 1 && f.stepClock > (f.nextShuffle ??= rand(.7, 1.1))) {
+    const i = f.lastShuffle = 1 - (f.lastShuffle ?? 1), ft = FT[i];
+    ft.from.copy(ft.p); ft.to.copy(want[i]).add(_tmp.set(rand(-.025, .025), 0, rand(-.03, .03))); ft.t = 0; ft.dur = .17;
+    f.stepClock = 0; f.nextShuffle = rand(.6, 1.05);
   }
   for (let i = 0; i < 2; i++) {
     const s = i === 0 ? 1 : -1, J = R.legs[i], ft = FT[i];
@@ -1907,12 +1942,12 @@ function poseFighter(f, dt, time) {
     }
     _w.copy(ft.p); R.body.worldToLocal(_w); _w.y = R.sk.ankleY + lift;
     const heel = (i === 1 && rearPunch ? ep : 0) + (i === 0 && leadHook ? ep * .6 : 0);
-    _w.y += .03 * heel; _w.z += .015 * heel;
+    _w.y += .03 * heel + bounce * .45; _w.z += .015 * heel; // up on the balls of the feet with the bounce
     _hint.set(s * .25, 0, 1);
     ik(J.H, _w, R.sk.TH, R.sk.SH, _hint, J.K, J.A);
     J.perp.copy(_perp);
     const fd = R.sk.feet[i].dir, fh = Math.hypot(fd.x, fd.z), yaw = FOOT_YAW[i] + (i === 1 && rearPunch ? .5 * ep : 0) + (i === 0 && leadHook ? -.45 * ep : 0);
-    R.feet[i].A.copy(J.A); R.feet[i].dir.set(Math.sin(yaw) * fh, fd.y - .45 * heel, Math.cos(yaw) * fh).normalize();
+    R.feet[i].A.copy(J.A); R.feet[i].dir.set(Math.sin(yaw) * fh, fd.y - .45 * heel - bounce * 3, Math.cos(yaw) * fh).normalize();
   }
   // trunks secondary motion: the hem lags behind the hips' travel and twist, then springs back
   {
