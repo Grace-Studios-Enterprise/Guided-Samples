@@ -1106,47 +1106,90 @@ const sdEll = (x, y, z, cx, cy, cz, rx, ry, rz) => { const a = (x - cx) / rx, b 
 const sdCap = (x, y, z, ax, ay, az, bx, by, bz, r) => { const px = x - ax, py = y - ay, pz = z - az, dx = bx - ax, dy = by - ay, dz = bz - az, h = clamp((px * dx + py * dy + pz * dz) / (dx * dx + dy * dy + dz * dz), 0, 1); return Math.hypot(px - dx * h, py - dy * h, pz - dz * h) - r; };
 const smin = (a, b, k) => { const h = clamp(.5 + .5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); };
 const smax = (a, b, k) => -smin(-a, -b, k);
-function gloveSDF(s) {
-  return (x, y, z) => {
+// tapered capsule (radius r1 at a, r2 at b); also returns how far along a→b the point projects
+function sdRoundCone(x, y, z, a, b, r1, r2) {
+  const bx = b[0] - a[0], by = b[1] - a[1], bz = b[2] - a[2], px = x - a[0], py = y - a[1], pz = z - a[2];
+  const l2 = bx * bx + by * by + bz * bz, rr = r1 - r2, a2 = l2 - rr * rr, il2 = 1 / l2, t = px * bx + py * by + pz * bz, u = t - l2;
+  const qx = px * l2 - bx * t, qy = py * l2 - by * t, qz = pz * l2 - bz * t, x2 = qx * qx + qy * qy + qz * qz, y2 = t * t * l2, z2 = u * u * l2, k = Math.sign(rr) * rr * rr * x2;
+  if (Math.sign(u) * a2 * z2 > k) return Math.sqrt(x2 + z2) * il2 - r2;
+  if (Math.sign(t) * a2 * y2 < k) return Math.sqrt(x2 + y2) * il2 - r1;
+  return (Math.sqrt(x2 * a2 * il2) + t * rr) * il2 - r1;
+}
+// the parts, so the thumb's join line can be found for its seam: s = side, the thumb sits at -s * x
+function gloveParts(s) {
+  const TA = [-s * .034, .036, .03], TB = [-s * .075, .12, .07];                 // thumb: low on the palm side, angled up to the knuckle line
+  const SA = [-s * .064, .13, .08], SB = [-s * .032, .14, .086];                  // strap: thumb tip to the side of the fist
+  const sd = [SB[0] - SA[0], SB[1] - SA[1], SB[2] - SA[2]], sl = Math.hypot(...sd); sd.forEach((_, i) => (sd[i] /= sl));
+  let sn = [(SA[0] + SB[0]) / 2 + s * .02, (SA[1] + SB[1]) / 2 - .132, (SA[2] + SB[2]) / 2 - .02]; const nl = Math.hypot(...sn); sn = sn.map((c) => c / nl);
+  const sw = [sd[1] * sn[2] - sd[2] * sn[1], sd[2] * sn[0] - sd[0] * sn[2], sd[0] * sn[1] - sd[1] * sn[0]];
+  const rest = (x, y, z) => {
     let d = sdEll(x, y, z, 0, .092, -.006, .084, .1, .086);
     d = smin(d, sdEll(x, y, z, 0, .14, -.016, .078, .058, .07), .03);                       // knuckle padding
-    d = smin(d, sdCap(x, y, z, -.05, .132, .04, .05, .132, .04, .044), .022);                  // fingers rolled over the palm
+    d = smin(d, sdCap(x, y, z, -s * .04, .132, .04, s * .05, .132, .04, .044), .022);          // fingers rolled over the palm
     d = smax(d, -sdCap(x, y, z, -.07, .086, .09, .07, .086, .09, .011), .012);                 // crease where the fingers meet the palm
-    d = smin(d, sdCap(x, y, z, -s * .068, .03, .045, -s * .062, .112, .078, .025), .007);      // thumb, fused along the inside
     const r = .056 + .03 * clamp(y + .02, 0, .05), cuff = Math.max(Math.hypot(x, (z + .004) * 1.08) - r, Math.abs(y + .035) - .065);
     return smin(d, cuff, .016);
   };
+  const thumbH = (x, y, z) => clamp(((x - TA[0]) * (TB[0] - TA[0]) + (y - TA[1]) * (TB[1] - TA[1]) + (z - TA[2]) * (TB[2] - TA[2])) / ((TB[0] - TA[0]) ** 2 + (TB[1] - TA[1]) ** 2 + (TB[2] - TA[2]) ** 2), 0, 1);
+  const thumb = (x, y, z) => sdRoundCone(x, y, z, TA, TB, .019, .015);
+  const strap = (x, y, z) => {
+    const px = x - SA[0], py = y - SA[1], pz = z - SA[2], ax = Math.abs(px * sd[0] + py * sd[1] + pz * sd[2] - sl / 2) - sl / 2;
+    const w = Math.abs(px * sw[0] + py * sw[1] + pz * sw[2]) - .0068, n = Math.abs(px * sn[0] + py * sn[1] + pz * sn[2] - ((SB[0] - SA[0]) * sn[0] + (SB[1] - SA[1]) * sn[1] + (SB[2] - SA[2]) * sn[2]) * clamp((px * sd[0] + py * sd[1] + pz * sd[2]) / sl, 0, 1)) - .0016;
+    return Math.hypot(Math.max(w, 0), Math.max(n, 0), Math.max(ax, 0)) + Math.min(Math.max(w, n, ax), 0) - .0012;
+  };
+  const full = (x, y, z) => {
+    const dr = rest(x, y, z), h = thumbH(x, y, z);
+    const d = smin(dr, thumb(x, y, z), .026 * (1 - h) + .004 * h);                           // base melts into the palm, tip stays defined
+    return smin(d, strap(x, y, z), .003);
+  };
+  return { rest, thumb, thumbH, strap, full, strapPts: [SA, SB], strapW: sw };
 }
+const gloveUV = (x, y, z) => [Math.atan2(z, x) / (Math.PI * 2) + .5, (y + .115) / .34];
 function gloveGeometry(s) {
-  const f = gloveSDF(s), { P, idx } = surfaceNets(f, [-.14, -.115, -.125], [.14, .225, .15], .0032);
+  const parts = gloveParts(s), f = parts.full, { P, idx } = surfaceNets(f, [-.14, -.115, -.125], [.14, .225, .15], .0028);
   // Laplacian smoothing (two light passes) takes the stair-step out of the net
   const n = P.length / 3, nb = Array.from({ length: n }, () => new Set());
   for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { nb[idx[t + e]].add(idx[t + (e + 1) % 3]); nb[idx[t + (e + 1) % 3]].add(idx[t + e]); }
-  for (let it = 0; it < 3; it++) { const Q = P.slice(); for (let i = 0; i < n; i++) { let x = 0, y = 0, z = 0; for (const j of nb[i]) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const m = nb[i].size || 1; for (let c = 0; c < 3; c++) P[i * 3 + c] = Q[i * 3 + c] * .5 + [x, y, z][c] / m * .5; } }
+  for (let it = 0; it < 2; it++) { const Q = P.slice(); for (let i = 0; i < n; i++) { let x = 0, y = 0, z = 0; for (const j of nb[i]) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const m = nb[i].size || 1; for (let c = 0; c < 3; c++) P[i * 3 + c] = Q[i * 3 + c] * .5 + [x, y, z][c] / m * .5; } }
   // cylindrical UVs round the forearm axis; triangles across the seam get their own wrapped vertices
   const pos = [], uv = [], out = [], key = new Map();
-  const vert = (i, wrap) => { const k = i * 2 + wrap; let o = key.get(k); if (o !== undefined) return o; o = pos.length / 3; key.set(k, o); const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2]; pos.push(x, y, z); uv.push(Math.atan2(z, x) / (Math.PI * 2) + .5 + wrap, (y + .115) / .34); return o; };
-  const U = (i) => Math.atan2(P[i * 3 + 2], P[i * 3]) / (Math.PI * 2) + .5;
+  const vert = (i, wrap) => { const k = i * 2 + wrap; let o = key.get(k); if (o !== undefined) return o; o = pos.length / 3; key.set(k, o); const [u, v] = gloveUV(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); pos.push(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); uv.push(u + wrap, v); return o; };
+  const U = (i) => gloveUV(P[i * 3], P[i * 3 + 1], P[i * 3 + 2])[0];
   for (let t = 0; t < idx.length; t += 3) {
     const tri = [idx[t], idx[t + 1], idx[t + 2]], us = tri.map(U), wrap = Math.max(...us) - Math.min(...us) > .5;
     for (let e = 0; e < 3; e++) out.push(vert(tri[e], wrap && us[e] < .5 ? 1 : 0));
   }
+  // the thumb's join line: where the surface passes from nearer the thumb to nearer the glove body
+  const seam = [], sv = new Float32Array(n), near = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], dt = parts.thumb(x, y, z), dr = parts.rest(x, y, z);
+    sv[i] = dt - dr; near[i] = Math.min(dt, dr) < .014 && parts.strap(x, y, z) > .004 ? 1 : 0;
+  }
+  for (let t = 0; t < idx.length; t += 3) {
+    const tri = [idx[t], idx[t + 1], idx[t + 2]]; if (!tri.every((i) => near[i])) continue;
+    const pts = [];
+    for (let e = 0; e < 3; e++) { const a = tri[e], b = tri[(e + 1) % 3]; if ((sv[a] < 0) === (sv[b] < 0)) continue; const k = sv[a] / (sv[a] - sv[b]); pts.push(gloveUV(P[a * 3] + (P[b * 3] - P[a * 3]) * k, P[a * 3 + 1] + (P[b * 3 + 1] - P[a * 3 + 1]) * k, P[a * 3 + 2] + (P[b * 3 + 2] - P[a * 3 + 2]) * k)); }
+    if (pts.length === 2 && Math.abs(pts[0][0] - pts[1][0]) < .5) seam.push([...pts[0], ...pts[1]]);
+  }
+  // the strap's outline in UV space, for its contrast colour
+  const [SA, SB] = parts.strapPts, W = parts.strapW, strap = [];
+  for (const [p, sg] of [[SA, 1], [SB, 1], [SB, -1], [SA, -1]]) strap.push(gloveUV(p[0] + W[0] * .0075 * sg, p[1] + W[1] * .0075 * sg, p[2] + W[2] * .0075 * sg));
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(out);
-  const nrm = new Float32Array(pos.length), e = .0008;
+  const nrm = new Float32Array(pos.length), e = .0006;
   for (let i = 0; i < pos.length; i += 3) {
     const x = pos[i], y = pos[i + 1], z = pos[i + 2];
     const gx = f(x + e, y, z) - f(x - e, y, z), gy = f(x, y + e, z) - f(x, y - e, z), gz = f(x, y, z + e) - f(x, y, z - e), l = Math.hypot(gx, gy, gz) || 1;
     nrm[i] = gx / l; nrm[i + 1] = gy / l; nrm[i + 2] = gz / l;
   }
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeTangents();
-  return g;
+  return { geo: g, seam, strap };
 }
 const GLOVE_GEOS = [gloveGeometry(1), gloveGeometry(-1)];
 // glove skins, drawn in UV space (u round the forearm: .25 back of the hand, .75 palm; v wrist to knuckles):
 // leather with piping down both sides, twin stitch rows, a strapped cuff with a contrast band and a patch
 const GLOVE_V = (y) => (y + .115) / .34;
-function gloveMaps(cfg) {
+function gloveMaps(cfg, side) {
   const W = 1024, Y = (v) => (1 - v) * W, X = (u) => u * W;
   const main = '#' + new THREE.Color(cfg.glove).getHexString(), band = '#' + new THREE.Color(cfg.cuff).getHexString(), trim = '#' + new THREE.Color(cfg.trim).getHexString();
   const cuffTop = Y(GLOVE_V(-.004)), strapA = Y(GLOVE_V(-.024)), strapB = Y(GLOVE_V(-.078));
@@ -1159,6 +1202,8 @@ function gloveMaps(cfg) {
     // patch on the back of the strap
     g.fillStyle = main; g.fillRect(X(.25) - 70, strapA + 12, 140, strapB - strapA - 24);
     g.fillStyle = band; g.font = `bold ${Math.round((strapB - strapA) * .5)}px Oswald, Impact, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('KL', X(.25), (strapA + strapB) / 2 + 2);
+    // thumb strap in the contrast colour
+    g.fillStyle = band; g.beginPath(); side.strap.forEach(([u, v], i) => (i ? g.lineTo(X(u), Y(v)) : g.moveTo(X(u), Y(v)))); g.closePath(); g.fill();
     noise(g, W, W, 10);
   });
   const hf = new Float32Array(W * W);
@@ -1171,6 +1216,20 @@ function gloveMaps(cfg) {
   }
   for (const yy of [strapA, strapB]) { line(0, yy, W, yy, (x, y) => stamp(hf, W, x, y, 3, (v, d) => v - (1 - d) * .6)); line(0, yy + (yy === strapA ? 10 : -10), W, yy + (yy === strapA ? 10 : -10), (x, y, t) => { if (t % 12 < 7) stamp(hf, W, x, y, 1.4, (v, d) => v - (1 - d) * .8); }); }
   line(0, cuffTop, W, cuffTop, (x, y) => stamp(hf, W, x, y, 5, (v, d) => v + (1 - d * d) * .8));
+  // thumb seam: a sunk join with twin stitch rows either side, stitches evenly spaced along the found join line
+  {
+    const dots = new Map(), cell = 12, free = (x, y) => { const cx = Math.floor(x / cell), cy = Math.floor(y / cell); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [px, py] of dots.get((cx + a) * 4096 + cy + b) || []) if (Math.hypot(px - x, py - y) < 11) return false; return true; };
+    const put = (x, y) => { const k = Math.floor(x / cell) * 4096 + Math.floor(y / cell); (dots.get(k) || dots.set(k, []).get(k)).push([x, y]); stamp(hf, W, x | 0, y | 0, 1.6, (v, d) => v - (1 - d) * .9); };
+    for (const [u0, v0, u1, v1] of side.seam) {
+      const x0 = X(u0), y0 = Y(v0), x1 = X(u1), y1 = Y(v1), L = Math.hypot(x1 - x0, y1 - y0) || 1, nx = -(y1 - y0) / L, ny = (x1 - x0) / L;
+      line(x0, y0, x1, y1, (x, y) => stamp(hf, W, x, y, 3.5, (v, d) => v - (1 - d) * .7));
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      for (const o of [-9, 9]) if (free(mx + nx * o, my + ny * o)) put(mx + nx * o, my + ny * o);
+    }
+    // strap edges, stitched like the rest
+    const st = side.strap.map(([u, v]) => [X(u), Y(v)]);
+    for (const [a, b] of [[0, 1], [2, 3]]) line(st[a][0], st[a][1], st[b][0], st[b][1], (x, y, t) => { stamp(hf, W, x, y, 2.5, (v, d) => v + (1 - d) * .5); });
+  }
   for (let k = 0; k < 40; k++) { let x = Math.random() * W, y = Math.random() * Y(GLOVE_V(.13)); const a = rand(0, 6.28); for (let t = 0; t < 20; t++) { stamp(hf, W, x | 0, y | 0, 2, (v, d) => v - (1 - d) * .12); x += Math.cos(a) * 2; y += Math.sin(a) * 2; } } // creases
   const normal = heightToNormal(hf, W, 2.2, null);
   const rough = canvasTex(256, 256, (g, w, h) => {
@@ -1238,10 +1297,9 @@ function makeRig(cfg) {
   } else { headMark.position.set(0, .1, .02); head.add(headMark); }
   const baseFace = face ? face.color.clone() : null;
 
-  const gm = gloveMaps(cfg);
-  const glove = phys({ map: gm.map, normalMap: gm.normal, normalScale: new THREE.Vector2(.6, .6), roughnessMap: gm.rough, roughness: 1, clearcoat: .45, clearcoatRoughness: .3,
-    sheen: .25, sheenRoughness: .5, sheenColor: new THREE.Color(cfg.glove).lerp(new THREE.Color(0xffffff), .5), envMapIntensity: .75 });
-  const gloves = [1, -1].map((s) => { const g = new THREE.Group(); body.add(g); mk(GLOVE_GEOS[s > 0 ? 0 : 1], glove, g); return g; });
+  const gloveMat = (side) => { const gm = gloveMaps(cfg, side); return phys({ map: gm.map, normalMap: gm.normal, normalScale: new THREE.Vector2(.6, .6), roughnessMap: gm.rough, roughness: 1, clearcoat: .45, clearcoatRoughness: .3,
+    sheen: .25, sheenRoughness: .5, sheenColor: new THREE.Color(cfg.glove).lerp(new THREE.Color(0xffffff), .5), envMapIntensity: .75 }); };
+  const gloves = [0, 1].map((i) => { const g = new THREE.Group(); body.add(g); mk(GLOVE_GEOS[i].geo, gloveMat(GLOVE_GEOS[i]), g); return g; });
   return { root, body, chest, head, hips, mesh, meshes, bones, boneLocal, gloves, sk, skull: headMark, chestMark, mats: { skin, face }, baseFace, u: { body: bodyU, head: headU },
     sway: swayU, swayVel: V(), lastTwist: 0,
     arms: [{ S: V(), E: V(), W: V(), perp: V() }, { S: V(), E: V(), W: V(), perp: V() }], legs: [{ H: V(), K: V(), A: V(), perp: V() }, { H: V(), K: V(), A: V(), perp: V() }],
