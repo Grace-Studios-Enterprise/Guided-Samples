@@ -849,6 +849,153 @@ function buildBoots(src, R, shoeTop, cfg) {
 }
 // live guard: real boxers' between-punches motion, baked from CMU motion capture shadowboxing (tools/bake_guard.py)
 const MOCAP_GUARD = await import('./assets/mocap_guard.js').then((m) => m.default).catch(() => null);
+// --- Mixamo motion (assets/mocap_mixamo.js): the fighters' footwork, punches' body mechanics, hit and block reactions,
+// knockdowns and taunts come from motion capture, retargeted onto the game's rig each frame. Code still aims every
+// punch, keeps the feet on the canvas and layers damage reactions on top. Channel layout: tools/pack_mixamo.py.
+const MX = await import('./assets/mocap_mixamo.js').then((m) => m.default).catch(() => null);
+const MXC = 39, MX_V = [0, 15, 18, 21, 24, 27, 30, 33, 36], MX_Q = [3, 7, 11], MX_SWAP = [[15, 18], [21, 24], [27, 30], [33, 36]];
+const MXCLIP = {};
+if (MX) for (const [k, c] of Object.entries(MX.clips)) {
+  const raw = unb64(c.d, Int16Array), d = new Float32Array(raw.length); for (let i = 0; i < raw.length; i++) d[i] = raw[i] / MX.q;
+  MXCLIP[k] = { n: c.n, d, dur: (c.n - 1) / MX.fps, speed: c.speed, hits: c.hits };
+}
+// sample a clip at time t (seconds) into out; quaternions nlerped
+function mxSample(c, t, out, loop = false) {
+  let x = t * MX.fps; x = loop ? ((x % (c.n - 1)) + (c.n - 1)) % (c.n - 1) : clamp(x, 0, c.n - 1);
+  const i0 = Math.min(c.n - 1, x | 0), i1 = Math.min(c.n - 1, i0 + 1), u = x - i0, A = i0 * MXC, B = i1 * MXC, D = c.d;
+  for (let k = 0; k < MXC; k++) out[k] = D[A + k] + (D[B + k] - D[A + k]) * u;
+  for (const q of MX_Q) { let s = 0; for (let j = 0; j < 4; j++) s += D[A + q + j] * D[B + q + j]; if (s < 0) for (let j = 0; j < 4; j++) out[q + j] = D[A + q + j] * (1 - u) - D[B + q + j] * u; mxNorm(out, q); }
+  return out;
+}
+function mxNorm(p, q) { const l = Math.hypot(p[q], p[q + 1], p[q + 2], p[q + 3]) || 1; for (let j = 0; j < 4; j++) p[q + j] /= l; }
+// out = a blended toward b by w
+function mxBlend(out, a, b, w) {
+  for (let k = 0; k < MXC; k++) out[k] = a[k] + (b[k] - a[k]) * w;
+  for (const q of MX_Q) { const s = a[q] * b[q] + a[q + 1] * b[q + 1] + a[q + 2] * b[q + 2] + a[q + 3] * b[q + 3] < 0 ? -1 : 1; for (let j = 0; j < 4; j++) out[q + j] = a[q + j] * (1 - w) + s * b[q + j] * w; mxNorm(out, q); }
+  return out;
+}
+// out = base plus w times (cur relative to ref), optionally mirrored left-right (a punch or reaction from the other side)
+const _qa = [0, 0, 0, 1], _qb = [0, 0, 0, 1];
+function qmul(a, b, o) { const x = a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], y = a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], z = a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], w = a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]; o[0] = x; o[1] = y; o[2] = z; o[3] = w; return o; }
+// wq: separate weight for the rotations; skip: a hand (0 left, 1 right) whose wrist and elbow are left alone;
+// wh: scale on the hands and elbows
+function mxAdd(out, base, cur, ref, w, mirror = false, wq = w, skip = -1, wh = 1) {
+  if (out !== base) out.set(base);
+  for (const v of MX_V) {
+    if (skip >= 0 && (v === 15 + skip * 3 || v === 21 + skip * 3)) continue;
+    let src = v; if (mirror) for (const [l, r] of MX_SWAP) { if (v === l) src = r; else if (v === r) src = l; }
+    const dx = cur[src] - ref[src], dy = cur[src + 1] - ref[src + 1], dz = cur[src + 2] - ref[src + 2];
+    const k = v >= 15 && v <= 24 ? w * wh : w;
+    out[v] += (mirror ? -dx : dx) * k; out[v + 1] += dy * k; out[v + 2] += dz * k;
+  }
+  for (const q of MX_Q) {
+    _qb[0] = -ref[q]; _qb[1] = -ref[q + 1]; _qb[2] = -ref[q + 2]; _qb[3] = ref[q + 3];
+    _qa[0] = cur[q]; _qa[1] = cur[q + 1]; _qa[2] = cur[q + 2]; _qa[3] = cur[q + 3]; qmul(_qa, _qb, _qa); // delta = cur * ref^-1
+    if (mirror) { _qa[1] = -_qa[1]; _qa[2] = -_qa[2]; }
+    if (_qa[3] < 0) for (let j = 0; j < 4; j++) _qa[j] = -_qa[j];
+    for (let j = 0; j < 3; j++) _qa[j] *= wq; _qa[3] = 1 - wq + _qa[3] * wq; mxNorm(_qa, 0);
+    _qb[0] = out[q]; _qb[1] = out[q + 1]; _qb[2] = out[q + 2]; _qb[3] = out[q + 3]; qmul(_qa, _qb, _qb);
+    for (let j = 0; j < 4; j++) out[q + j] = _qb[j];
+  }
+  return out;
+}
+// punches: which clip and which impact in it; mirrored clips give the rear-hand version of a lead-hand punch
+// [clip, impact index, mirrored, how much of the clip's body movement, how much of its torso turn]
+const MX_PUNCH = { jab: ['Lead_Jab', 0, false, .5, .3], cross: ['Jab_Cross', 1, false, .75, .55], lhook: ['Hook', 0, false, .8, .65], rhook: ['Hook', 0, true, .8, .65],
+  lupper: ['Punch_Combo', 2, false, .8, .55], rupper: ['Punch_Combo', 2, true, .8, .55], jab_b: ['Body_Jab_Cross', 0, false, .8, .5], cross_b: ['Body_Jab_Cross', 1, false, .85, .6],
+  lhook_b: ['Hook', 0, false, .8, .6], rhook_b: ['Hook', 0, true, .8, .6], lupper_b: ['Punch_Combo', 2, false, .8, .55], rupper_b: ['Punch_Combo', 2, true, .8, .55] };
+const MXSEG = {};
+// the idle clip's average hand positions: the guard is re-centred on these (see poseFighter)
+const MX_IDLE_MEAN = new Float32Array(MXC);
+if (MX) { const c = MXCLIP.Idle; for (let f = 0; f < c.n; f++) for (let k = 15; k < 21; k++) MX_IDLE_MEAN[k] += c.d[f * MXC + k] / c.n; }
+if (MX) for (const [k, [name, hi, mirror, wPos, wRot]] of Object.entries(MX_PUNCH)) {
+  const c = MXCLIP[name]; if (!c || !c.hits[hi]) continue;
+  const [hf, hand] = c.hits[hi], o = 15 + hand * 3, ext = (f) => Math.hypot(c.d[f * MXC + o], c.d[f * MXC + o + 1], c.d[f * MXC + o + 2]);
+  let a = hf; while (a > 0 && hf - a < 18 && ext(a - 1) <= ext(a) + .002) a--;           // back to where the arm started out
+  let b = hf; while (b < c.n - 1 && b - hf < 24 && ext(b + 1) > ext(a) + .04) b++;       // forward until it's home again
+  MXSEG[k] = { c, wPos, wRot, hit: hf / MX.fps, pre: (hf - a) / MX.fps, post: Math.max(.1, (b - hf) / MX.fps), hand: mirror ? 1 - hand : hand, mirror: !!mirror,
+    ref: mxSample(c, a / MX.fps, new Float32Array(MXC)), atHit: mxSample(c, hf / MX.fps, new Float32Array(MXC)) };
+}
+// which way a reaction clip turns the chest, so it can be mirrored to match the side the punch came from
+function mxTurnSign(c) {
+  if (!c) return 1; let best = 0, sign = 1; const q0 = c.d.subarray(7, 11);
+  for (let f = 0; f < c.n; f++) { const q = c.d.subarray(f * MXC + 7, f * MXC + 11), y = q[1] * q0[3] - q[3] * q0[1]; if (Math.abs(y) > best) { best = Math.abs(y); sign = Math.sign(y) || 1; } }
+  return sign;
+}
+const MX_TURN = MX ? { Big_Side_Hit: mxTurnSign(MXCLIP.Big_Side_Hit), Kidney_Hit: mxTurnSign(MXCLIP.Kidney_Hit), Big_Kidney_Hit: mxTurnSign(MXCLIP.Big_Kidney_Hit), Head_Hit: mxTurnSign(MXCLIP.Head_Hit) } : {};
+// locomotion: idle plus one step clip per direction (speeds in leg lengths per second, from the clips' own travel)
+const MX_LOCO = [['Medium_Step_Forward'], ['Long_Step_Forward'], ['Step_Backward'], ['Short_Left_Side_Step'], ['Long_Left_Side_Step'], ['Short_Right_Side_Step']];
+function mxState(f) {
+  return f.mx || (f.mx = { idleT: Math.random() * 2, ph: 0, move: 0, dirW: new Float32Array(MX_LOCO.length), punch: [], adds: [], blockW: 0, kd: 0, taunt: null,
+    base: new Float32Array(MXC), cur: new Float32Array(MXC), a: new Float32Array(MXC), b: new Float32Array(MXC), s: new Float32Array(MXC), idle0: MX ? mxSample(MXCLIP.Idle, 0, new Float32Array(MXC)) : null });
+}
+// a hit or block reaction: played additively, scaled by how hard it landed
+function mxReact(f, kind, toHead, side, strength) {
+  if (!MX) return; const m = mxState(f);
+  let name = 'Light_Hit_To_Head';
+  if (kind === 'block') name = toHead ? 'Left_Block' : 'Right_Block';
+  else if (!toHead) name = kind === 'hook' ? (strength > 1 ? 'Big_Kidney_Hit' : 'Kidney_Hit') : 'Stomach_Hit';
+  else if (kind === 'hook') name = 'Big_Side_Hit';
+  else name = strength > 1.5 ? 'Head_Hit' : strength > .9 ? 'Medium_Hit_To_Head' : 'Light_Hit_To_Head';
+  const c = MXCLIP[name]; if (!c) return;
+  const mirror = MX_TURN[name] ? MX_TURN[name] !== Math.sign(side || 1) : false;
+  m.adds.push({ c, t: 0, s: clamp(strength, .35, 1.25) * (kind === 'block' ? .55 : 1), mirror, block: kind === 'block', ref: mxSample(c, 0, new Float32Array(MXC)) });
+  if (m.adds.length > 3) m.adds.shift();
+}
+// the whole mocap pose for this frame (in character space units), or null when the clips aren't loaded
+function mxPose(f, dt, legW) {
+  if (!MX || !G.mocap) return null;
+  const m = mxState(f), a = f.action, idle = MXCLIP.Idle;
+  // locomotion: weights from the fighter's actual velocity in his own frame; playback rate matched to it
+  const fx = Math.sin(f.yaw), fz = Math.cos(f.yaw), vz = (f.vel.x * fx + f.vel.z * fz) / legW, vx = (f.vel.x * fz - f.vel.z * fx) / legW, sp = Math.hypot(vx, vz);
+  m.move = damp(m.move, clamp((sp - .08) / .35, 0, 1), 8, dt);
+  // forward, back, left, right shares of the motion; short and long steps blended by speed
+  const D = { f: Math.max(0, vz), b: Math.max(0, -vz), l: Math.max(0, vx), r: Math.max(0, -vx) }, tot = D.f + D.b + D.l + D.r || 1;
+  const fastF = clamp((D.f - 1.2) / .4, 0, 1), fastL = clamp((D.l - .35) / .35, 0, 1);
+  const want = [D.f / tot * (1 - fastF), D.f / tot * fastF, D.b / tot, D.l / tot * (1 - fastL), D.l / tot * fastL, D.r / tot], along = [D.f, D.f, D.b, D.l, D.l, D.r];
+  let rateSum = 0, wSum = 0;
+  MX_LOCO.forEach(([name], i) => {
+    const c = MXCLIP[name], cs = Math.hypot(c.speed[0], c.speed[1]) || 1;
+    m.dirW[i] = damp(m.dirW[i], want[i], 10, dt);
+    rateSum += m.dirW[i] * clamp(along[i] / cs, .7, 1.6) / c.dur; wSum += m.dirW[i];
+  });
+  m.ph = (m.ph + dt * (wSum > .01 ? rateSum / wSum : 1)) % 1;
+  m.idleT += dt;
+  mxSample(idle, m.idleT, m.base, true);
+  if (wSum > .01 && m.move > .01) {
+    let acc = 0; m.a.fill(0);
+    MX_LOCO.forEach(([name], i) => { const w = m.dirW[i] / wSum; if (w < .02) return; const c = MXCLIP[name]; mxSample(c, m.ph * c.dur, m.s); mxBlend(m.a, acc ? m.a : m.s, m.s, acc ? w / (acc + w) : 1); acc += w; });
+    mxBlend(m.base, m.base, m.a, m.move);
+  }
+  // held block: the guard comes up to the face as in the centre block
+  m.blockW = damp(m.blockW, f.blocking && !f.blockLow ? 1 : 0, 14, dt);
+  if (m.blockW > .01 && MXCLIP.Center_Block) { mxSample(MXCLIP.Center_Block, .2, m.s); mxAdd(m.base, m.base, m.s, m.idle0, m.blockW * .6, false, m.blockW * .3); } // gloves up at the face, a little shell
+  // reactions, added on top and faded out over their last fifth
+  for (const r of m.adds) { r.t += dt; const fade = clamp((r.c.dur - r.t) / (r.c.dur * .2), 0, 1) * clamp(r.t / .04, 0, 1); mxSample(r.c, r.t, m.s); mxAdd(m.base, m.base, m.s, r.ref, r.s * fade, r.mirror, r.s * fade, -1, r.block ? 1 : .35); } // the hands stay mostly up: the guard drop on a hit is the damage system's call
+  m.adds = m.adds.filter((r) => r.t < r.c.dur);
+  m.cur.set(m.base);
+  // punch: the clip's body mechanics, time-warped so its impact lands on the game's impact frame
+  if (a && MXSEG[a.type] && a !== m.lastAction) { m.punch.forEach((p) => (p.out = true)); m.punch.push({ a, seg: MXSEG[a.type], w: 0 }); m.lastAction = a; }
+  for (const p of m.punch) {
+    const S = p.seg, live = f.action === p.a && !p.out;
+    if (live) { const t = p.a.t; p.ct = t < p.a.hit ? S.hit - S.pre * (1 - t / p.a.hit) : S.hit + S.post * clamp((t - p.a.hit) / (p.a.dur - p.a.hit), 0, 1); }
+    p.w = live ? Math.min(1, p.w + dt / .05) : Math.max(0, p.w - dt / .12);
+    // the body's mechanics from the clip (torso turn toned down: Mixamo's punches lunge); the punching arm is aimed in code
+    mxSample(S.c, p.ct, m.s); mxAdd(m.cur, m.cur, m.s, S.ref, p.w * S.wPos, S.mirror, p.w * S.wRot, S.hand);
+    if (live) { m.liveSeg = S; m.liveW = p.w; }
+  }
+  m.punch = m.punch.filter((p) => p.w > 0);
+  if (!a) m.liveSeg = null;
+  // knockdown: down on one knee from the body-shot knockdown, back up with its second half; replaces everything
+  if (f.down || f.rising) {
+    const c = MXCLIP.Livershot_Knockdown; m.kd = Math.min(1, m.kd + dt / .15);
+    const t = f.down ? Math.min(1.3, (m.kdT = (m.kdT || 0) + dt)) : 1.3 + (1 - f.fall) * (c.dur - 1.3);
+    mxSample(c, t, m.s); mxBlend(m.cur, m.cur, m.s, m.kd);
+  } else { m.kd = Math.max(0, m.kd - dt / .25); m.kdT = 0; }
+  // taunts and the pre-fight prayer: full-body clips played once
+  if (m.taunt) { const T = m.taunt, c = MXCLIP[T.name]; T.t += dt; const w = clamp(T.t / .2, 0, 1) * clamp((c.dur - T.t) / .3, 0, 1); mxSample(c, T.start + T.t, m.s); mxBlend(m.cur, m.cur, m.s, w); if (T.t >= c.dur - T.start) m.taunt = null; }
+  return m;
+}
 // the trunks garment (uploaded Marvelous Designer export, main panel mesh only), in metres, +Z front
 const TR = await (async () => {
   try {
@@ -1486,7 +1633,7 @@ const saved = safeStore.get('kl-opts', {});
 const G = {
   mode: 'menu', round: 1, rounds: saved.rounds || 3, roundLen: 90, roundT: 0, difficulty: saved.difficulty || 'pro', quality: saved.quality || (matchMedia('(pointer:coarse)').matches ? 'perf' : 'high'), cam: saved.cam || 'broadcast',
   timeScale: 1, slow: 0, cine: null, kd: null, msgs: [], msgId: 0, cards: [], result: null, overT: 0, breakT: 0, introT: 0, excite: .1, fightT: 0,
-  shake: 0, flash: 0, touch: matchMedia('(pointer:coarse)').matches, time: 0,
+  mocap: 1, shake: 0, flash: 0, touch: matchMedia('(pointer:coarse)').matches, time: 0,
   toast: null, fps: 60, lowFor: 0, autoPaused: false,
 };
 const P1 = newFighter(FIGHTERS.vance, true);
@@ -1554,7 +1701,7 @@ const REACT_HIT = {
 // --- contact: where the punch was aimed, where the target actually is at impact, and whether a glove or forearm is in
 // the way. Straights travel along the line from the shoulder, hooks arrive from the side, uppercuts from below.
 // glove: a held block covers its full size; a relaxed guard has gaps (passive). jitter: how far off the aim point a punch lands
-const CONTACT = { fist: .06, glove: .095, passive: .078, arm: .05, block: -.01, glance: .035, jitter: .035 };
+const CONTACT = { fist: .06, glove: .1, passive: .088, arm: .05, block: -.005, glance: .008, jitter: .035 };
 const _ct = V(), _cf = V(), _co = V(), _cs = V(), _ce = V(), _cg = V(), _cq = V(), _cx = V();
 function targetOf(def, body, out) { return out.copy(body ? def.chestWorld : def.headWorld).add(_cq.set(0, body ? -.14 : -.04, 0)); }
 function segDist(p, a, b) { const d = _cx.subVectors(b, a), l2 = d.lengthSq() || 1; const t = clamp(((p.x - a.x) * d.x + (p.y - a.y) * d.y + (p.z - a.z) * d.z) / l2, 0, 1); return Math.hypot(a.x + d.x * t - p.x, a.y + d.y * t - p.y, a.z + d.z * t - p.z); }
@@ -1603,7 +1750,7 @@ function resolveHit(att, def, a) {
     // parry: block raised just before impact (within 0.15 s) knocks a head punch aside and leaves the attacker open
     const parry = def.blocking && toHead && P.kind !== 'upper' && G.time - (def.blockAt ?? -9) <= .15 && (def.isPlayer || def.ai.parryFor === a);
     if (parry) {
-      att.react.v.y -= P.hand * 3; att.react.v.g += 5; att.counterWin = 0; def.counterWin = .7; att.stats.out.parried = (att.stats.out.parried || 0) + 1;
+      att.react.v.y -= P.hand * 3; att.react.v.g += 5; att.counterWin = 0; def.counterWin = .7; mxReact(def, 'block', true, P.hand, 1.1); att.stats.out.parried = (att.stats.out.parried || 0) + 1;
       if (att.action === a) a.r *= 1.6, a.dur = a.hit + PUNCH_HOLD + a.r; // the arm is knocked wide: a slower way home
       sfx.block(); if (G.mode === 'fight' && (def.isPlayer || att.isPlayer)) msg(def.isPlayer ? 'Parried' : 'Parried by ' + def.cfg.last, 'small');
       emit('punch_parried', { attacker: who(att), defender: who(def), punch: a.type }); return;
@@ -1613,6 +1760,7 @@ function resolveHit(att, def, a) {
     def.stamina = Math.max(0, def.stamina - P.dmg * (def.blocking ? .12 : .2));
     def.rec.vp -= 1.5; att.rec.vp += .8;
     // the guard gets driven back into the face, the chest rocks and he gives a little ground
+    mxReact(def, 'block', toHead, P.hand, P.power ? 1 : .6);
     const bk = P.power ? 1 : .6, R2 = def.react.v; R2.b += 1.1 * bk; R2.p -= .7 * bk; R2.d += .15 * bk; R2.y += P.kind === 'hook' ? P.hand * .8 * bk : 0;
     def.vel.addScaledVector(_d, .45 * bk);
     spray.burst(toHead ? def.headWorld : def.chestWorld, _d, 4, .5);
@@ -1634,6 +1782,7 @@ function resolveHit(att, def, a) {
   RV.p += RX.p * kr; RV.y += side * RX.y * kr; RV.z += RX.z * kr; RV.d += RX.d * kr; RV.g += RX.g * kr;
   // knocked back: the feet step to catch the weight
   def.vel.addScaledVector(_d, .55 + .5 * kr);
+  mxReact(def, P.kind, toHead, side, kr);
   // hit-stop: both fighters freeze for a few frames on a clean hit, longer for power shots and counters
   if (!C.glance) G.hitStop = Math.max(G.hitStop || 0, (2 + (P.power ? 1 : 0) + (isCounter || kr > 1.6 ? 2 : 0)) / 60);
   if (dmg > 5) { def.action = null; def.queue.length = 0; def.buffer = null; }
@@ -1660,7 +1809,7 @@ function resolveHit(att, def, a) {
 function knockdown(def, att, P) {
   def.down = true; def.fall = 0; def.action = null; def.queue.length = 0; def.buffer = null; def.blocking = false; def.head = 0;
   def.kdRound++; def.kdTotal++; att.stats.kd++;
-  att.action = null; att.queue.length = 0;
+  att.action = null; att.queue.length = 0; att.tauntedKD = false;
   const aiRiseChance = clamp(1.08 - def.kdTotal * .26 - (1 - def.headMax / 100) * .7, .04, .95);
   G.kd = { victim: def, attacker: att, t: 0, count: 0, mash: 0, need: Math.round(7 + def.kdTotal * 4 + (1 - def.headMax / 100) * 12), aiRise: Math.random() < aiRiseChance ? 3 + ((Math.random() * 6) | 0) : 99, tko: def.kdRound >= 3 };
   // send the attacker to the farthest neutral corner
@@ -1839,6 +1988,7 @@ function updateFighter(f, o, dt) {
   if (f.autoTarget) {
     const tx = f.autoTarget.x - f.pos.x, tz = f.autoTarget.z - f.pos.z, tl = Math.hypot(tx, tz);
     const k = tl > .15 ? 1 : 0;
+    if (!k && !f.tauntedKD && MX) { f.tauntedKD = true; mxState(f).taunt = { name: 'Taunt', t: 0, start: 0 }; } // in the neutral corner
     fwd = k * (tx * fx + tz * fz) / (tl || 1); side = k * (tx * -fz + tz * fx) / (tl || 1);
   }
   const m = Math.hypot(fwd, side); if (m > 1) { fwd /= m; side /= m; }
@@ -1876,7 +2026,7 @@ function constrain() {
 }
 
 /* --------------------------------------------------------------------------- posing */
-const _lv = V(), _gq = V();
+const _lv = V(), _gq = V(), _mq = new THREE.Quaternion(), _me = new THREE.Euler();
 // second-order follow: lags behind a moving target, overshoots a little and settles (zeta < 1); fine steps keep it stable
 function follow(o, k, target, w, zeta, dt) {
   const v = o.v || (o.v = {}); let x = o[k] ?? target, vel = v[k] || 0;
@@ -1888,9 +2038,12 @@ function poseFighter(f, dt, time) {
   const e = a ? punchCurve(a, a.t) : 0, ep = Math.max(0, e);
   const sp = Math.hypot(f.vel.x, f.vel.z);
   f.phase += dt * (5.5 + sp * 5);
-  let crouch = .035 + (f.blocking ? .05 : 0) + f.wobble * .04;
-  let twist = -.32, lean = .2 + (f.blocking ? .1 : 0) - f.victory * .25, side = 0, shift = 0;
-  if (P) {
+  // with motion capture on, the clips supply the stance, footwork, block and the body mechanics of punches; the code
+  // below keeps only what the clips don't cover (slips, stun, damage reactions, punches without a clip)
+  const mxOn = !!(MX && G.mocap), clipP = mxOn && P && !!MXSEG[a.type];
+  let crouch = .035 + (f.blocking && !mxOn ? .05 : 0) + f.wobble * .04;
+  let twist = -.32, lean = .2 + (f.blocking && !mxOn ? .1 : 0) - f.victory * .25, side = 0, shift = 0;
+  if (P && !clipP) {
     if (P.body) { crouch += .13 * ep; lean += .12 * ep; }
     if (P.kind === 'upper') crouch += .1 * Math.sin(clamp(a.t / a.hit, 0, 1) * Math.PI) * (1 - ep * .6);
     if (P.kind === 'straight') lean += .1 * ep;
@@ -1900,15 +2053,15 @@ function poseFighter(f, dt, time) {
   // stun: knees go soft and wobble, the guard sags
   const stunA = Math.max(clamp(f.stun / .6, 0, 1), f.wobble * .8);
   if (stunA > 0) { crouch += .03 * stunA + .025 * stunA * (.5 + .5 * Math.sin(time * 6.5 + f.phase)); side += Math.sin(time * 3.7) * .1 * stunA; }
-  for (let i = 0; i < 2; i++) { const ft = f.feetW[i]; if (ft.t < 1) { const k = Math.sin(ft.t * Math.PI); shift -= (i === 0 ? 1 : -1) * .025 * k; crouch += .012 * k; } }
+  if (!mxOn) for (let i = 0; i < 2; i++) { const ft = f.feetW[i]; if (ft.t < 1) { const k = Math.sin(ft.t * Math.PI); shift -= (i === 0 ? 1 : -1) * .025 * k; crouch += .012 * k; } }
   // weight: onto the lead foot behind straights and the rear hook, back onto the rear foot for the lead hook,
   // toward the direction of travel when moving
   const fx0 = Math.sin(f.yaw), fz0 = Math.cos(f.yaw), lz0 = f.vel.x * fx0 + f.vel.z * fz0, lx0 = f.vel.x * fz0 - f.vel.z * fx0;
-  if (P) shift += ep * (P.kind === 'straight' ? (P.hand > 0 ? .02 : .055) : P.kind === 'hook' ? (P.hand > 0 ? -.045 : .045) : (P.hand > 0 ? .02 : .035));
-  shift += clamp(lx0 * .035, -.04, .04); lean += clamp(lz0 * .05, -.06, .06);
+  if (P && !clipP) shift += ep * (P.kind === 'straight' ? (P.hand > 0 ? .02 : .055) : P.kind === 'hook' ? (P.hand > 0 ? -.045 : .045) : (P.hand > 0 ? .02 : .035));
+  if (!mxOn) { shift += clamp(lx0 * .035, -.04, .04); lean += clamp(lz0 * .05, -.06, .06); }
   follow(ps, 'crouch', crouch, P ? 26 : 14, .55, dt);
   // the body leads the arm: hips run ahead on the punch curve, then the shoulders, the fist on time
-  const twH = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .06) : 0), twC = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .03) : 0);
+  const twH = twist + (P && !clipP ? P.twist * .85 * punchCurve(a, a.t + .06) : 0), twC = twist + (P && !clipP ? P.twist * .85 * punchCurve(a, a.t + .03) : 0);
   follow(ps, 'htwist', twH, P ? 42 : 11, .5, dt);
   follow(ps, 'twist', twC, P ? 34 : 10, .42, dt);  // shoulders lag the hips a touch and overshoot on the follow-through
   follow(ps, 'lean', lean, P ? 26 : 12, .5, dt);
@@ -1926,18 +2079,30 @@ function poseFighter(f, dt, time) {
     const x = (f.mgT * M.fps) % M.n, i0 = x | 0, i1 = (i0 + 1) % M.n, t = x - i0;
     for (let c = 0; c < k; c++) MG[c] = M.data[i0 * k + c] * (1 - t) + M.data[i1 * k + c] * t;
   }
-  const mgTarget = MOCAP_GUARD ? MOCAP_GAIN * (1 - clamp(ep * 1.6, 0, 1)) * (f.blocking ? .35 : 1) * (1 - f.fall) * (f.victory ? 0 : 1) * (1 - stunA * .6) : 0;
+  const mgTarget = MOCAP_GUARD && !(MX && G.mocap) ? MOCAP_GAIN * (1 - clamp(ep * 1.6, 0, 1)) * (f.blocking ? .35 : 1) * (1 - f.fall) * (f.victory ? 0 : 1) * (1 - stunA * .6) : 0;
   const mgW = f.mgW = damp(f.mgW ?? mgTarget, mgTarget, 8, dt), mgN = MOCAP_GUARD ? mgW / MOCAP_GAIN : 0;
   const pelvisY = R.sk.P.y - .03 - ps.crouch + bounce * (1 - .5 * mgN) - X.d + MG[1] * mgW;
+  const legL = R.sk.TH + R.sk.SH, armL = R.sk.UA + R.sk.FA;
+  const M = mxPose(f, dt, legL * f.cfg.scale), MP = M && M.cur, mxKD = !!(M && M.kd > .5);
 
-  const fe = ease(f.fall);
+  const fe = mxKD ? 0 : ease(f.fall);
   R.root.position.set(f.pos.x, fe * .14, f.pos.z);
   R.root.rotation.set(-1.42 * fe, f.yaw, fe * .18);
-  R.hips.position.set(ps.shift + MG[0] * mgW, pelvisY, lunge * .6 + X.z + MG[2] * mgW);
-  R.hips.rotation.set(X.p * .25 + MG[3] * mgW, ps.htwist * .5 + X.y * .45 + MG[4] * mgW, ps.side * .4 + MG[5] * mgW);
-  R.chest.position.set(ps.shift + MG[0] * mgW, pelvisY + CHEST_DY, lunge * .6 + X.z * 1.3 + MG[2] * mgW);
-  R.chest.rotation.set(ps.lean + X.p + r.p * .35 + fe * .15 + breath + (MG[3] + MG[6]) * mgW, ps.twist + X.y + r.y * .3 + (MG[4] + MG[7]) * mgW, ps.side + r.r * .3 + (MG[5] + MG[8]) * mgW);
-  R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3 + MG[9] * mgW, r.y - ps.twist * .75 + MG[10] * mgW, r.r * .6 - ps.side * .45 + MG[11] * mgW);
+  if (MP) {
+    // clip pose, plus what the code adds on top: slips, stun sway, damage springs, punches without a clip
+    const k = .55, dCrouch = ps.crouch - .035, dLean = ps.lean - .2 + f.victory * .25, dTw = ps.twist + .32, dHTw = ps.htwist + .32;
+    R.hips.position.set(MP[0] * legL + ps.shift, MP[1] * R.sk.P.y - dCrouch - X.d * k, MP[2] * legL + (clipP ? 0 : lunge * .6) + X.z * k);
+    _mq.set(MP[3], MP[4], MP[5], MP[6]); R.hips.quaternion.setFromEuler(_me.set(X.p * .25 * k, dHTw * .5 + X.y * .45 * k, ps.side * .4, 'YXZ')).multiply(_mq);
+    R.chest.position.copy(R.hips.position).add(_tmp.set(0, CHEST_DY, X.z * .3 * k));
+    _mq.set(MP[7], MP[8], MP[9], MP[10]); R.chest.quaternion.setFromEuler(_me.set(dLean + X.p * k + r.p * .35, dTw + X.y * k + r.y * .3, ps.side + r.r * .3, 'YXZ')).multiply(_mq);
+    _mq.set(MP[11], MP[12], MP[13], MP[14]); R.head.quaternion.setFromEuler(_me.set(-dLean * .55 + r.p, r.y - dTw * .75, r.r * .6 - ps.side * .45, 'YXZ')).multiply(_mq);
+  } else {
+    R.hips.position.set(ps.shift + MG[0] * mgW, pelvisY, lunge * .6 + X.z + MG[2] * mgW);
+    R.hips.rotation.set(X.p * .25 + MG[3] * mgW, ps.htwist * .5 + X.y * .45 + MG[4] * mgW, ps.side * .4 + MG[5] * mgW);
+    R.chest.position.set(ps.shift + MG[0] * mgW, pelvisY + CHEST_DY, lunge * .6 + X.z * 1.3 + MG[2] * mgW);
+    R.chest.rotation.set(ps.lean + X.p + r.p * .35 + fe * .15 + breath + (MG[3] + MG[6]) * mgW, ps.twist + X.y + r.y * .3 + (MG[4] + MG[7]) * mgW, ps.side + r.r * .3 + (MG[5] + MG[8]) * mgW);
+    R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3 + MG[9] * mgW, r.y - ps.twist * .75 + MG[10] * mgW, r.r * .6 - ps.side * .45 + MG[11] * mgW);
+  }
   R.root.updateMatrixWorld(true);
 
   // aim points in this fighter's body space
@@ -1948,13 +2113,22 @@ function poseFighter(f, dt, time) {
   for (let i = 0; i < 2; i++) {
     const s = i === 0 ? 1 : -1, J = R.arms[i];
     J.S.copy(R.sk.SHO[i]).applyMatrix4(R.chest.matrix);
-    if (f.fall > .25) _b.set(s * .3, .02, .14 + f.fall * .2);
+    if (MP && !f.victory) {
+      // guard hand from the clip: wrist relative to the shoulder, scaled to this fighter's arm
+      // the clip's glove drift is damped toward its average so the gloves stay with the head, as a real guard does
+      const o = 15 + i * 3, gk = mxKD || f.victory ? 1 : .4;
+      _b.set(MX_IDLE_MEAN[o] + (MP[o] - MX_IDLE_MEAN[o]) * gk, MX_IDLE_MEAN[o + 1] + (MP[o + 1] - MX_IDLE_MEAN[o + 1]) * gk, MX_IDLE_MEAN[o + 2] + (MP[o + 2] - MX_IDLE_MEAN[o + 2]) * gk).multiplyScalar(armL).add(J.S);
+      // Mixamo's guard holds the gloves out in front; keep its motion but centre it on a tight guard (rear glove at the
+      // chin, lead glove a forearm out), which is also what the punch-contact checks expect a guard to cover
+      if (!mxKD) { _tmp.set(MX_IDLE_MEAN[o], MX_IDLE_MEAN[o + 1], MX_IDLE_MEAN[o + 2]).multiplyScalar(armL).add(J.S); _c.set(i === 0 ? .11 : -.095, i === 0 ? .56 : .6, i === 0 ? .31 : .19).applyMatrix4(R.chest.matrix); _b.add(_c.sub(_tmp)); }
+      if (!mxKD) { const gd = clamp(X.g, 0, 1.2) * .7 + stunA * .5 + (f.blocking ? 0 : clamp((45 - f.stamina) / 45, 0, 1) * .4); _b.y -= .2 * gd; _b.x += s * .04 * gd; _b.z -= .05 * gd + X.b * .7; _b.y += X.b * .3; }
+    } else if (f.fall > .25) _b.set(s * .3, .02, .14 + f.fall * .2);
     else if (f.victory > 0) _b.set(s * (.2 + Math.sin(time * 6 + i) * .03), 1.02, .06);
     else if (f.blocking && f.blockLow) _b.set(s * .09, .3, .25);
     else if (f.blocking) _b.set(s * .072, .675, .245);
     else if (i === 0) _b.set(.11, .56, .31);
     else _b.set(-.095, .6, .19);
-    if (!f.victory) {
+    if (!f.victory && !MP) {
       // the guard breathes with the chest and the lead hand paws in rhythm with the bounce
       const proc = 1 - .75 * mgN; // the procedural breathing and pawing make way for the mocap
       _b.y += (Math.sin(time * 2.2 + f.phase * .1) * .012 + Math.sin(time * 3.1 + i * 1.3) * .006) * proc;
@@ -1962,21 +2136,22 @@ function poseFighter(f, dt, time) {
       _b.x += s * .008 * Math.sin(time * 1.3 + i) * proc;
       const o = i === 0 ? 12 : 15; _b.x += MG[o] * mgW; _b.y += MG[o + 1] * mgW; _b.z += MG[o + 2] * mgW;
     }
-    if (f.fall < .25 && !f.victory) {
+    if (f.fall < .25 && !f.victory && !MP) {
       const gd = clamp(X.g, 0, 1.2) + stunA * .55 + (f.blocking ? 0 : clamp((45 - f.stamina) / 45, 0, 1) * .45); // tired arms sag
       _b.y -= .2 * gd; _b.x += s * .05 * gd; _b.z -= .06 * gd;
       _b.z -= X.b; _b.y += X.b * .4;
     }
-    _b.applyMatrix4(R.chest.matrix);
+    if (!MP || f.victory) _b.applyMatrix4(R.chest.matrix);
     // the gloves ride on a spring behind the body, so they trail and settle when the fighter moves or turns
     { const g = f.guardS || (f.guardS = [{}, {}]), q = g[i];
       if (q.x === undefined || f.fall > .25) { q.x = _b.x; q.y = _b.y; q.z = _b.z; q.v = {}; }
       follow(q, 'x', _b.x, 24, .5, dt); follow(q, 'y', _b.y, 24, .5, dt); follow(q, 'z', _b.z, 24, .5, dt); _b.set(q.x, q.y, q.z); }
     _hint.set(s * .45, -1, -.25);
+    if (MP) { const o = 21 + i * 3, h = 15 + i * 3; _hint.set(MP[o] - MP[h] * .5, MP[o + 1] - MP[h + 1] * .5, MP[o + 2] - MP[h + 2] * .5); }
     // each hand keeps its own extension, so a cancelled punch's arm finishes coming home while the other one fires
     const H = f.hands[i], active = P && P.hand === s && f.fall < .2;
     if (active) { H.e = e; H.kind = P.kind; H.body = P.body; } else H.e = damp(H.e, 0, 14, dt);
-    if ((active || Math.abs(H.e) > .004) && f.fall < .2) {
+    if ((active || Math.abs(H.e) > .004) && f.fall < .2 && !mxKD) {
       _c.copy(H.body ? f.aimBody : f.aimHead);
       _dir.subVectors(_c, J.S).normalize(); _c.addScaledVector(_dir, -.17);
       const ec = clamp(H.e, -.2, 1.06), he = clamp(H.e, 0, 1), arc = Math.sin(he * Math.PI);
@@ -2019,6 +2194,14 @@ function poseFighter(f, dt, time) {
     if (ft.t < 1) {
       ft.to.lerp(want[i], clamp(dt * 8, 0, 1)); ft.t = Math.min(1, ft.t + dt / ft.dur);
       const k = ft.t * ft.t * (3 - 2 * ft.t); ft.p.lerpVectors(ft.from, ft.to, k); lift = Math.sin(ft.t * Math.PI) * (.03 + .02 * Math.min(sp, 1));
+    }
+    if (MP) {
+      // feet from the clip (its stepping is synced to the fighter's speed); kept in step with the planted-feet state
+      const o = 27 + i * 3, t = 33 + i * 3; _w.set(MP[o] * legL, MP[o + 1] * legL, MP[o + 2] * legL);
+      _hint.set(s * .25, 0, 1); ik(J.H, _w, R.sk.TH, R.sk.SH, _hint, J.K, J.A); J.perp.copy(_perp);
+      R.feet[i].A.copy(J.A); R.feet[i].dir.set(MP[t], MP[t + 1], MP[t + 2]).normalize();
+      ft.p.copy(J.A); R.body.localToWorld(ft.p).setY(0); ft.t = 1;
+      continue;
     }
     _w.copy(ft.p); R.body.worldToLocal(_w); _w.y = R.sk.ankleY + lift;
     const heel = (i === 1 && rearPunch ? ep : 0) + (i === 0 && leadHook ? ep * .6 : 0);
@@ -2253,6 +2436,9 @@ function sim(rdt) {
     updateKnockdown(dt);
     if (G.mode === 'fight' && !G.kd && G.roundT >= G.roundLen) endRound();
   } else if (G.mode === 'intro') {
+    // corner rituals: the red corner taunts, the blue corner finishes a prayer and stands up as the intro ends
+    if (MX && G.introT === 0) { mxState(P2).taunt = { name: 'Praying', t: 0, start: Math.max(0, MXCLIP.Praying.dur - 5.4) }; }
+    if (MX && G.introT < 1.6 && G.introT + rdt >= 1.6) mxState(P1).taunt = { name: 'Taunt', t: 0, start: 0 };
     G.introT += rdt; P1.input.fwd = P2.input.fwd = 0; P1.input.side = P2.input.side = 0;
     if (G.introT > 5.5) beginRound();
   } else if (G.mode === 'break') {
@@ -2570,7 +2756,7 @@ function Menu({ s }) {
       <kbd>F1 or \`</kbd><span>Live Editor: tables, scripts, presets</span>
       <kbd>Gamepad</kbd><span>Flick the right stick to punch, L2 blocks, R2 goes to the body</span>
     </div>`}
-    <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used. Bodies: MakeHuman, CC0. Guard motion: CMU Motion Capture Database. Head scan: Lee Perry-Smith by Infinite-Realities, CC BY 3.0.</div>
+    <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used. Bodies: MakeHuman, CC0. Motion: Mixamo, CMU Motion Capture Database. Head scan: Lee Perry-Smith by Infinite-Realities, CC BY 3.0.</div>
   </div>`;
 }
 function Intro({ s }) {

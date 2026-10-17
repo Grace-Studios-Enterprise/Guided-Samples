@@ -1,0 +1,75 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script></head><body>
+<script type="module">
+// Bake Mixamo FBX clips into retargetable channels for the game's rig (see games/knockout-legends/tools/README in the repo).
+// Character space: x = fighter's left, y up, z facing; origin on the floor under the clip's root, which moves in a straight
+// line (and turns at a steady rate) from the clip's first frame to its last, so in-game motion can supply the travel.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+const FPS = 30;
+const B = (n) => 'mixamorig' + n;
+const names = window.CLIPS;
+const out = {}, summary = {};
+const q = new THREE.Quaternion(), v = new THREE.Vector3();
+for (const name of names) {
+  const buf = await (await fetch('assets/' + name + '.fbx')).arrayBuffer();
+  const g = new FBXLoader().parse(buf, '');
+  const bone = {}; g.traverse((o) => { if (o.isBone || o.type === 'Bone' || /^mixamorig/.test(o.name)) bone[o.name.replace(/^mixamorig:?/, 'mixamorig')] = o; });
+  const get = (n) => bone[B(n)];
+  for (const n of ['Hips', 'Spine2', 'Head', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase']) if (!get(n)) throw new Error(name + ': missing ' + n);
+  g.updateMatrixWorld(true);
+  const W = (n) => get(n).getWorldPosition(new THREE.Vector3()), WQ = (n) => get(n).getWorldQuaternion(new THREE.Quaternion());
+  // rest (T-pose) measurements
+  const rest = { hips: WQ('Hips'), chest: WQ('Spine2'), head: WQ('Head') };
+  const leg = W('LeftUpLeg').distanceTo(W('LeftLeg')) + W('LeftLeg').distanceTo(W('LeftFoot'));
+  const arm = W('LeftArm').distanceTo(W('LeftForeArm')) + W('LeftForeArm').distanceTo(W('LeftHand'));
+  const hipsRestY = W('Hips').y - Math.min(W('LeftFoot').y, W('RightFoot').y);
+  const clip = g.animations[0], mixer = new THREE.AnimationMixer(g); mixer.clipAction(clip).play();
+  let n = Math.max(2, Math.round(clip.duration * FPS) + 1); const frames = [];
+  for (let f = 0; f < n; f++) {
+    mixer.setTime(Math.min(clip.duration, f / FPS)); g.updateMatrixWorld(true);
+    const P = {}; for (const k of ['Hips', 'Spine2', 'Head', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand', 'LeftFoot', 'LeftToeBase', 'RightFoot', 'RightToeBase']) P[k] = W(k);
+    frames.push({ P, hq: WQ('Hips'), cq: WQ('Spine2'), kq: WQ('Head') });
+  }
+  // some clips snap back to their first pose on the very last frame: drop that frame
+  { const L = (fr) => fr.P.LeftFoot, a = L(frames[frames.length - 2]), b = L(frames[frames.length - 1]); if (frames.length > 3 && a.distanceTo(b) > leg * .25) frames.pop(); }
+  n = frames.length;
+  // root: straight line between the first and last frame's hips (on the floor); heading from the hips' facing
+  const facing = (fr) => { const fw = new THREE.Vector3(0, 0, 1).applyQuaternion(fr.hq.clone().multiply(rest.hips.clone().invert())); return Math.atan2(fw.x, fw.z); };
+  // heading: the clip's own +Z, plus however far the hips turn over the clip (a bladed stance isn't a turn)
+  const a0 = frames[0].P.Hips, a1 = frames[n - 1].P.Hips, y0 = 0; let y1 = facing(frames[n - 1]) - facing(frames[0]); while (y1 > Math.PI) y1 -= 2 * Math.PI; while (y1 < -Math.PI) y1 += 2 * Math.PI;
+  const ch = [];
+  frames.forEach((fr, f) => {
+    const t = f / (n - 1), rx = a0.x + (a1.x - a0.x) * t, rz = a0.z + (a1.z - a0.z) * t, yaw = y0 + (y1 - y0) * t;
+    const inv = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+    const loc = (p) => v.set(p.x - rx, p.y, p.z - rz).applyQuaternion(inv).clone();
+    const floorY = 0; // Mixamo clips stand on y = 0
+    const hp = loc(fr.P.Hips);
+    const dq = (wq, rq) => inv.clone().multiply(wq.clone().multiply(rq.clone().invert())); // rotation from rest, in character space
+    const hq = dq(fr.hq, rest.hips), cq = dq(fr.cq, rest.chest), kq = cq.clone().invert().multiply(dq(fr.kq, rest.head));
+    const rel = (p, s) => loc(p).sub(loc(s)).divideScalar(arm);
+    const foot = (p) => loc(p).divideScalar(leg);
+    const dir = (a, b) => loc(b).sub(loc(a)).normalize();
+    ch.push([hp.x / leg, (hp.y - floorY) / hipsRestY, hp.z / leg, hq.x, hq.y, hq.z, hq.w, cq.x, cq.y, cq.z, cq.w, kq.x, kq.y, kq.z, kq.w,
+      ...rel(fr.P.LeftHand, fr.P.LeftArm).toArray(), ...rel(fr.P.RightHand, fr.P.RightArm).toArray(),
+      ...rel(fr.P.LeftForeArm, fr.P.LeftArm).toArray(), ...rel(fr.P.RightForeArm, fr.P.RightArm).toArray(),
+      ...foot(fr.P.LeftFoot).toArray(), ...foot(fr.P.RightFoot).toArray(),
+      ...dir(fr.P.LeftFoot, fr.P.LeftToeBase).toArray(), ...dir(fr.P.RightFoot, fr.P.RightToeBase).toArray()]);
+  });
+  // impacts: frames where a hand is near full extension and at a local maximum
+  const ext = (h) => ch.map((c) => Math.hypot(c[15 + h * 3], c[16 + h * 3], c[17 + h * 3]));
+  const hits = []; for (const h of [0, 1]) { const e = ext(h); for (let f = 2; f < n - 2; f++) if (e[f] > .86 && e[f] >= e[f - 1] && e[f] >= e[f + 1] && e[f] > e[f - 2] && e[f] >= e[f + 2]) hits.push([f, h, +e[f].toFixed(2)]); }
+  hits.sort((x, y) => x[0] - y[0]);
+  // what kind of punch: compare the hand at impact with 0.2 s before (sideways sweep = hook, rising = uppercut)
+  for (const h of hits) {
+    const f = h[0], f0 = Math.max(0, f - 6), o = 15 + h[1] * 3, c1 = ch[f], c0 = ch[f0];
+    const dx = c1[o] - c0[o], dy = c1[o + 1] - c0[o + 1], dz = c1[o + 2] - c0[o + 2];
+    h.push(+dx.toFixed(2), +dy.toFixed(2), +dz.toFixed(2), +c1[o + 1].toFixed(2));
+  }
+  const T = (n - 1) / FPS, travel = new THREE.Vector3(a1.x - a0.x, 0, a1.z - a0.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), -y0).divideScalar(leg);
+  out[name] = { n, ch, speed: [+(travel.x / T).toFixed(3), +(travel.z / T).toFixed(3)], turn: +((y1 - y0) / T).toFixed(3), hits };
+  
+  summary[name] = { sec: +T.toFixed(2), travel: [+travel.x.toFixed(2), +travel.z.toFixed(2)], turnDeg: Math.round((y1 - y0) * 57.3), hipsYend: +ch[n - 1][1].toFixed(2), hipsYmin: +Math.min(...ch.map((c) => c[1])).toFixed(2), handYmin: +Math.min(...ch.map((c) => Math.min(c[16], c[19]))).toFixed(2), handYmax: +Math.max(...ch.map((c) => Math.max(c[16], c[19]))).toFixed(2), hipsY: +ch[0][1].toFixed(2), hits: hits.map((h) => [+(h[0] / FPS).toFixed(2), h[1] ? 'R' : 'L', ...h.slice(2)]) };
+}
+window.__bake = { out, summary };
+</script></body></html>

@@ -42,10 +42,16 @@ An in-game overlay modelled on the community live editors for EA titles, editing
 - **Footwork:** feet stay planted on the canvas and step when the body drifts off them, and the weight shifts onto the planted foot. The rear heel lifts and pivots on rear-hand punches and the lead foot pivots on the lead hook. The hips turn before the shoulders.
 
 ## Motion capture
+- **Mixamo clips (main motion):** 28 Mixamo animations supplied by the project owner, baked by `tools/bake_mixamo.html` (run headless, it loads each FBX with three.js and samples the skeleton at 30 fps) and packed by `tools/pack_mixamo.py` into `assets/mocap_mixamo.js`. Each frame stores hips position and rotation, chest and head rotation, wrists and elbows relative to the shoulders, and ankles and toe directions, in the fighter's own frame and scaled to arm and leg length, so it retargets onto any body type.
+  - Stance and footwork: Idle, plus step clips (Medium/Long Step Forward, Step Backward, Short/Long Left Side Step, Short Right Side Step) blended by the fighter's actual velocity, with playback speed matched to it.
+  - Punches: each punch type uses the body mechanics of one impact in a clip (Lead Jab, Jab Cross, Hook, Punch Combo, Body Jab Cross; rear hook and rear uppercut are mirrored), time-warped so the clip's impact lands on the game's impact frame. The punching arm itself is aimed in code.
+  - Reactions: Light/Medium Hit To Head, Head Hit, Big Side Hit, Stomach Hit, Kidney Hit, Big Kidney Hit, Left/Right Block are added on top, scaled by how hard the punch landed and mirrored to the side it came from. Holding block uses Center Block.
+  - Knockdowns: Livershot Knockdown (down on one knee, then back up). Taunt is used in the intro and in the neutral corner, and Praying for the blue corner's pre-fight ritual.
+  - Not used: Jumping Down, Illegal Elbow Punch, Walking Backwards (Step Backward covers it), Crouch To Stand and Left Pivot (baked, not wired in yet). `G.mocap = 0` switches back to the procedural animation.
 - **Live guard:** the between-punches motion (pelvis bob and sway, hip, chest and head movement, glove drift) comes from real shadowboxing takes in the CMU Graphics Lab Motion Capture Database (13_17 orthodox; 15_13 southpaw, mirrored). `tools/bake_guard.py` (with `tools/bvh.py`) bakes the guard-only stretches into `assets/mocap_guard.js`: a 10.9 s loop of deviations from the mean pose. It's layered over the procedural stance at `MOCAP_GAIN` and fades out while punching, blocking, hurt or down. Punches, footwork stepping and hit reactions stay procedural.
 - To rebake: get the BVH conversion from github.com/una-dinosauria/cmu-mocap, then run `python3 tools/bake_guard.py tools assets/mocap_guard.js '[["…/13_17.bvh",6.0,2.4,0], …]'`. Each entry is file, start s, duration s, mirror.
 
 ## Credits
-- Motion: CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), free to use; BVH conversion by B. Hahne.
+- Motion: Mixamo animations (mixamo.com, Adobe; used under Mixamo's terms, which allow use in games). CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), free to use; BVH conversion by B. Hahne.
 - Bodies: MakeHuman base mesh, rig weights and shape targets, CC0 1.0 ([makehumancommunity/makehuman](https://github.com/makehumancommunity/makehuman)). See `assets/MakeHuman_LICENSE_CC0.md`.
 - Head scan: "Infinite, 3D Head Scan" by Lee Perry-Smith (Infinite-Realities), licensed CC BY 3.0. It's based on a work at triplegangers.com, and the license text is in `assets/LeePerrySmith_License.txt`.
