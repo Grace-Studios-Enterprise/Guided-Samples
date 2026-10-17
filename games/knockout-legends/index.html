@@ -847,6 +847,8 @@ function buildBoots(src, R, shoeTop, cfg) {
   g.setIndex(idx); g.addGroup(0, idxs[0].length, 0); g.addGroup(idxs[0].length, idxs[2].length, 1);
   return g;
 }
+// live guard: real boxers' between-punches motion, baked from CMU motion capture shadowboxing (tools/bake_guard.py)
+const MOCAP_GUARD = await import('./assets/mocap_guard.js').then((m) => m.default).catch(() => null);
 // the trunks garment (uploaded Marvelous Designer export, main panel mesh only), in metres, +Z front
 const TR = await (async () => {
   try {
@@ -1388,7 +1390,7 @@ const BASE_PUNCH = {
   lupper: { hand: 1,  kind: 'upper',    w: .07, s: .09, r: .27, dmg: 11,   stam: 7.5, reach: .88,  twist: -.45, power: true,  label: 'Lead uppercut' },
   rupper: { hand: -1, kind: 'upper',    w: .08, s: .1,  r: .3,  dmg: 13.5, stam: 9,   reach: .88,  twist: .65,  power: true,  label: 'Rear uppercut' },
 };
-const PUNCH_PACE = 1.25, PUNCH_HOLD = .035 * PUNCH_PACE, BUFFER_WINDOW = .15; // PUNCH_PACE scales every punch's timing
+const MOCAP_GAIN = .65, PUNCH_PACE = 1.25, PUNCH_HOLD = .035 * PUNCH_PACE, BUFFER_WINDOW = .15; // PUNCH_PACE scales every punch's timing
 const PUNCH = {};
 for (const [k, b] of Object.entries(BASE_PUNCH)) {
   PUNCH[k] = { ...b, key: k, body: false };
@@ -1850,16 +1852,26 @@ function poseFighter(f, dt, time) {
   const bounce = Math.abs(Math.sin(f.phase)) * (.01 + Math.min(sp, 1.5) * .008) * (1 - f.fall);
   const lunge = P ? (P.kind === 'straight' ? .1 : .05) * ep : 0;
   const X = f.react.x;
-  const pelvisY = R.sk.P.y - .03 - ps.crouch + bounce - X.d;
+  // mocap guard layer: sampled from the loop (each fighter at his own point in it), faded out while punching, blocking,
+  // hurt, down or celebrating
+  const MG = f.mg || (f.mg = new Float32Array(18));
+  if (MOCAP_GUARD) {
+    const M = MOCAP_GUARD, k = M.names.length; f.mgT = (f.mgT ?? (f === P1 ? 0 : 4.7)) + dt;
+    const x = (f.mgT * M.fps) % M.n, i0 = x | 0, i1 = (i0 + 1) % M.n, t = x - i0;
+    for (let c = 0; c < k; c++) MG[c] = M.data[i0 * k + c] * (1 - t) + M.data[i1 * k + c] * t;
+  }
+  const mgTarget = MOCAP_GUARD ? MOCAP_GAIN * (1 - clamp(ep * 1.6, 0, 1)) * (f.blocking ? .35 : 1) * (1 - f.fall) * (f.victory ? 0 : 1) * (1 - stunA * .6) : 0;
+  const mgW = f.mgW = damp(f.mgW ?? mgTarget, mgTarget, 8, dt), mgN = MOCAP_GUARD ? mgW / MOCAP_GAIN : 0;
+  const pelvisY = R.sk.P.y - .03 - ps.crouch + bounce * (1 - .5 * mgN) - X.d + MG[1] * mgW;
 
   const fe = ease(f.fall);
   R.root.position.set(f.pos.x, fe * .14, f.pos.z);
   R.root.rotation.set(-1.42 * fe, f.yaw, fe * .18);
-  R.hips.position.set(ps.shift, pelvisY, lunge * .6 + X.z);
-  R.hips.rotation.set(X.p * .25, ps.htwist * .5 + X.y * .45, ps.side * .4);
-  R.chest.position.set(ps.shift, pelvisY + CHEST_DY, lunge * .6 + X.z * 1.3);
-  R.chest.rotation.set(ps.lean + X.p + r.p * .35 + fe * .15 + breath, ps.twist + X.y + r.y * .3, ps.side + r.r * .3);
-  R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3, r.y - ps.twist * .75, r.r * .6 - ps.side * .45);
+  R.hips.position.set(ps.shift + MG[0] * mgW, pelvisY, lunge * .6 + X.z + MG[2] * mgW);
+  R.hips.rotation.set(X.p * .25 + MG[3] * mgW, ps.htwist * .5 + X.y * .45 + MG[4] * mgW, ps.side * .4 + MG[5] * mgW);
+  R.chest.position.set(ps.shift + MG[0] * mgW, pelvisY + CHEST_DY, lunge * .6 + X.z * 1.3 + MG[2] * mgW);
+  R.chest.rotation.set(ps.lean + X.p + r.p * .35 + fe * .15 + breath + (MG[3] + MG[6]) * mgW, ps.twist + X.y + r.y * .3 + (MG[4] + MG[7]) * mgW, ps.side + r.r * .3 + (MG[5] + MG[8]) * mgW);
+  R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3 + MG[9] * mgW, r.y - ps.twist * .75 + MG[10] * mgW, r.r * .6 - ps.side * .45 + MG[11] * mgW);
   R.root.updateMatrixWorld(true);
 
   // aim points in this fighter's body space
@@ -1878,9 +1890,11 @@ function poseFighter(f, dt, time) {
     else _b.set(-.095, .6, .19);
     if (!f.victory) {
       // the guard breathes with the chest and the lead hand paws in rhythm with the bounce
-      _b.y += Math.sin(time * 2.2 + f.phase * .1) * .012 + Math.sin(time * 3.1 + i * 1.3) * .006;
-      _b.z += (i === 0 ? .022 : .008) * Math.sin(f.phase * .5 + i * 2.1) * (P ? .3 : 1);
-      _b.x += s * .008 * Math.sin(time * 1.3 + i);
+      const proc = 1 - .75 * mgN; // the procedural breathing and pawing make way for the mocap
+      _b.y += (Math.sin(time * 2.2 + f.phase * .1) * .012 + Math.sin(time * 3.1 + i * 1.3) * .006) * proc;
+      _b.z += (i === 0 ? .022 : .008) * Math.sin(f.phase * .5 + i * 2.1) * (P ? .3 : 1) * proc;
+      _b.x += s * .008 * Math.sin(time * 1.3 + i) * proc;
+      const o = i === 0 ? 12 : 15; _b.x += MG[o] * mgW; _b.y += MG[o + 1] * mgW; _b.z += MG[o + 2] * mgW;
     }
     if (f.fall < .25 && !f.victory) {
       const gd = clamp(X.g, 0, 1.2) + stunA * .55;
@@ -2489,7 +2503,7 @@ function Menu({ s }) {
       <kbd>F1 or \`</kbd><span>Live Editor: tables, scripts, presets</span>
       <kbd>Gamepad</kbd><span>Flick the right stick to punch, L2 blocks, R2 goes to the body</span>
     </div>`}
-    <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used. Bodies: MakeHuman, CC0. Head scan: Lee Perry-Smith by Infinite-Realities, CC BY 3.0.</div>
+    <div className="foot">An original fan homage to Fight Night Champion, built with React and Three.js. Fighters, arena and names are fictional; no EA assets are used. Bodies: MakeHuman, CC0. Guard motion: CMU Motion Capture Database. Head scan: Lee Perry-Smith by Infinite-Realities, CC BY 3.0.</div>
   </div>`;
 }
 function Intro({ s }) {
