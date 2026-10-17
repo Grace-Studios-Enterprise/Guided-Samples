@@ -34,10 +34,12 @@ An in-game overlay modelled on the community live editors for EA titles, editing
 | C / P | Camera / pause |
 | F1 or ` | Live Editor |
 
-## Bodies, trunks and boots
-- **Bodies:** the MakeHuman base mesh (CC0), shaped per fighter with MakeHuman's own targets: race, maximum muscle, height and ideal proportions. It's smoothed at load with one Catmull-Clark pass and skinned with MakeHuman's artist weights, folded onto the game's 15 bones (the two new ones are foot bones). `tools/mh_convert.py` regenerates `assets/mhbody.js` from a MakeHuman checkout.
-- **Trunks:** cut from each fighter's own hips and thighs, pushed out into loose flared legs. They're satin (sheen, clearcoat and a weave normal map), with a waistband, side stripes, real fringe strands, and a spring so the hem and fringe sway with the hips.
-- **Boots:** lofted from cross-sections measured off each fighter's foot and calf: a rounded toe box and heel, a flat rubber sole, a foxing stripe, a padded collar, and a laced tongue panel. They're skinned to the shin and foot bones.
+## Bodies, trunks, gloves and boots
+- **Bodies and body types:** the MakeHuman base mesh (CC0), blended at load from MakeHuman's own targets: the 3×3 muscle-by-weight grid, ancestry (african, caucasian, asian) and ideal proportions. Six presets (Shredded, Athletic, Muscular, Heavyweight, Big man, Lean) can be picked per fighter in the menu. The Live Editor `fighters` table also has `bodytype`, `muscle` and `weight`, and changing them rebuilds the fighter. The mesh is smoothed with one Catmull-Clark pass and skinned with MakeHuman's artist weights, folded onto the game's 15 bones. `tools/mh_convert.py` regenerates `assets/mhbody.js` from a MakeHuman checkout.
+- **Trunks:** the uploaded Marvelous Designer garment, converted with `tools/trunks_convert.py`. The converter keeps the main panels only (no stitch meshes, no inner duplicate layer) and grows the textures past each panel's edge. At load the trunks are fitted to each body: the waist is matched, the cloth is widened wherever the hips are fuller, the legs are centred on the thighs, and any cloth inside the skin is pushed out. They're skinned with weights borrowed from the body and sway on a spring. There are red and navy colourways.
+- **Gloves:** sculpted as a signed-distance shape and meshed with surface nets. The shape has a padded fist, a knuckle roll, fingers curled over the palm, a thumb fused along the inside, and a strapped cuff. They're skinned with generated leather maps: grain, piped side seams with twin stitching, a contrast strap with a patch, and scuffs on the punching face.
+- **Boots:** lofted from cross-sections measured off each fighter's foot and calf. The upper texture adds perforated vent panels, stitched panel seams, a toe cap and a heel counter. There's a laced tongue panel and a padded collar.
+- **Footwork:** feet stay planted on the canvas and step when the body drifts off them, and the weight shifts onto the planted foot. The rear heel lifts and pivots on rear-hand punches and the lead foot pivots on the lead hook. The hips turn before the shoulders.
 
 ## Credits
 - Bodies: MakeHuman base mesh, rig weights and shape targets, CC0 1.0 ([makehumancommunity/makehuman](https://github.com/makehumancommunity/makehuman)). See `assets/MakeHuman_LICENSE_CC0.md`.

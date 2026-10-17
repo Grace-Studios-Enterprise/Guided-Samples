@@ -77,29 +77,32 @@ for v in src:
 B = lambda a, fmt: base64.b64encode(struct.pack(f'<{len(a)}{fmt}', *a)).decode()
 out['uv'] = B(uvs, 'f'); out['quadsG'] = B(qg, 'H'); out['quadsT'] = B(qt, 'H')
 out['skinIndex'] = B(si, 'B'); out['skinWeight'] = B(sw, 'B'); out['count'] = len(src); out['uvCount'] = len(uvs) // 2
-for name, recipe in RECIPES.items():
-    P = [list(v) for v in V]
-    for tname, w in recipe.items():
-        for i, d in TG[tname].items():
-            for k in range(3): P[i][k] += d[k] * w
-    J = {n: joint(P, n) for n in skel['joints']}
-    bone = lambda b, end='head': J[skel['bones'][b][end]]
-    # orientation: make +Z the facing direction and +X the fighter's left (.L)
-    sx = 1 if bone('upperarm01.L')[0] > 0 else -1
-    toe, ank = bone('foot.L', 'tail'), bone('foot.L')
-    sz = 1 if toe[2] > ank[2] else -1
-    ys = [P[v][1] for v in range(len(V)) if any(v == vv for vv, _ in [])] or [p[1] for p in P[:13380]]
-    ymin, ymax = min(ys), max(ys)
-    scale = 1.85 / (ymax - ymin)
-    tf = lambda p: [p[0] * sx * scale, (p[1] - ymin) * scale, p[2] * sz * scale]
-    pos = []
-    for v in src: pos += tf(P[v])
-    joints = {
-      'S': [tf(bone('upperarm01.L')), tf(bone('upperarm01.R'))], 'E': [tf(bone('lowerarm01.L')), tf(bone('lowerarm01.R'))], 'W': [tf(bone('wrist.L')), tf(bone('wrist.R'))],
-      'H': [tf(bone('upperleg01.L')), tf(bone('upperleg01.R'))], 'K': [tf(bone('lowerleg01.L')), tf(bone('lowerleg01.R'))], 'A': [tf(bone('foot.L')), tf(bone('foot.R'))],
-      'T': [tf(bone('foot.L', 'tail')), tf(bone('foot.R', 'tail'))], 'neck': tf(bone('neck01')), 'head': tf(bone('head')), 'spine': tf(bone('spine03')),
-    }
-    out['fighters'][name] = {'pos': B(pos, 'f'), 'joints': joints, 'sx': sx, 'sz': sz}
-    print(name, 'scale', round(scale, 4), 'sx', sx, 'sz', sz, {k: [[round(c, 3) for c in p] for p in (v if isinstance(v[0], list) else [v])] for k, v in joints.items()})
+# runtime body types: one base shape plus quantized target deltas (muscle x weight grid, ethnicity, proportions).
+# Extra pseudo-vertices ride along: crown, sole and every joint the game needs (joints are averages of
+# MakeHuman's helper vertices, so they blend linearly with the same targets).
+import numpy as np
+base = np.array(V)
+bodyIdx = [v for f in F for v, _ in f]
+crown = max(bodyIdx, key=lambda v: V[v][1]); sole = min(bodyIdx, key=lambda v: V[v][1])
+def jidx(b, end='head'): return skel['joints'][skel['bones'][b][end]]
+EXTRA = [('crown', [crown]), ('sole', [sole])]
+for side in 'LR':
+    EXTRA += [(f'S{side}', jidx(f'upperarm01.{side}')), (f'E{side}', jidx(f'lowerarm01.{side}')), (f'W{side}', jidx(f'wrist.{side}')),
+              (f'H{side}', jidx(f'upperleg01.{side}')), (f'K{side}', jidx(f'lowerleg01.{side}')), (f'A{side}', jidx(f'foot.{side}')), (f'T{side}', jidx(f'foot.{side}', 'tail'))]
+EXTRA += [('neck', jidx('neck01')), ('head', jidx('head')), ('spine', jidx('spine03'))]
+def gather(arr): return np.concatenate([arr[np.array(src)], np.array([arr[np.array(ix)].mean(0) for _, ix in EXTRA])])
+out['extras'] = [n for n, _ in EXTRA]
+out['base'] = B(gather(base).ravel().tolist(), 'f')
+TNAMES = {f'u_{m}_{w}': f'{T}/universal-male-young-{m}muscle-{w}weight.target' for m in ('min', 'average', 'max') for w in ('min', 'average', 'max')}
+TNAMES.update({'african': f'{T}/african-male-young.target', 'caucasian': f'{T}/caucasian-male-young.target', 'asian': f'{T}/asian-male-young.target',
+               'ideal': f'{T}/proportions/male-young-maxmuscle-averageweight-idealproportions.target'})
+out['targets'] = {}
+for name, path in TNAMES.items():
+    d = np.zeros_like(base)
+    for i, dv in target(path).items(): d[i] = dv
+    g = gather(d); mx = float(np.abs(g).max()) or 1.0
+    q = np.round(g / mx * 32767).astype('<i2')
+    out['targets'][name] = {'s': mx / 32767, 'd': base64.b64encode(q.tobytes()).decode()}
+    print('target', name, 'max', round(mx, 4))
 open(OUT, 'w').write('// MakeHuman base mesh, rig weights and shape targets: CC0 1.0 (github.com/makehumancommunity/makehuman)\nexport default ' + json.dumps(out, separators=(',', ':')) + ';\n')
 print('geom verts', len(src), 'uv verts', len(uvs) // 2, 'quads', len(qg) // 4)

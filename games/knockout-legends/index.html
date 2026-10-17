@@ -528,9 +528,9 @@ const spray = (() => {
    ========================================================================= */
 const FIGHTERS = {
   vance: { id: 'vance', first: 'Marcus', last: 'Vance', nick: 'Iron', corner: 'red', from: 'Philadelphia, PA', record: '27–1–0', kos: 21, height: `6'2"`, reach: '78"', weight: '224 lb', stance: 'Orthodox',
-    skin: 0x5c3421, trunks: 0x8e0f1c, trim: 0xd9a441, glove: 0xa30f1b, cuff: 0xf2efe6, shoeUpper: 0x9e0f1b, shoeTrim: 0xd9a441, shoeSole: 0xf1eee8, lace: 0xf6f4ef, scale: 1.0, power: 1.05, speed: 1.0, chin: 1.0 },
+    skin: 0x5c3421, trunks: 0x8e0f1c, trim: 0xd9a441, glove: 0xa30f1b, cuff: 0xf2efe6, shoeUpper: 0x9e0f1b, shoeTrim: 0xd9a441, shoeSole: 0xf1eee8, lace: 0xf6f4ef, trunksTex: 'red', bodyType: 'athletic', build: { ancestry: { african: 1 } }, scale: 1.0, power: 1.05, speed: 1.0, chin: 1.0 },
   volkov: { id: 'volkov', first: 'Dmitri', last: 'Volkov', nick: 'The Glacier', corner: 'blue', from: 'Yekaterinburg, RU', record: '31–0–0', kos: 24, height: `6'5"`, reach: '80"', weight: '238 lb', stance: 'Orthodox',
-    skin: null /* matches the head scan */, trunks: 0x0c2a5c, trim: 0xe6e6ee, glove: 0x14326a, cuff: 0xe6e6ee, shoeUpper: 0xeeeeec, shoeTrim: 0x0c2a5c, shoeSole: 0x17181d, lace: 0xf6f6f6, scale: 1.035, power: 1.08, speed: .94, chin: 1.04 },
+    skin: null /* matches the head scan */, trunks: 0x0c2a5c, trim: 0xe6e6ee, glove: 0x14326a, cuff: 0xe6e6ee, shoeUpper: 0xeeeeec, shoeTrim: 0x0c2a5c, shoeSole: 0x17181d, lace: 0xf6f6f6, trunksTex: 'navy', bodyType: 'heavyweight', build: { ancestry: { caucasian: 1 } }, scale: 1.035, power: 1.08, speed: .94, chin: 1.04 },
 };
 const CHEST_DY = .015;
 const FOOT = [V(.17, 0, .25), V(-.15, 0, -.25)]; // stance: lead foot forward, rear foot back (y comes from each skeleton)
@@ -597,8 +597,38 @@ const MH_SUB = (() => {
   for (let i = 0; i < S.qG.length; i++) { const k = S.qG[i] * 1e6 + S.qT[i]; let o = key.get(k); if (o === undefined) { o = vg.length; key.set(k, o); vg.push(S.qG[i]); vt.push(S.qT[i]); } quads.push(o); }
   return { S, si, sw, uv, vg: Int32Array.from(vg), vt: Int32Array.from(vt), quads };
 })();
-function mhBody(id) {
-  const P0 = unb64(MH.fighters[id].pos, Float32Array), { S, vg, vt, quads } = MH_SUB, nG = S.G.length;
+// body types: MakeHuman's base shape plus weighted target deltas. muscle/weight in 0..1 interpolate
+// MakeHuman's 3x3 universal grid; ancestry mixes its african/caucasian/asian targets. Joints ride along as
+// extra pseudo-vertices so they move with the same targets.
+const MH_T = {}; for (const k in MH.targets) MH_T[k] = { s: MH.targets[k].s, d: unb64(MH.targets[k].d, Int16Array) };
+const MH_BASE = unb64(MH.base, Float32Array);
+const BODY_TYPES = {
+  shredded:    { label: 'Shredded',    muscle: .95, weight: .3 },
+  athletic:    { label: 'Athletic',    muscle: .9,  weight: .5 },
+  muscular:    { label: 'Muscular',    muscle: 1,   weight: .62 },
+  heavyweight: { label: 'Heavyweight', muscle: .8,  weight: .66 },
+  bigman:      { label: 'Big man',     muscle: .55, weight: 1 },
+  lean:        { label: 'Lean',        muscle: .6,  weight: .22 },
+};
+function blendBody(b) {
+  const P = Float32Array.from(MH_BASE);
+  const add = (name, w) => { if (!w) return; const t = MH_T[name]; const k = t.s * w; for (let i = 0; i < P.length; i++) P[i] += t.d[i] * k; };
+  const tri = (x) => x < .5 ? { min: 1 - 2 * x, average: 2 * x } : { average: 2 - 2 * x, max: 2 * x - 1 };
+  const m = tri(clamp(b.muscle, 0, 1)), w = tri(clamp(b.weight, 0, 1));
+  for (const a in m) for (const c in w) add(`u_${a}_${c}`, m[a] * w[c]);
+  const anc = b.ancestry || { caucasian: 1 }, tot = Object.values(anc).reduce((s, x) => s + x, 0) || 1;
+  for (const k in anc) add(k, anc[k] / tot);
+  add('ideal', b.ideal ?? .8);
+  // orientation (+Z facing, +X the fighter's left), crown-to-sole height of 1.85, sole on the floor
+  const X = (n) => { const i = (MH.count + MH.extras.indexOf(n)) * 3; return [P[i], P[i + 1], P[i + 2]]; };
+  const sx = X('SL')[0] > 0 ? 1 : -1, sz = X('TL')[2] > X('AL')[2] ? 1 : -1, y0 = X('sole')[1], s = 1.85 / (X('crown')[1] - y0);
+  for (let i = 0; i < P.length; i += 3) { P[i] *= sx * s; P[i + 1] = (P[i + 1] - y0) * s; P[i + 2] *= sz * s; }
+  const two = (n) => [X(n + 'L'), X(n + 'R')];
+  return { P, J: { S: two('S'), E: two('E'), W: two('W'), H: two('H'), K: two('K'), A: two('A'), T: two('T'), neck: X('neck'), head: X('head'), spine: X('spine') } };
+}
+const buildOf = (cfg) => ({ ...BODY_TYPES[cfg.bodyType] || BODY_TYPES.athletic, ...cfg.build });
+function mhBody(build) {
+  const { P: P0, J } = blendBody(build), { S, vg, vt, quads } = MH_SUB, nG = S.G.length;
   const PG = new Float32Array(nG * 3);
   S.G.forEach((st, g) => { for (const [i, w] of st) { PG[g * 3] += P0[i * 3] * w; PG[g * 3 + 1] += P0[i * 3 + 1] * w; PG[g * 3 + 2] += P0[i * 3 + 2] * w; } });
   const n = vg.length, pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
@@ -608,7 +638,7 @@ function mhBody(id) {
     si.set(MH_SUB.si.subarray(g * 4, g * 4 + 4), o * 4); sw.set(MH_SUB.sw.subarray(g * 4, g * 4 + 4), o * 4);
   }
   const tris = []; for (let q = 0; q < quads.length; q += 4) tris.push([quads[q], quads[q + 1], quads[q + 2]], [quads[q], quads[q + 2], quads[q + 3]]);
-  return { pos, uv, si, sw, gid: vg, tris, J: MH.fighters[id].joints };
+  return { pos, uv, si, sw, gid: vg, tris, J };
 }
 // welded smooth normals: averaged over geometry ids so UV seams don't show
 function weldedNormals(P, idx, gid) {
@@ -698,16 +728,54 @@ const LACE_TEX = canvasTex(256, 1024, (g, w, h) => {
   }
 });
 // leather grain (tiling, linear) for the boot uppers
-const GRAIN_N = (() => { const w = 256, hf = new Float32Array(w * w); for (let i = 0; i < hf.length; i++) hf[i] = Math.random() * .3; for (let k = 0; k < 2500; k++) stamp(hf, w, (Math.random() * w) | 0, (Math.random() * w) | 0, rand(1, 3), (v, d) => v + (1 - d * d) * .5); return heightToNormal(hf, w, 1.2, [6, 6]); })();
+// boot uppers, in the boots' UV layout (u round the boot, .5 = front/top; v: lower half foot heel to toe, upper half
+// shaft ankle to collar): perforated vent panels, panel seams with stitching, toe cap and heel counter
+const BOOT_MAPS = (() => {
+  const W = 1024, Yf = (v) => (1 - v / 2) * W, Ys = (v) => (1 - (v + 1) / 2) * W, X = (u) => u * W;
+  const hf = new Float32Array(W * W); for (let i = 0; i < hf.length; i++) hf[i] = Math.random() * .1;
+  for (let k = 0; k < 7000; k++) stamp(hf, W, (Math.random() * W) | 0, (Math.random() * W) | 0, rand(1.5, 3), (v, d) => v - (1 - d) * .12);
+  const tint = [];
+  const seam = (pts, stitch = true) => {
+    for (let q = 0; q < pts.length - 1; q++) {
+      const [x0, y0] = pts[q], [x1, y1] = pts[q + 1], n = Math.ceil(Math.hypot(x1 - x0, y1 - y0)), nx = -(y1 - y0) / (n || 1), ny = (x1 - x0) / (n || 1);
+      for (let t = 0; t <= n; t++) {
+        const x = x0 + (x1 - x0) * t / n, y = y0 + (y1 - y0) * t / n;
+        stamp(hf, W, x | 0, y | 0, 3, (v, d) => v - (1 - d) * .7);
+        if (stitch && t % 13 < 7) stamp(hf, W, (x + nx * 10) | 0, (y + ny * 10) | 0, 1.6, (v, d) => v - (1 - d) * .8);
+      }
+    }
+  };
+  // shaft: vent panels on both sides, a back seam, seams along the lace panel
+  const vents = [[.16, .34], [.66, .84]];
+  for (const [ua, ub] of vents) {
+    seam([[X(ua), Ys(.18)], [X(ub), Ys(.18)], [X(ub), Ys(.78)], [X(ua), Ys(.78)], [X(ua), Ys(.18)]]);
+    for (let y = Ys(.76); y > Ys(.2); y -= 14) for (let x = X(ua) + 12 + ((y / 14) % 2) * 7; x < X(ub) - 8; x += 14) { stamp(hf, W, x | 0, y | 0, 2.6, (v, d) => v - (1 - d * d) * 1.2); tint.push([x, y]); }
+  }
+  for (const u of [0, 1]) seam([[X(u), Ys(0)], [X(u), Ys(.92)]]);
+  for (const u of [.38, .62]) seam([[X(u), Ys(.02)], [X(u), Ys(.95)]]);
+  seam([[0, Ys(.93)], [W, Ys(.93)]]);
+  // foot: toe cap and heel counter
+  const cap = [], heel = [];
+  for (let k = 0; k <= 24; k++) { const u = .18 + .64 * k / 24, w = Math.sin(Math.PI * k / 24); cap.push([X(u), Yf(.78 - .1 * w)]); heel.push([X(u), Yf(.16 + .1 * w)]); }
+  seam(cap); seam(heel);
+  const normal = heightToNormal(hf, W, 2, null);
+  const map = canvasTex(W, W, (g) => {
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, W); g.fillStyle = 'rgba(0,0,0,.55)';
+    for (const [x, y] of tint) { g.beginPath(); g.arc(x, y, 2.4, 0, 6.29); g.fill(); }
+    g.fillStyle = 'rgba(0,0,0,.07)'; for (const [ua, ub] of vents) g.fillRect(X(ua), Ys(.78), X(ub) - X(ua), Ys(.18) - Ys(.78));
+    noise(g, W, W, 8);
+  });
+  return { map, normal };
+})();
 function buildBoots(src, R, shoeTop, cfg) {
   const upper = new THREE.Color(cfg.shoeUpper), sole = new THREE.Color(cfg.shoeSole), trim = new THREE.Color(cfg.shoeTrim);
   const P = [], N = [], C = [], UV = [], SI = [], SW = [], GID = [], idxs = [[], [], []];
   const M = 40;
-  const grid = (rows, part, colorAt, weightAt, flip = false) => {
+  const grid = (rows, part, colorAt, weightAt, flip = false, vOff = 0) => {
     // rows: arrays of M+1 points (last duplicates first for the UV seam); quads between consecutive rows
     const base = P.length / 3;
     rows.forEach((ring, r) => ring.forEach((p, k) => {
-      P.push(p.x, p.y, p.z); const c = colorAt(p, r, k); C.push(c.r, c.g, c.b); UV.push(k / M, r / (rows.length - 1));
+      P.push(p.x, p.y, p.z); const c = colorAt(p, r, k); C.push(c.r, c.g, c.b); UV.push(k / M, (r / (rows.length - 1) + vOff) / 2);
       const [b0, w0, b1, w1] = weightAt(p, r); SI.push(b0, b1, 0, 0); SW.push(w0, w1, 0, 0); GID.push(1e6 + base + r * (M + 1) + (k % M));
     }));
     for (let r = 0; r < rows.length - 1; r++) for (let k = 0; k < M; k++) {
@@ -750,12 +818,12 @@ function buildBoots(src, R, shoeTop, cfg) {
       const t = clamp((y - A.y) / (K.y - A.y), 0, 1), ax = A.clone().lerp(K, t);
       let rl = .03, rfF = .03, rfB = .03;
       for (let i = 0; i < src.pos.length / 3; i++) { const py = src.pos[i * 3 + 1]; if (Math.abs(py - Math.min(y, shoeTop)) > .012 || (src.pos[i * 3] > 0) !== (s === 0)) continue; const dx = src.pos[i * 3] - ax.x, dz = src.pos[i * 3 + 2] - ax.z, dl = dx * l.x + dz * l.z, df = dx * f.x + dz * f.z; if (Math.hypot(dl, df) > .12) continue; rl = Math.max(rl, Math.abs(dl)); if (df > 0) rfF = Math.max(rfF, df); else rfB = Math.max(rfB, -df); }
-      const grow = lip ? (r === NS + 1 ? .0055 : .001) : .007;
+      const grow = lip ? (r === NS + 1 ? .0035 : -.002) : .007 - .004 * clamp((r - NS + 3) / 3, 0, 1); // hug the leg at the collar
       const ring = [];
       for (let k = 0; k <= M; k++) { const a = (k % M) / M * Math.PI * 2, ca = -Math.cos(a), sa = Math.sin(a); ring.push(V(ax.x, y, ax.z).addScaledVector(l, side * sa * (rl + grow)).addScaledVector(f, ca * ((ca > 0 ? rfF : rfB) + grow))); }
       shaftRows.push(ring);
     }
-    grid(shaftRows, 0, (p, r) => (r >= NS - 1 ? trim : upper), (p) => { const t = clamp((p.y - A.y) / .05, 0, 1); return [shinBone, .6 + t * .4, footBone, .4 - t * .4]; });
+    grid(shaftRows, 0, (p, r) => (r > NS ? trim : upper), (p) => { const t = clamp((p.y - A.y) / .05, 0, 1); return [shinBone, .6 + t * .4, footBone, .4 - t * .4]; }, false, 1);
     // laced tongue panels down the front of the shaft and over the instep
     const panel = (pts, len) => {
       const base = P.length / 3;
@@ -779,20 +847,105 @@ function buildBoots(src, R, shoeTop, cfg) {
   g.setIndex(idx); g.addGroup(0, idxs[0].length, 0); g.addGroup(idxs[0].length, idxs[2].length, 1);
   return g;
 }
-// everything one fighter wears that's cut from his own body: trunks, fringe, boots
+// the trunks garment (uploaded Marvelous Designer export, main panel mesh only), in metres, +Z front
+const TR = await (async () => {
+  try {
+    const t = (await import('./assets/trunks.js')).default, tl = new THREE.TextureLoader();
+    const tex = (u, srgb) => tl.loadAsync(u).then((x) => { x.flipY = false; if (srgb) x.colorSpace = THREE.SRGBColorSpace; x.anisotropy = 8; return x; });
+    const [red, navy, normal] = await Promise.all([tex('assets/trunks_red.jpg', true), tex('assets/trunks_navy.jpg', true), tex('assets/trunks_normal.jpg', false)]);
+    return { P: unb64(t.pos, Float32Array), UV: unb64(t.uv, Float32Array), idx: unb64(t.idx, Uint16Array), n: t.count, maps: { red, navy }, normal };
+  } catch (err) { console.warn('Trunks asset unavailable', err); return null; }
+})();
+// fit: scale the waist to the body's waist, slide the legs onto the body's legs, push any cloth out of the skin,
+// then skin it with weights borrowed from the nearest body vertex (eased toward the hips so it hangs, not clings)
+function fitTrunks(src, R, waistTop, crotchY) {
+  if (!TR) return null;
+  const n = TR.n, P = new Float32Array(TR.P), bp = src.pos, bn = src.nrm, nb = bp.length / 3;
+  const ext = (arr, cnt, pick) => { const e = [1e9, -1e9, 1e9, -1e9]; for (let i = 0; i < cnt; i++) if (pick(i)) { e[0] = Math.min(e[0], arr[i * 3]); e[1] = Math.max(e[1], arr[i * 3]); e[2] = Math.min(e[2], arr[i * 3 + 2]); e[3] = Math.max(e[3], arr[i * 3 + 2]); } return e; };
+  let tMax = -1e9, tMin = 1e9; for (let i = 0; i < n; i++) { tMax = Math.max(tMax, P[i * 3 + 1]); tMin = Math.min(tMin, P[i * 3 + 1]); }
+  const be = ext(bp, nb, (i) => Math.abs(bp[i * 3 + 1] - (waistTop - .05)) < .015 && src.si[i * 4] <= 1);
+  const te = ext(P, n, (i) => Math.abs(P[i * 3 + 1] - (tMax - .06)) < .01);
+  const sx = (be[1] - be[0] + .03) / (te[1] - te[0]), sz = (be[3] - be[2] + .03) / (te[3] - te[2]);
+  const hem = R.K[0].y + .13, sy = (waistTop + .015 - hem) / (tMax - tMin);
+  const bcx = (be[0] + be[1]) / 2, bcz = (be[2] + be[3]) / 2, tcx = (te[0] + te[1]) / 2, tcz = (te[2] + te[3]) / 2;
+  for (let i = 0; i < n; i++) {
+    P[i * 3] = (P[i * 3] - tcx) * sx + bcx; P[i * 3 + 1] = (P[i * 3 + 1] - tMax) * sy + waistTop + .015; P[i * 3 + 2] = (P[i * 3 + 2] - tcz) * sz + bcz;
+  }
+  // hips and seat: widen any height band where the body is fuller than the cloth, so it drapes instead of shrink-wrapping
+  const y0 = crotchY - .1, nbin = Math.ceil((waistTop - y0) / .02) + 1, bin = (y) => clamp(Math.round((y - y0) / .02), 0, nbin - 1);
+  const bodyB = Array.from({ length: nbin }, () => [1e9, -1e9, 1e9, -1e9]), clothB = Array.from({ length: nbin }, () => [1e9, -1e9, 1e9, -1e9]);
+  const grow = (e, x, z) => { e[0] = Math.min(e[0], x); e[1] = Math.max(e[1], x); e[2] = Math.min(e[2], z); e[3] = Math.max(e[3], z); };
+  for (let i = 0; i < nb; i++) { const y = bp[i * 3 + 1], d = src.si[i * 4]; if (y > y0 && y < waistTop && (d <= 1 || d === 9 || d === 10)) grow(bodyB[bin(y)], bp[i * 3], bp[i * 3 + 2]); }
+  for (let i = 0; i < n; i++) { const y = P[i * 3 + 1]; if (y > y0) grow(clothB[bin(y)], P[i * 3], P[i * 3 + 2]); }
+  let kx = new Float32Array(nbin).fill(1), kz = new Float32Array(nbin).fill(1);
+  for (let b = 0; b < nbin; b++) {
+    const B = bodyB[b], C = clothB[b]; if (B[0] > B[1] || C[0] > C[1]) continue;
+    kx[b] = Math.max(1, (B[1] - B[0] + .045) / (C[1] - C[0])); kz[b] = Math.max(1, (B[3] - B[2] + .05) / (C[3] - C[2]));
+  }
+  for (let it = 0; it < 3; it++) for (const k of [kx, kz]) { const c = Float32Array.from(k); for (let b = 0; b < nbin; b++) k[b] = Math.max(c[b], (c[Math.max(0, b - 1)] + c[b] * 2 + c[Math.min(nbin - 1, b + 1)]) / 4); }
+  for (let i = 0; i < n; i++) { const b = bin(P[i * 3 + 1]); P[i * 3] = bcx + (P[i * 3] - bcx) * kx[b]; P[i * 3 + 2] = bcz + (P[i * 3 + 2] - bcz) * kz[b]; }
+  // legs: centre each leg opening on the body's thigh at the hem, easing in from the crotch
+  for (const s of [1, -1]) {
+    let lx = 0, lz = 0, c = 0; for (let i = 0; i < n; i++) if (P[i * 3 + 1] < hem + .03 && Math.sign(P[i * 3]) === s) { lx += P[i * 3]; lz += P[i * 3 + 2]; c++; }
+    const h = R.H[s > 0 ? 0 : 1], k = R.K[s > 0 ? 0 : 1], t = (h.y - hem) / (h.y - k.y), ax = h.x + (k.x - h.x) * t, az = h.z + (k.z - h.z) * t;
+    const dx = ax - lx / c, dz = az - lz / c;
+    for (let i = 0; i < n; i++) if (Math.sign(P[i * 3]) === s) { const w = clamp((crotchY + .04 - P[i * 3 + 1]) / (crotchY + .04 - hem), 0, 1) * clamp(Math.abs(P[i * 3]) / .06, 0, 1); P[i * 3] += dx * w; P[i * 3 + 2] += dz * w; }
+  }
+  // nearest body vertex via a spatial hash
+  const cell = .05, hash = new Map(), key = (x, y, z) => (Math.floor(x / cell) + 512) * 1048576 + (Math.floor(y / cell) + 512) * 1024 + (Math.floor(z / cell) + 512);
+  for (let i = 0; i < nb; i++) { const k = key(bp[i * 3], bp[i * 3 + 1], bp[i * 3 + 2]); (hash.get(k) || hash.set(k, []).get(k)).push(i); }
+  const nearest = (x, y, z) => {
+    let best = -1, bd = 1e9;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const l = hash.get(key(x + a * cell, y + b * cell, z + c * cell)); if (!l) continue;
+      for (const i of l) { const d = (bp[i * 3] - x) ** 2 + (bp[i * 3 + 1] - y) ** 2 + (bp[i * 3 + 2] - z) ** 2; if (d < bd) { bd = d; best = i; } }
+    }
+    return best;
+  };
+  const near = new Int32Array(n);
+  for (let pass = 0; pass < 2; pass++) for (let i = 0; i < n; i++) {
+    const j = near[i] = nearest(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); if (j < 0) continue;
+    const d = (P[i * 3] - bp[j * 3]) * bn[j * 3] + (P[i * 3 + 1] - bp[j * 3 + 1]) * bn[j * 3 + 1] + (P[i * 3 + 2] - bp[j * 3 + 2]) * bn[j * 3 + 2], m = .009;
+    if (d < m) for (let k = 0; k < 3; k++) P[i * 3 + k] += bn[j * 3 + k] * (m - d);
+  }
+  // weights: nearest body vertex, eased toward the hips below the crotch line, then smoothed over the cloth
+  const NB = BONES.length, Wd = new Float32Array(n * NB);
+  for (let i = 0; i < n; i++) {
+    const j = near[i] >= 0 ? near[i] : 0, k = .55 * clamp((P[i * 3 + 1] - (crotchY - .02)) / .12, 0, 1);
+    for (let q = 0; q < 4; q++) Wd[i * NB + src.si[j * 4 + q]] += src.sw[j * 4 + q] * (1 - k);
+    Wd[i * NB] += k;
+  }
+  const adj = Array.from({ length: n }, () => new Set());
+  for (let t = 0; t < TR.idx.length; t += 3) for (let e = 0; e < 3; e++) { const a = TR.idx[t + e], b = TR.idx[t + (e + 1) % 3]; adj[a].add(b); adj[b].add(a); }
+  for (let it = 0; it < 4; it++) {
+    const nx = new Float32Array(Wd);
+    for (let i = 0; i < n; i++) { if (!adj[i].size) continue; for (const j of adj[i]) for (let b = 0; b < NB; b++) nx[i * NB + b] += Wd[j * NB + b]; for (let b = 0; b < NB; b++) nx[i * NB + b] /= adj[i].size + 1; }
+    Wd.set(nx);
+  }
+  const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4), sway = new Float32Array(n * 2), top = waistTop - .07;
+  for (let i = 0; i < n; i++) {
+    const tp = Array.from(Wd.subarray(i * NB, i * NB + NB), (w, b) => [b, w]).sort((x, y) => y[1] - x[1]).slice(0, 4), tot = tp.reduce((s, x) => s + x[1], 0) || 1;
+    tp.forEach(([b, w], q) => { si[i * 4 + q] = b; sw[i * 4 + q] = w / tot; });
+    sway[i * 2] = Math.pow(clamp((top - P[i * 3 + 1]) / (top - hem), 0, 1), 1.4);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.BufferAttribute(TR.UV, 2));
+  g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4)); g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+  g.setAttribute('sway', new THREE.BufferAttribute(sway, 2)); g.setIndex(new THREE.BufferAttribute(TR.idx, 1));
+  g.computeVertexNormals(); g.computeTangents?.();
+  g.userData.hem = hem;
+  return g;
+}
+// everything one fighter wears, fitted to his own body: trunks, boots
 function buildFighterGeometry(cfg) {
-  const src = mhBody(cfg.id), sk = makeSkel(src.J), R = sk.raw;
+  const src = mhBody(buildOf(cfg)), sk = makeSkel(src.J), R = sk.raw;
   const flat = src.tris.flat();
   src.nrm = weldedNormals(src.pos, flat, src.gid);
   const vy = (i) => src.pos[i * 3 + 1], dom = (i) => src.si[i * 4];
   const waistTop = R.H[0].y + .2, hem = R.K[0].y + .15, crotchY = R.H[0].y - .085, shoeTop = R.A[0].y + .19;
   const legDom = (b) => b >= 9; // thighs, shins, feet
   const pelvisDom = (b) => b <= 1 || b === 9 || b === 10;
-  const shortsTri = (t) => t.every((i) => vy(i) >= hem && vy(i) <= waistTop && pelvisDom(dom(i)));
-  const hiddenTri = (t) => t.every((i) => vy(i) < shoeTop - .015 && legDom(dom(i))) || t.every((i) => vy(i) > crotchY - .01 && vy(i) < waistTop - .02 && pelvisDom(dom(i)));
-  const legAxis = (s, y, out) => { const h = R.H[s > 0 ? 0 : 1], k = R.K[s > 0 ? 0 : 1], t = clamp((h.y - y) / (h.y - k.y), 0, 1.2); return out.lerpVectors(h, k, t); };
-  const legR = (y) => .112 + (crotchY - y) * .16;
-  const trunk = new THREE.Color(cfg.trunks), trim = new THREE.Color(cfg.trim), _ax = V(), _rd = V();
+  const hiddenTri = (t) => t.every((i) => vy(i) < shoeTop - .015 && legDom(dom(i))) || t.every((i) => vy(i) > hem + .06 && vy(i) < waistTop - .03 && (dom(i) <= 1 || dom(i) === 9 || dom(i) === 10)) || t.every((i) => vy(i) > crotchY - .01 && vy(i) < waistTop - .02 && pelvisDom(dom(i)));
   const bump = (p, x, y, z, r, front) => (front != null && (front ? p.z < 0 : p.z > 0)) ? 0 : Math.exp(-((p.x - x) ** 2 + (p.y - y) ** 2) / (r * r));
 
   // body: skin, minus what the trunks and boots cover; masks: x = oily zones, y = where body shots redden
@@ -801,50 +954,16 @@ function buildFighterGeometry(cfg) {
     o.e[1] = Math.max(bump(p, .13, 1.16, 0, .07, true), bump(p, -.13, 1.16, 0, .07, true), bump(p, 0, 1.1, 0, .06, true));
   }, { extra: 'skinMask' });
 
-  // trunks: satin shell lifted off the hips, legs pushed out into loose flared tubes, waistband, side stripes
-  const swayOf = (y) => Math.pow(clamp((waistTop - .07 - y) / (waistTop - .07 - hem), 0, 1), 1.4);
-  const shorts = subMesh(src, src.tris.filter(shortsTri), (i, p, n, o) => {
-    o.p.addScaledVector(n, .012 + .01 * Math.max(0, -n.z));
-    if (p.y < crotchY) {
-      const s = Math.sign(p.x || 1); legAxis(s, p.y, _ax); _rd.set(o.p.x - _ax.x, 0, o.p.z - _ax.z);
-      const r = _rd.length() || 1e-4, R2 = Math.max(r + .006, legR(p.y)); o.p.x = _ax.x + _rd.x / r * R2; o.p.z = _ax.z + _rd.z / r * R2;
-    }
-    // side stripe: a narrow band down the outside of each leg (measured round the leg axis after the push)
-    let lat = Math.abs(n.x);
-    if (p.y < crotchY) { legAxis(Math.sign(p.x || 1), p.y, _ax); lat = Math.abs(o.p.x - _ax.x) / (Math.hypot(o.p.x - _ax.x, o.p.z - _ax.z) || 1); }
-    const band = p.y > waistTop - .07, stripe = lat > .94 && !band, hemBand = p.y < hem + .022;
-    if (band) o.p.addScaledVector(n, .005);
-    o.c.copy(band || stripe || hemBand ? trim : trunk);
-    o.e[0] = swayOf(p.y);
-  }, { extra: 'sway' });
-
-  // fringe: real strands hanging off the outer half of each leg's hem
-  const fr = { P: [], N: [], C: [], UV: [], SI: [], SW: [], SWAY: [], idx: [] };
-  const nearest = (x, y, z) => { let best = 0, bd = 1e9; for (const t of src.tris) for (const i of t) { const d = (src.pos[i * 3] - x) ** 2 + (src.pos[i * 3 + 1] - y) ** 2 + (src.pos[i * 3 + 2] - z) ** 2; if (d < bd) { bd = d; best = i; } } return best; };
-  for (const s of [1, -1]) {
-    const a = legAxis(s, hem, V()), rr = legR(hem) + .006, wIdx = nearest(a.x + s * .06, hem + .03, a.z);
-    for (let k = 0; k < 34; k++) {
-      const ang = (-.5 + k / 33) * Math.PI * .95, dx = s * Math.cos(ang), dz = Math.sin(ang), tx = -dz, tz = dx, len = .055 + .012 * Math.sin(k * 1.7);
-      const top = V(a.x + dx * rr, hem + .006, a.z + dz * rr), bot = V(top.x + dx * .012, hem - len, top.z + dz * .012), hw = .0035;
-      const base = fr.P.length / 3;
-      for (const [q, sv] of [[top, .5], [bot, 1.25]]) for (const sd of [-1, 1]) {
-        fr.P.push(q.x + tx * hw * sd, q.y, q.z + tz * hw * sd); fr.N.push(dx, 0, dz); fr.C.push(trim.r, trim.g, trim.b); fr.UV.push(0, 0);
-        for (let j = 0; j < 4; j++) { fr.SI.push(src.si[wIdx * 4 + j]); fr.SW.push(src.sw[wIdx * 4 + j]); }
-        fr.SWAY.push(sv, 0);
-      }
-      fr.idx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-    }
-  }
-  const fringe = new THREE.BufferGeometry();
-  fringe.setAttribute('position', new THREE.Float32BufferAttribute(fr.P, 3)); fringe.setAttribute('normal', new THREE.Float32BufferAttribute(fr.N, 3));
-  fringe.setAttribute('color', new THREE.Float32BufferAttribute(fr.C, 3)); fringe.setAttribute('uv', new THREE.Float32BufferAttribute(fr.UV, 2));
-  fringe.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(fr.SI, 4)); fringe.setAttribute('skinWeight', new THREE.Float32BufferAttribute(fr.SW, 4));
-  fringe.setAttribute('sway', new THREE.Float32BufferAttribute(fr.SWAY, 2)); fringe.setIndex(fr.idx);
+  // trunks: the uploaded Marvelous Designer garment, fitted to this body (see fitTrunks)
+  const shorts = fitTrunks(src, R, waistTop, crotchY);
 
   // boots: lofted from cross-sections measured off this fighter's own foot and calf, so they fit snugly but have
   // clean topology. Foot: rounded-box sections heel to toe with a flat sole; shaft: elliptical sections up the shin.
   const shoes = buildBoots(src, R, shoeTop, cfg);
-  return { sk, body, shorts, fringe, shoes };
+  // the body's neck centre (front-back) just below where its own head was removed: the scan's neck sits on it
+  const bp = body.attributes.position, hy = R.head.y; let zs = 0, nz = 0;
+  for (let i = 0; i < bp.count; i++) if (Math.abs(bp.getY(i) - (hy - .06)) < .012 && Math.abs(bp.getX(i)) < .07) { zs += bp.getZ(i); nz++; }
+  return { sk, body, shorts, shoes, neckZ: nz ? zs / nz : R.neck.z };
 }
 // --- skin detail maps -----------------------------------------------------------------
 // Generated here so the game ships without extra downloads. They follow the same conventions as
@@ -951,9 +1070,118 @@ function superEllipsoid(e, sx, sy, sz, taper = 0) {
   g.computeVertexNormals(); return g;
 }
 const SPH = new THREE.SphereGeometry(1, 32, 24);
-const GLOVE_GEO = superEllipsoid(.72, .086, .112, .098, .22);
-const THUMB_GEO = new THREE.CapsuleGeometry(.024, .05, 8, 16);
-// cloth sway: hem and fringe lag behind the hips (a spring in makeRig/pose) and flutter a little
+// gloves: sculpted as a signed-distance shape (padded fist, knuckle roll, fingers curled over the palm, a thumb fused
+// along the inside, a strapped cuff) and polygonised with surface nets. Local frame: +y wrist to knuckles,
+// +z palm side, the thumb on the inside (-side * x).
+function surfaceNets(f, lo, hi, step) {
+  const nx = Math.ceil((hi[0] - lo[0]) / step) + 1, ny = Math.ceil((hi[1] - lo[1]) / step) + 1, nz = Math.ceil((hi[2] - lo[2]) / step) + 1;
+  const F = new Float32Array(nx * ny * nz), I = (i, j, k) => (k * ny + j) * nx + i;
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) F[I(i, j, k)] = f(lo[0] + i * step, lo[1] + j * step, lo[2] + k * step);
+  const vid = new Int32Array(nx * ny * nz).fill(-1), P = [], idx = [];
+  const E = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+  for (let k = 0; k < nz - 1; k++) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const c = []; for (let q = 0; q < 8; q++) c.push(F[I(i + (q & 1), j + ((q >> 1) & 1), k + ((q >> 2) & 1))]);
+    let ax = 0, ay = 0, az = 0, n = 0;
+    for (const [a, b] of E) if ((c[a] < 0) !== (c[b] < 0)) {
+      const t = c[a] / (c[a] - c[b]);
+      ax += (a & 1) + ((b & 1) - (a & 1)) * t; ay += ((a >> 1) & 1) + (((b >> 1) & 1) - ((a >> 1) & 1)) * t; az += ((a >> 2) & 1) + (((b >> 2) & 1) - ((a >> 2) & 1)) * t; n++;
+    }
+    if (!n) continue;
+    vid[I(i, j, k)] = P.length / 3; P.push(lo[0] + (i + ax / n) * step, lo[1] + (j + ay / n) * step, lo[2] + (k + az / n) * step);
+  }
+  // one quad per grid edge that crosses the surface, joining the four cells around it
+  for (let k = 1; k < nz - 1; k++) for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
+    const a = F[I(i, j, k)];
+    for (let ax = 0; ax < 3; ax++) {
+      const b = F[ax === 0 ? I(i + 1, j, k) : ax === 1 ? I(i, j + 1, k) : I(i, j, k + 1)];
+      if ((a < 0) === (b < 0)) continue;
+      const cells = ax === 0 ? [I(i, j - 1, k - 1), I(i, j, k - 1), I(i, j, k), I(i, j - 1, k)] : ax === 1 ? [I(i - 1, j, k - 1), I(i - 1, j, k), I(i, j, k), I(i, j, k - 1)] : [I(i - 1, j - 1, k), I(i, j - 1, k), I(i, j, k), I(i - 1, j, k)];
+      const q = cells.map((c) => vid[c]); if (q.some((v) => v < 0)) continue;
+      if (a < 0) idx.push(q[0], q[1], q[2], q[0], q[2], q[3]); else idx.push(q[0], q[2], q[1], q[0], q[3], q[2]);
+    }
+  }
+  return { P, idx };
+}
+const sdEll = (x, y, z, cx, cy, cz, rx, ry, rz) => { const a = (x - cx) / rx, b = (y - cy) / ry, c = (z - cz) / rz, k0 = Math.hypot(a, b, c), k1 = Math.hypot(a / rx, b / ry, c / rz); return k0 * (k0 - 1) / (k1 || 1e-9); };
+const sdCap = (x, y, z, ax, ay, az, bx, by, bz, r) => { const px = x - ax, py = y - ay, pz = z - az, dx = bx - ax, dy = by - ay, dz = bz - az, h = clamp((px * dx + py * dy + pz * dz) / (dx * dx + dy * dy + dz * dz), 0, 1); return Math.hypot(px - dx * h, py - dy * h, pz - dz * h) - r; };
+const smin = (a, b, k) => { const h = clamp(.5 + .5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); };
+const smax = (a, b, k) => -smin(-a, -b, k);
+function gloveSDF(s) {
+  return (x, y, z) => {
+    let d = sdEll(x, y, z, 0, .092, -.006, .084, .1, .086);
+    d = smin(d, sdEll(x, y, z, 0, .14, -.016, .078, .058, .07), .03);                       // knuckle padding
+    d = smin(d, sdCap(x, y, z, -.05, .132, .04, .05, .132, .04, .044), .022);                  // fingers rolled over the palm
+    d = smax(d, -sdCap(x, y, z, -.07, .086, .09, .07, .086, .09, .011), .012);                 // crease where the fingers meet the palm
+    d = smin(d, sdCap(x, y, z, -s * .068, .03, .045, -s * .062, .112, .078, .025), .007);      // thumb, fused along the inside
+    const r = .056 + .03 * clamp(y + .02, 0, .05), cuff = Math.max(Math.hypot(x, (z + .004) * 1.08) - r, Math.abs(y + .035) - .065);
+    return smin(d, cuff, .016);
+  };
+}
+function gloveGeometry(s) {
+  const f = gloveSDF(s), { P, idx } = surfaceNets(f, [-.14, -.115, -.125], [.14, .225, .15], .0032);
+  // Laplacian smoothing (two light passes) takes the stair-step out of the net
+  const n = P.length / 3, nb = Array.from({ length: n }, () => new Set());
+  for (let t = 0; t < idx.length; t += 3) for (let e = 0; e < 3; e++) { nb[idx[t + e]].add(idx[t + (e + 1) % 3]); nb[idx[t + (e + 1) % 3]].add(idx[t + e]); }
+  for (let it = 0; it < 3; it++) { const Q = P.slice(); for (let i = 0; i < n; i++) { let x = 0, y = 0, z = 0; for (const j of nb[i]) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const m = nb[i].size || 1; for (let c = 0; c < 3; c++) P[i * 3 + c] = Q[i * 3 + c] * .5 + [x, y, z][c] / m * .5; } }
+  // cylindrical UVs round the forearm axis; triangles across the seam get their own wrapped vertices
+  const pos = [], uv = [], out = [], key = new Map();
+  const vert = (i, wrap) => { const k = i * 2 + wrap; let o = key.get(k); if (o !== undefined) return o; o = pos.length / 3; key.set(k, o); const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2]; pos.push(x, y, z); uv.push(Math.atan2(z, x) / (Math.PI * 2) + .5 + wrap, (y + .115) / .34); return o; };
+  const U = (i) => Math.atan2(P[i * 3 + 2], P[i * 3]) / (Math.PI * 2) + .5;
+  for (let t = 0; t < idx.length; t += 3) {
+    const tri = [idx[t], idx[t + 1], idx[t + 2]], us = tri.map(U), wrap = Math.max(...us) - Math.min(...us) > .5;
+    for (let e = 0; e < 3; e++) out.push(vert(tri[e], wrap && us[e] < .5 ? 1 : 0));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(out);
+  const nrm = new Float32Array(pos.length), e = .0008;
+  for (let i = 0; i < pos.length; i += 3) {
+    const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+    const gx = f(x + e, y, z) - f(x - e, y, z), gy = f(x, y + e, z) - f(x, y - e, z), gz = f(x, y, z + e) - f(x, y, z - e), l = Math.hypot(gx, gy, gz) || 1;
+    nrm[i] = gx / l; nrm[i + 1] = gy / l; nrm[i + 2] = gz / l;
+  }
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.computeTangents();
+  return g;
+}
+const GLOVE_GEOS = [gloveGeometry(1), gloveGeometry(-1)];
+// glove skins, drawn in UV space (u round the forearm: .25 back of the hand, .75 palm; v wrist to knuckles):
+// leather with piping down both sides, twin stitch rows, a strapped cuff with a contrast band and a patch
+const GLOVE_V = (y) => (y + .115) / .34;
+function gloveMaps(cfg) {
+  const W = 1024, Y = (v) => (1 - v) * W, X = (u) => u * W;
+  const main = '#' + new THREE.Color(cfg.glove).getHexString(), band = '#' + new THREE.Color(cfg.cuff).getHexString(), trim = '#' + new THREE.Color(cfg.trim).getHexString();
+  const cuffTop = Y(GLOVE_V(-.004)), strapA = Y(GLOVE_V(-.024)), strapB = Y(GLOVE_V(-.078));
+  const map = canvasTex(W, W, (g) => {
+    g.fillStyle = main; g.fillRect(0, 0, W, W);
+    g.fillStyle = band; g.fillRect(0, strapA, W, strapB - strapA);
+    g.fillStyle = trim; g.fillRect(0, cuffTop - 6, W, 12); g.fillRect(0, strapA - 4, W, 5); g.fillRect(0, strapB, W, 5);
+    // piping along both side seams, from the cuff over the fist
+    g.fillStyle = band; for (const u of [0, .5, 1]) g.fillRect(X(u) - 5, 0, 10, cuffTop);
+    // patch on the back of the strap
+    g.fillStyle = main; g.fillRect(X(.25) - 70, strapA + 12, 140, strapB - strapA - 24);
+    g.fillStyle = band; g.font = `bold ${Math.round((strapB - strapA) * .5)}px Oswald, Impact, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('KL', X(.25), (strapA + strapB) / 2 + 2);
+    noise(g, W, W, 10);
+  });
+  const hf = new Float32Array(W * W);
+  for (let i = 0; i < hf.length; i++) hf[i] = Math.random() * .12;
+  for (let k = 0; k < 9000; k++) stamp(hf, W, (Math.random() * W) | 0, (Math.random() * W) | 0, rand(1.5, 3.5), (v, d) => v - (1 - d) * .15); // leather grain
+  const line = (x0, y0, x1, y1, f) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0)); for (let t = 0; t <= n; t++) f(Math.round(x0 + (x1 - x0) * t / n), Math.round(y0 + (y1 - y0) * t / n), t); };
+  for (const u of [0, .5, 1]) {
+    line(X(u), 0, X(u), cuffTop, (x, y) => stamp(hf, W, x, y, 7, (v, d) => v + (1 - d * d) * 1.4));                       // piping ridge
+    for (const off of [-13, 13]) line(X(u) + off, 0, X(u) + off, cuffTop, (x, y, t) => { if (t % 14 < 8) stamp(hf, W, x, y, 1.6, (v, d) => v - (1 - d) * .9); }); // stitches
+  }
+  for (const yy of [strapA, strapB]) { line(0, yy, W, yy, (x, y) => stamp(hf, W, x, y, 3, (v, d) => v - (1 - d) * .6)); line(0, yy + (yy === strapA ? 10 : -10), W, yy + (yy === strapA ? 10 : -10), (x, y, t) => { if (t % 12 < 7) stamp(hf, W, x, y, 1.4, (v, d) => v - (1 - d) * .8); }); }
+  line(0, cuffTop, W, cuffTop, (x, y) => stamp(hf, W, x, y, 5, (v, d) => v + (1 - d * d) * .8));
+  for (let k = 0; k < 40; k++) { let x = Math.random() * W, y = Math.random() * Y(GLOVE_V(.13)); const a = rand(0, 6.28); for (let t = 0; t < 20; t++) { stamp(hf, W, x | 0, y | 0, 2, (v, d) => v - (1 - d) * .12); x += Math.cos(a) * 2; y += Math.sin(a) * 2; } } // creases
+  const normal = heightToNormal(hf, W, 2.2, null);
+  const rough = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = 'rgb(105,105,105)'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 260; k++) { const v = .62 + Math.random() * .38, y = (1 - v) * h; g.fillStyle = `rgba(190,190,190,${rand(.05, .25)})`; g.fillRect(Math.random() * w, y, rand(2, 9), rand(1, 3)); } // scuffs on the punching face
+    noise(g, w, h, 18);
+  }, { srgb: false });
+  for (const t of [map, normal, rough]) { t.wrapS = THREE.RepeatWrapping; }
+  return { map, normal, rough };
+}
+// cloth sway: the trunks hang and lag behind the hips (a spring in makeRig/pose) and flutter a little
 function swayMaterial(m, u) {
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uSway = u.uSway; sh.uniforms.uTime = u.uTime;
@@ -981,18 +1209,17 @@ function makeRig(cfg) {
   const bodyU = skinUniforms(), headU = skinUniforms(), swayU = { uSway: { value: V() }, uTime: { value: 0 } };
   const skin = skinMaterial({ color: skinCol, roughness: .6, normalMap: SKIN_PORES, normalScale: new THREE.Vector2(.3, .3),
     clearcoatMap: SKIN_DROP_M, clearcoatNormalMap: SKIN_DROP_N, clearcoatNormalScale: new THREE.Vector2(.3, .3) }, { maskAttr: true, u: bodyU });
-  // satin trunks: sheen for the grazing glow, a light clearcoat for the slick highlight, fine weave in the normal map
-  const satin = swayMaterial(phys({ color: 0xffffff, vertexColors: true, roughness: .3, sheen: 1, sheenRoughness: .28, sheenColor: new THREE.Color(cfg.trunks).lerp(new THREE.Color(0xffffff), .55),
-    clearcoat: .3, clearcoatRoughness: .32, normalMap: WEAVE_N, normalScale: new THREE.Vector2(.18, .18), side: THREE.DoubleSide, envMapIntensity: .7 }), swayU);
-  const fringeM = swayMaterial(phys({ color: 0xffffff, vertexColors: true, roughness: .35, sheen: 1, sheenRoughness: .3, sheenColor: new THREE.Color(0xffffff).multiplyScalar(.6), side: THREE.DoubleSide, envMapIntensity: .6 }), swayU);
+  // trunks: the garment's own colour and normal maps; satin-ish poly with a soft sheen and a slick top coat
+  const satin = swayMaterial(phys({ map: TR ? TR.maps[cfg.trunksTex] || TR.maps.red : null, color: TR ? 0xffffff : cfg.trunks, normalMap: TR ? TR.normal : WEAVE_N, normalScale: new THREE.Vector2(.8, .8),
+    roughness: .5, sheen: .6, sheenRoughness: .4, sheenColor: new THREE.Color(cfg.trunks).lerp(new THREE.Color(0xffffff), .5), clearcoat: .08, clearcoatRoughness: .45, side: THREE.DoubleSide, envMapIntensity: .7 }), swayU);
   // boots: smooth leather upper, matte rubber sole, cotton laces
-  const leather = phys({ color: 0xffffff, vertexColors: true, roughness: .4, clearcoat: .5, clearcoatRoughness: .22, normalMap: GRAIN_N, normalScale: new THREE.Vector2(.25, .25), sheen: .2, sheenRoughness: .5, sheenColor: new THREE.Color(0x888888), envMapIntensity: .55 });
+  const leather = phys({ color: 0xffffff, vertexColors: true, map: BOOT_MAPS.map, roughness: .48, clearcoat: .25, clearcoatRoughness: .3, normalMap: BOOT_MAPS.normal, normalScale: new THREE.Vector2(.7, .7), sheen: .2, sheenRoughness: .5, sheenColor: new THREE.Color(0x888888), envMapIntensity: .55 });
   const laces = phys({ map: LACE_TEX, side: THREE.DoubleSide, roughness: .75, sheen: .5, sheenRoughness: .6, sheenColor: new THREE.Color(0xffffff), envMapIntensity: .3 });
   const bones = BONES.map(() => { const b = new THREE.Object3D(); b.matrixAutoUpdate = false; return b; });
   const skeleton = new THREE.Skeleton(bones, sk.bindInv.map((m) => m.clone()));
   const skinned = (geo, mats) => { const m = shadowy(new THREE.SkinnedMesh(geo, mats)); m.frustumCulled = false; scene.add(m); m.bind(skeleton, new THREE.Matrix4()); return m; };
   const mesh = skinned(G2.body, skin);
-  skinned(G2.shorts, satin); skinned(G2.fringe, fringeM); skinned(G2.shoes, [leather, laces]);
+  const meshes = [mesh, G2.shorts && skinned(G2.shorts, satin), skinned(G2.shoes, [leather, laces])].filter(Boolean);
   const boneLocal = BONES.map(() => new THREE.Matrix4());
   const mk = (geo, mat, parent, s = [1, 1, 1], p = [0, 0, 0]) => { const m = shadowy(new THREE.Mesh(geo, mat)); m.scale.set(...s); m.position.set(...p); parent.add(m); return m; };
 
@@ -1011,18 +1238,11 @@ function makeRig(cfg) {
   } else { headMark.position.set(0, .1, .02); head.add(headMark); }
   const baseFace = face ? face.color.clone() : null;
 
-  const glove = phys({ color: cfg.glove, roughness: .34, clearcoat: 1, clearcoatRoughness: .12, envMapIntensity: .8 });
-  const cuff = phys({ color: cfg.cuff, roughness: .55 });
-  const trim = phys({ color: cfg.trim, roughness: .4, metalness: .3, envMapIntensity: .35 });
-  const gloves = [1, -1].map((s) => {
-    const g = new THREE.Group(); body.add(g);
-    mk(GLOVE_GEO, glove, g, [1, 1, 1], [0, .088, .008]);
-    const th = mk(THUMB_GEO, glove, g, [1, 1, 1], [-s * .06, .075, .05]); th.rotation.set(-.35, 0, s * .2);
-    mk(new THREE.CylinderGeometry(.05, .056, .12, 48), cuff, g, [1, 1, 1], [0, -.03, 0]);
-    mk(new THREE.CylinderGeometry(.0535, .0545, .022, 48), trim, g, [1, 1, 1], [0, .0, 0]);
-    return g;
-  });
-  return { root, body, chest, head, hips, mesh, bones, boneLocal, gloves, sk, skull: headMark, chestMark, mats: { skin, face }, baseFace, u: { body: bodyU, head: headU },
+  const gm = gloveMaps(cfg);
+  const glove = phys({ map: gm.map, normalMap: gm.normal, normalScale: new THREE.Vector2(.6, .6), roughnessMap: gm.rough, roughness: 1, clearcoat: .45, clearcoatRoughness: .3,
+    sheen: .25, sheenRoughness: .5, sheenColor: new THREE.Color(cfg.glove).lerp(new THREE.Color(0xffffff), .5), envMapIntensity: .75 });
+  const gloves = [1, -1].map((s) => { const g = new THREE.Group(); body.add(g); mk(GLOVE_GEOS[s > 0 ? 0 : 1], glove, g); return g; });
+  return { root, body, chest, head, hips, mesh, meshes, bones, boneLocal, gloves, sk, skull: headMark, chestMark, mats: { skin, face }, baseFace, u: { body: bodyU, head: headU },
     sway: swayU, swayVel: V(), lastTwist: 0,
     arms: [{ S: V(), E: V(), W: V(), perp: V() }, { S: V(), E: V(), W: V(), perp: V() }], legs: [{ H: V(), K: V(), A: V(), perp: V() }, { H: V(), K: V(), A: V(), perp: V() }],
     feet: [{ A: V(), dir: V() }, { A: V(), dir: V() }], headRel: new THREE.Matrix4() };
@@ -1087,13 +1307,17 @@ try {
   for (let i = 0; i < d.length; i += 4) { if (d[i] + d[i + 1] + d[i + 2] < 150) continue; col.setRGB(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255, THREE.SRGBColorSpace); r += col.r; gg += col.g; b += col.b; n++; }
   if (n) HEAD.avg = new THREE.Color(r / n, gg / n, b / n);
 } catch (err) { console.warn('Head scan unavailable; using sculpted heads.', err); }
-for (const k in FIGHTERS) {
-  const g = FGEO[k] = buildFighterGeometry(FIGHTERS[k]);
-  // the body's neck centre (front-back) just below where its own head was removed
-  const p = g.body.attributes.position, hy = g.sk.raw.head.y; let zs = 0, n = 0;
-  for (let i = 0; i < p.count; i++) if (Math.abs(p.getY(i) - (hy - .06)) < .012 && Math.abs(p.getX(i)) < .07) { zs += p.getZ(i); n++; }
-  g.neckZ = n ? zs / n : g.sk.raw.neck.z;
+{ const saved = safeStore.get('kl-builds', {}) || {}; for (const k in saved) if (FIGHTERS[k] && BODY_TYPES[saved[k]]) FIGHTERS[k].bodyType = saved[k]; }
+for (const k in FIGHTERS) FGEO[k] = buildFighterGeometry(FIGHTERS[k]);
+// swap a fighter's body (and everything fitted to it) mid-session: body type menu and the Live Editor
+function rebuildFighter(f) {
+  const old = f.rig, g = FGEO[f.cfg.id];
+  scene.remove(old.root); old.meshes.forEach((m) => scene.remove(m));
+  for (const k of ['body', 'shorts', 'shoes']) g[k]?.dispose();
+  FGEO[f.cfg.id] = buildFighterGeometry(f.cfg); f.rig = makeRig(f.cfg);
+  emit('rebuild', { fighter: f.cfg.id, bodyType: f.cfg.bodyType, build: buildOf(f.cfg) });
 }
+const queueRebuild = (f) => { clearTimeout(f._rb); f._rb = setTimeout(() => rebuildFighter(f), 200); };
 /* =========================================================================
    punches + fighter state
    ========================================================================= */
@@ -1121,11 +1345,11 @@ const blankStats = () => ({ thrown: 0, landed: 0, pThrown: 0, pLanded: 0, dmg: 0
 
 function newFighter(cfg, isPlayer) {
   return {
-    cfg, isPlayer, rig: makeRig(cfg), pos: V(), vel: V(), yaw: 0, input: { fwd: 0, side: 0 },
+    cfg, isPlayer, rig: makeRig(cfg), feetW: [0, 1].map(() => ({ p: V(), from: V(), to: V(), t: 1, dur: .2, init: false })), pos: V(), vel: V(), yaw: 0, input: { fwd: 0, side: 0 },
     head: 100, body: 100, headMax: 100, bodyMax: 100, stamina: 100, staminaMax: 100,
     action: null, queue: [], blocking: false, blockLow: false, slip: 0, slipDir: 0, counterWin: 0, stun: 0, wobble: 0, invuln: false,
     rec: { p: 0, y: 0, r: 0, vp: 0, vy: 0, vr: 0 }, fall: 0, down: false, rising: false, kdRound: 0, kdTotal: 0, victory: 0,
-    stats: blankStats(), roundStart: blankStats(), phase: Math.random() * 6, ps: { crouch: .03, twist: -.32, lean: .2, side: 0, shift: 0 },
+    stats: blankStats(), roundStart: blankStats(), phase: Math.random() * 6, ps: { crouch: .03, twist: -.32, htwist: -.32, lean: .2, side: 0, shift: 0 },
     ai: { t: .5, pref: 1.0, strafe: 0, strafeT: 0, blockT: 0, reacted: null, reactAt: null, counterNext: false },
     aimHead: V(), aimBody: V(), headWorld: V(0, 1.6, 0), chestWorld: V(0, 1.3, 0), autoTarget: null, lastHitAt: 0,
   };
@@ -1487,13 +1711,15 @@ function poseFighter(f, dt, time) {
   if (f.slip > 0) { const s = Math.sin(clamp(f.slip / .38, 0, 1) * Math.PI); side = -f.slipDir * .34 * s; shift = f.slipDir * .12 * s; crouch += .07 * s; }
   if (f.wobble > 0) { side += Math.sin(time * 2.3) * .12 * f.wobble; shift += Math.sin(time * 1.7) * .06 * f.wobble; }
   if (f.stun > 0) crouch += .03;
+  for (let i = 0; i < 2; i++) { const ft = f.feetW[i]; if (ft.t < 1) { const k = Math.sin(ft.t * Math.PI); shift -= (i === 0 ? 1 : -1) * .025 * k; crouch += .012 * k; } }
   ps.crouch = damp(ps.crouch, crouch, P ? 30 : 14, dt);
-  ps.twist = damp(ps.twist, twist, P ? 45 : 10, dt);
+  ps.htwist = damp(ps.htwist ?? twist, twist, P ? 70 : 10, dt); // hips turn first, the shoulders follow
+  ps.twist = damp(ps.twist, twist, P ? 34 : 9, dt);
   ps.lean = damp(ps.lean, lean, P ? 30 : 12, dt);
   ps.side = damp(ps.side, side, 16, dt);
   ps.shift = damp(ps.shift, shift, 16, dt);
   const breath = Math.sin(time * 2.2 + f.phase * .1) * .006;
-  const bounce = Math.abs(Math.sin(f.phase)) * (.016 + Math.min(sp, 1.5) * .012) * (1 - f.fall);
+  const bounce = Math.abs(Math.sin(f.phase)) * (.01 + Math.min(sp, 1.5) * .008) * (1 - f.fall);
   const lunge = P ? (P.kind === 'straight' ? .1 : .05) * ep : 0;
   const pelvisY = R.sk.P.y - .03 - ps.crouch + bounce;
 
@@ -1501,7 +1727,7 @@ function poseFighter(f, dt, time) {
   R.root.position.set(f.pos.x, fe * .14, f.pos.z);
   R.root.rotation.set(-1.42 * fe, f.yaw, fe * .18);
   R.hips.position.set(ps.shift, pelvisY, lunge * .6);
-  R.hips.rotation.set(0, ps.twist * .45, ps.side * .4);
+  R.hips.rotation.set(0, ps.htwist * .5, ps.side * .4);
   R.chest.position.set(ps.shift, pelvisY + CHEST_DY, lunge * .6);
   R.chest.rotation.set(ps.lean + r.p * .35 + fe * .15 + breath, ps.twist + r.y * .3, ps.side + r.r * .3);
   R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3, r.y - ps.twist * .75, r.r * .6 - ps.side * .45);
@@ -1536,24 +1762,39 @@ function poseFighter(f, dt, time) {
     ik(J.S, _h, R.sk.UA, R.sk.FA, _hint, J.E, J.W);
     J.perp.copy(_perp);
   }
-  // legs: feet planted, footwork cycle while moving
+  // legs: feet stay planted on the canvas and step when the body drifts off them (the foot that has drifted furthest
+  // goes first, the other follows); the rear heel lifts and pivots on rear-hand punches, the lead foot on the lead hook
   const fx = Math.sin(f.yaw), fz = Math.cos(f.yaw);
   const lz = (f.vel.x * fx + f.vel.z * fz), lx = (f.vel.x * fz - f.vel.z * fx);
-  const step = Math.min(1, sp * 1.1);
+  const planted = f.fall < .05 && !f.victory, FT = f.feetW, rearPunch = P && P.hand === -1, leadHook = a && a.type === 'lhook';
+  const want = [V(), V()], need = [0, 0];
   for (let i = 0; i < 2; i++) {
-    const s = i === 0 ? 1 : -1, J = R.legs[i];
+    want[i].set(FOOT[i].x + ps.shift * .5, R.sk.ankleY, FOOT[i].z + (P && P.kind !== 'straight' && i === 1 ? .04 * ep : 0));
+    R.body.localToWorld(want[i]).setY(0).addScaledVector(f.vel, .14);
+    const ft = FT[i];
+    if (!planted || !ft.init || ft.p.distanceTo(want[i]) > .8) { ft.p.copy(want[i]); ft.to.copy(want[i]); ft.t = 1; ft.init = true; }
+    need[i] = ft.t >= 1 ? ft.p.distanceTo(want[i]) : 0;
+  }
+  if (FT[0].t >= 1 && FT[1].t >= 1 || FT[0].t > .55 || FT[1].t > .55) {
+    const i = need[0] >= need[1] ? 0 : 1;
+    if (need[i] > .07 && FT[1 - i].t > .55) { const ft = FT[i]; ft.from.copy(ft.p); ft.to.copy(want[i]); ft.t = 0; ft.dur = clamp(.21 - sp * .04, .13, .21); }
+  }
+  for (let i = 0; i < 2; i++) {
+    const s = i === 0 ? 1 : -1, J = R.legs[i], ft = FT[i];
     J.H.copy(R.sk.HIP[i]).applyMatrix4(R.hips.matrix);
-    const ph = f.phase + i * Math.PI;
-    _w.copy(FOOT[i]); _w.y = R.sk.ankleY;
-    _w.x += ps.shift * .5 + (lx / (sp || 1)) * Math.sin(ph) * .09 * step;
-    _w.z += (lz / (sp || 1)) * Math.sin(ph) * .1 * step;
-    _w.y += Math.max(0, Math.cos(ph)) * .055 * step;
-    if (P && P.kind !== 'straight' && i === 1) _w.z += .04 * ep;
+    let lift = 0;
+    if (ft.t < 1) {
+      ft.to.lerp(want[i], clamp(dt * 8, 0, 1)); ft.t = Math.min(1, ft.t + dt / ft.dur);
+      const k = ft.t * ft.t * (3 - 2 * ft.t); ft.p.lerpVectors(ft.from, ft.to, k); lift = Math.sin(ft.t * Math.PI) * (.03 + .02 * Math.min(sp, 1));
+    }
+    _w.copy(ft.p); R.body.worldToLocal(_w); _w.y = R.sk.ankleY + lift;
+    const heel = (i === 1 && rearPunch ? ep : 0) + (i === 0 && leadHook ? ep * .6 : 0);
+    _w.y += .03 * heel; _w.z += .015 * heel;
     _hint.set(s * .25, 0, 1);
     ik(J.H, _w, R.sk.TH, R.sk.SH, _hint, J.K, J.A);
     J.perp.copy(_perp);
-    const fd = R.sk.feet[i].dir, fh = Math.hypot(fd.x, fd.z);
-    R.feet[i].A.copy(J.A); R.feet[i].dir.set(Math.sin(FOOT_YAW[i]) * fh, fd.y, Math.cos(FOOT_YAW[i]) * fh);
+    const fd = R.sk.feet[i].dir, fh = Math.hypot(fd.x, fd.z), yaw = FOOT_YAW[i] + (i === 1 && rearPunch ? .5 * ep : 0) + (i === 0 && leadHook ? -.45 * ep : 0);
+    R.feet[i].A.copy(J.A); R.feet[i].dir.set(Math.sin(yaw) * fh, fd.y - .45 * heel, Math.cos(yaw) * fh).normalize();
   }
   // trunks secondary motion: the hem lags behind the hips' travel and twist, then springs back
   {
@@ -1843,7 +2084,7 @@ const game = {
       result: G.result ? { type: G.result.type, kind: G.result.kind, winner: G.result.winner ? `${G.result.winner.cfg.first} ${G.result.winner.cfg.last}` : null, playerWon: G.result.winner === P1, round: G.result.round, clock: G.result.clock, totals: G.result.totals } : null,
       glLost: !!G.glLost, autoPaused: G.autoPaused, editor: !!G.editor, leTick: LE_LOG.length + ':' + (LE_LOG[LE_LOG.length - 1]?.t || ''),
       toast: G.toast && now - G.toast.at < 6000 ? G.toast.text : null,
-      opts: { difficulty: G.difficulty, rounds: G.rounds, quality: G.quality, cam: G.cam },
+      opts: { difficulty: G.difficulty, rounds: G.rounds, quality: G.quality, cam: G.cam, builds: [P1.cfg.bodyType, P2.cfg.bodyType] },
       tape: [FIGHTERS.vance, FIGHTERS.volkov],
     };
   },
@@ -1859,6 +2100,11 @@ const game = {
   nextRound() { if (G.mode === 'break') resumeFromBreak(); },
   menu() { G.autoPaused = false; G.mode = 'menu'; G.result = null; G.kd = null; G.cine = null; G.slow = 0; resetFighter(P1, 0, -1.0, true); resetFighter(P2, 0, 1.0, true); },
   togglePause() { if (G.mode === 'fight') G.mode = 'paused'; else if (G.mode === 'paused') { G.mode = 'fight'; G.autoPaused = false; keys.clear(); document.activeElement?.blur?.(); canvas.focus({ preventScroll: true }); } },
+  setBuild(i, key) {
+    const f = [P1, P2][i]; if (!BODY_TYPES[key] || f.cfg.bodyType === key) return;
+    f.cfg.bodyType = key; delete f.cfg.build.muscle; delete f.cfg.build.weight; rebuildFighter(f);
+    safeStore.set('kl-builds', { [P1.cfg.id]: P1.cfg.bodyType, [P2.cfg.id]: P2.cfg.bodyType });
+  },
   setOpt(k, v) { G[k] = v; safeStore.set('kl-opts', { difficulty: G.difficulty, rounds: G.rounds, quality: G.quality, cam: G.cam }); if (k === 'quality') applyQuality(); },
   touchMove(x, y) { touch.side = x; touch.fwd = -y; },
   touchHold(k, v) { touch[k] = v; },
@@ -1888,8 +2134,10 @@ const LE_TABLES = {
       power: num((f) => f.cfg.power, (f, v) => (f.cfg.power = v), .3, 3), speed: num((f) => f.cfg.speed, (f, v) => (f.cfg.speed = v), .5, 1.6), chin: num((f) => f.cfg.chin, (f, v) => (f.cfg.chin = v), .3, 3),
       knockdowns: { get: (f) => f.kdTotal, ro: true },
       skincolor: { get: (f) => hex(f.rig.mats.skin.color), set: (f, v) => { f.rig.mats.skin.color.set(v); }, type: 'color' },
+      bodytype: { get: (f) => f.cfg.bodyType, set: (f, v) => { if (!BODY_TYPES[v]) return; f.cfg.bodyType = v; delete f.cfg.build.muscle; delete f.cfg.build.weight; queueRebuild(f); }, type: 'enum', options: Object.keys(BODY_TYPES) },
+      muscle: num((f) => buildOf(f.cfg).muscle, (f, v) => { f.cfg.build.muscle = v; queueRebuild(f); }, 0, 1), weight: num((f) => buildOf(f.cfg).weight, (f, v) => { f.cfg.build.weight = v; queueRebuild(f); }, 0, 1),
     },
-    saved: ['power', 'speed', 'chin', 'skincolor'],
+    saved: ['power', 'speed', 'chin', 'skincolor', 'bodytype', 'muscle', 'weight'], note: 'body type, muscle and weight rebuild the fighter (about a second)',
   },
   look: {
     records: () => [G], label: () => 'Skin and sweat',
@@ -2069,6 +2317,9 @@ function Menu({ s }) {
     <div className="row" style=${{ gap: '16px' }}>
       <div className="opt" style=${{ flex: 1, minWidth: '140px' }}><label id="o-rounds">Rounds</label><${Seg} id="o-rounds" value=${s.opts.rounds} options=${[[3, '3'], [5, '5'], [8, '8']]} onPick=${(v) => game.setOpt('rounds', v)}/></div>
       <div className="opt" style=${{ flex: 1, minWidth: '160px' }}><label id="o-cam">Camera</label><${Seg} id="o-cam" value=${s.opts.cam} options=${[['broadcast', 'Behind'], ['side', 'TV side']]} onPick=${(v) => game.setOpt('cam', v)}/></div>
+    </div>
+    <div className="row" style=${{ gap: '16px' }}>
+      ${[0, 1].map((i) => html`<div className="opt" key=${i} style=${{ flex: 1, minWidth: '220px' }}><label id=${'o-build' + i}>${s.tape[i].last} build</label><${Seg} id=${'o-build' + i} value=${s.opts.builds[i]} options=${Object.entries(BODY_TYPES).map(([k, v]) => [k, v.label])} onPick=${(v) => game.setBuild(i, v)}/></div>`)}
     </div>
     <div className="opt"><label id="o-gfx">Graphics</label><${Seg} id="o-gfx" value=${s.opts.quality} options=${Object.entries(QUALITY).map(([k, v]) => [k, v.label])} onPick=${(v) => game.setOpt('quality', v)}/></div>
     <div><button className="btn" id="start" onClick=${() => game.start()}>Touch gloves</button></div>
