@@ -1379,33 +1379,37 @@ const queueRebuild = (f) => { clearTimeout(f._rb); f._rb = setTimeout(() => rebu
 /* =========================================================================
    punches + fighter state
    ========================================================================= */
+// timing in seconds at speed 1: w wind-up, s strike (impact at w + s), r recovery. Fast in, slower back out.
 const BASE_PUNCH = {
-  jab:    { hand: 1,  kind: 'straight', dur: .3,  hitP: .42, dmg: 4,    stam: 2.5, reach: 1.06, twist: -.2,  power: false, label: 'Jab' },
-  cross:  { hand: -1, kind: 'straight', dur: .42, hitP: .46, dmg: 8.5,  stam: 5.5, reach: 1.06, twist: .9,   power: true,  label: 'Cross' },
-  lhook:  { hand: 1,  kind: 'hook',     dur: .46, hitP: .5,  dmg: 10.5, stam: 7,   reach: .94,  twist: -.8,  power: true,  label: 'Lead hook' },
-  rhook:  { hand: -1, kind: 'hook',     dur: .52, hitP: .52, dmg: 12,   stam: 8,   reach: .94,  twist: 1.0,  power: true,  label: 'Rear hook' },
-  lupper: { hand: 1,  kind: 'upper',    dur: .5,  hitP: .5,  dmg: 11,   stam: 7.5, reach: .88,  twist: -.45, power: true,  label: 'Lead uppercut' },
-  rupper: { hand: -1, kind: 'upper',    dur: .56, hitP: .52, dmg: 13.5, stam: 9,   reach: .88,  twist: .65,  power: true,  label: 'Rear uppercut' },
+  jab:    { hand: 1,  kind: 'straight', w: .02, s: .06, r: .17, dmg: 4,    stam: 2.5, reach: 1.06, twist: -.2,  power: false, label: 'Jab' },
+  cross:  { hand: -1, kind: 'straight', w: .05, s: .08, r: .24, dmg: 8.5,  stam: 5.5, reach: 1.06, twist: .9,   power: true,  label: 'Cross' },
+  lhook:  { hand: 1,  kind: 'hook',     w: .06, s: .09, r: .26, dmg: 10.5, stam: 7,   reach: .94,  twist: -.8,  power: true,  label: 'Lead hook' },
+  rhook:  { hand: -1, kind: 'hook',     w: .07, s: .1,  r: .28, dmg: 12,   stam: 8,   reach: .94,  twist: 1.0,  power: true,  label: 'Rear hook' },
+  lupper: { hand: 1,  kind: 'upper',    w: .07, s: .09, r: .27, dmg: 11,   stam: 7.5, reach: .88,  twist: -.45, power: true,  label: 'Lead uppercut' },
+  rupper: { hand: -1, kind: 'upper',    w: .08, s: .1,  r: .3,  dmg: 13.5, stam: 9,   reach: .88,  twist: .65,  power: true,  label: 'Rear uppercut' },
 };
+const PUNCH_HOLD = .035, BUFFER_WINDOW = .15;
 const PUNCH = {};
 for (const [k, b] of Object.entries(BASE_PUNCH)) {
   PUNCH[k] = { ...b, key: k, body: false };
   PUNCH[k + '_b'] = { ...b, key: k + '_b', body: true, dmg: b.dmg * .85, reach: b.reach - .03, stam: b.stam * .9 };
 }
-function extCurve(p, h) {
-  const c = h * .4;
-  if (p < c) return -.14 * Math.sin(p / c * Math.PI / 2);
-  if (p < h) return -.14 + 1.14 * easeOut((p - c) / (h - c));
-  if (p < h + .1) return 1;
-  return 1 - ease(clamp((p - h - .1) / (1 - h - .1), 0, 1));
+// arm extension over a punch: load from wherever the hand was, accelerate into a slight over-extension at impact
+// (the snap), hold for a beat, then a slower eased return. Sampling ahead in time gives the hips and shoulders their lead.
+function punchCurve(a, t) {
+  if (t < a.w) return a.e0 + (-.12 - a.e0) * Math.sin(t / a.w * Math.PI / 2);
+  if (t < a.hit) return -.12 + 1.18 * Math.pow((t - a.w) / a.s, 1.7);
+  if (t < a.hit + PUNCH_HOLD) return 1.06 - .06 * (t - a.hit) / PUNCH_HOLD;
+  const x = clamp((t - a.hit - PUNCH_HOLD) / a.r, 0, 1); return 1 - x * x * (3 - 2 * x);
 }
+const canCancel = (a) => a.done && a.t >= a.hit + PUNCH_HOLD;
 const blankStats = () => ({ thrown: 0, landed: 0, pThrown: 0, pLanded: 0, dmg: 0, kd: 0 });
 
 function newFighter(cfg, isPlayer) {
   return {
     cfg, isPlayer, rig: makeRig(cfg), feetW: [0, 1].map(() => ({ p: V(), from: V(), to: V(), t: 1, dur: .2, init: false })), pos: V(), vel: V(), yaw: 0, input: { fwd: 0, side: 0 },
     head: 100, body: 100, headMax: 100, bodyMax: 100, stamina: 100, staminaMax: 100,
-    action: null, queue: [], blocking: false, blockLow: false, slip: 0, slipDir: 0, counterWin: 0, stun: 0, wobble: 0, invuln: false,
+    action: null, queue: [], buffer: null, hands: [{ e: 0, kind: 'straight', body: false }, { e: 0, kind: 'straight', body: false }], blocking: false, blockLow: false, slip: 0, slipDir: 0, counterWin: 0, stun: 0, wobble: 0, invuln: false,
     rec: { p: 0, y: 0, r: 0, vp: 0, vy: 0, vr: 0 }, react: { x: { p: 0, y: 0, z: 0, d: 0, g: 0, b: 0 }, v: { p: 0, y: 0, z: 0, d: 0, g: 0, b: 0 } }, fall: 0, down: false, rising: false, kdRound: 0, kdTotal: 0, victory: 0,
     stats: blankStats(), roundStart: blankStats(), phase: Math.random() * 6, ps: { crouch: .03, twist: -.32, htwist: -.32, lean: .2, side: 0, shift: 0 },
     ai: { t: .5, pref: 1.0, strafe: 0, strafeT: 0, blockT: 0, reacted: null, reactAt: null, counterNext: false },
@@ -1413,7 +1417,7 @@ function newFighter(cfg, isPlayer) {
   };
 }
 function resetFighter(f, x, z, full) {
-  f.pos.set(x, 0, z); f.vel.set(0, 0, 0); for (const k in f.react.x) f.react.x[k] = f.react.v[k] = 0; f.action = null; f.queue.length = 0; f.blocking = false; f.slip = 0; f.stun = 0; f.down = false; f.rising = false; f.fall = 0; f.victory = 0; f.autoTarget = null; f.counterWin = 0;
+  f.pos.set(x, 0, z); f.vel.set(0, 0, 0); for (const k in f.react.x) f.react.x[k] = f.react.v[k] = 0; f.action = null; f.queue.length = 0; f.buffer = null; f.blocking = false; f.slip = 0; f.stun = 0; f.down = false; f.rising = false; f.fall = 0; f.victory = 0; f.autoTarget = null; f.counterWin = 0;
   if (full) { f.head = f.body = f.headMax = f.bodyMax = f.stamina = f.staminaMax = 100; f.kdRound = f.kdTotal = 0; f.wobble = 0; f.stats = blankStats(); f.roundStart = blankStats(); }
 }
 
@@ -1469,9 +1473,9 @@ const sfx = {
    game state
    ========================================================================= */
 const DIFF = {
-  amateur:  { label: 'Amateur',  block: .18, slip: .05, aggr: .42, react: .34, combo: .3, dealt: .7,  taken: 1.25 },
-  pro:      { label: 'Pro',      block: .34, slip: .1,  aggr: .62, react: .24, combo: .5, dealt: 1,   taken: 1.05 },
-  champion: { label: 'Champion', block: .5,  slip: .17, aggr: .82, react: .16, combo: .7, dealt: 1.2, taken: .95 },
+  amateur:  { label: 'Amateur',  block: .18, slip: .05, aggr: .42, react: .25, combo: .3, dealt: .7,  taken: 1.25 },
+  pro:      { label: 'Pro',      block: .34, slip: .1,  aggr: .62, react: .17, combo: .5, dealt: 1,   taken: 1.05 },
+  champion: { label: 'Champion', block: .5,  slip: .17, aggr: .82, react: .12, combo: .7, dealt: 1.2, taken: .95 },
 };
 const COMBOS = [['jab'], ['jab', 'jab'], ['jab', 'cross'], ['jab', 'jab', 'cross'], ['jab', 'cross', 'lhook'], ['cross', 'lhook', 'cross'], ['lhook_b', 'lhook'], ['jab', 'rupper'], ['lupper', 'cross'], ['jab', 'cross_b', 'lhook'], ['jab_b', 'cross'], ['rhook'], ['lhook', 'rhook']];
 const saved = safeStore.get('kl-opts', {});
@@ -1497,13 +1501,16 @@ function msg(text, kind = 'big') { G.msgs.push({ id: ++G.msgId, text, kind, at: 
 const dist = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z);
 const other = (f) => (f === P1 ? P2 : P1);
 
+// player and AI entry point: starts now, or is buffered (BUFFER_WINDOW) and fires at the next cancel window
 function startPunch(f, type) {
   if (f.down || f.rising || f.autoTarget || G.mode === 'over') return false;
-  if (f.action) { if (f.queue.length < 1) f.queue.push(type); return false; }
-  if (f.stun > .15) return false;
-  const P = PUNCH[type];
-  const slow = 1 + (1 - f.stamina / 100) * .4;
-  f.action = { type, t: 0, dur: P.dur * slow / f.cfg.speed, hitP: P.hitP, done: false };
+  if (f.action || f.stun > .15) { f.buffer = { kind: 'punch', type, at: G.time }; return false; }
+  return beginPunch(f, type);
+}
+function beginPunch(f, type) {
+  const P = PUNCH[type], sp = f.cfg.speed, tired = 1 + (1 - f.stamina / 100) * .3; // tiredness only slows the recovery
+  const w = P.w / sp, st = P.s / sp, r = P.r * tired / sp;
+  f.action = { type, t: 0, w, s: st, r, hit: w + st, dur: w + st + PUNCH_HOLD + r, done: false, e0: f.hands[P.hand > 0 ? 0 : 1].e };
   f.stamina = Math.max(0, f.stamina - P.stam);
   f.blocking = false;
   f.stats.thrown++; if (P.power) f.stats.pThrown++;
@@ -1511,6 +1518,20 @@ function startPunch(f, type) {
   sfx.whoosh(P.power ? 1 : .6);
   return true;
 }
+// what's waiting: a buffered input (player) or the rest of a combo (AI); returns true if it started something
+function takeBuffered(f) {
+  const b = f.buffer;
+  if (b) {
+    f.buffer = null;
+    if (G.time - b.at <= BUFFER_WINDOW && f.stun <= .15) {
+      if (b.kind === 'punch') { f.action = null; return beginPunch(f, b.type); }
+      if (b.kind === 'slip') { f.action = null; return doSlip(f, b.dir); }
+    }
+  }
+  if (f.queue.length && f.stun <= .15) { f.action = null; return beginPunch(f, f.queue.shift()); }
+  return false;
+}
+function doSlip(f, dir) { if (f.slip > 0 || f.stamina < 3) return false; f.slip = .38; f.slipDir = dir; f.stamina -= 2.5; return true; }
 
 // reaction springs: stiffness and damping ratio per channel. p chest pitch (+ folds forward), y chest yaw, z hips back (m),
 // d knee dip (m), g guard drop (0..1), b guard pushed back into the face by a block (m)
@@ -1563,7 +1584,7 @@ function resolveHit(att, def, a) {
   def.vel.addScaledVector(_d, .55 + .5 * kr);
   // hit-stop: both fighters freeze for a few frames on a clean hit, longer for power shots and counters
   G.hitStop = Math.max(G.hitStop || 0, (2 + (P.power ? 1 : 0) + (isCounter || kr > 1.6 ? 2 : 0)) / 60);
-  if (dmg > 5) { def.action = null; def.queue.length = 0; }
+  if (dmg > 5) { def.action = null; def.queue.length = 0; def.buffer = null; }
   if (dmg > 7 || (isCounter && dmg > 5)) def.stun = Math.max(def.stun, .45 + k * .35);
   // effects
   spray.burst(toHead ? def.headWorld : def.chestWorld, _d, Math.round(10 + k * 26), .6 + k * .5);
@@ -1584,7 +1605,7 @@ function resolveHit(att, def, a) {
 }
 
 function knockdown(def, att, P) {
-  def.down = true; def.fall = 0; def.action = null; def.queue.length = 0; def.blocking = false; def.head = 0;
+  def.down = true; def.fall = 0; def.action = null; def.queue.length = 0; def.buffer = null; def.blocking = false; def.head = 0;
   def.kdRound++; def.kdTotal++; att.stats.kd++;
   att.action = null; att.queue.length = 0;
   const aiRiseChance = clamp(1.08 - def.kdTotal * .26 - (1 - def.headMax / 100) * .7, .04, .95);
@@ -1649,7 +1670,11 @@ function playerPunch(base) {
   const body = keys.has('ShiftLeft') || keys.has('ShiftRight') || touch.body || pad.body;
   startPunch(P1, base + (body ? '_b' : ''));
 }
-function playerSlip(dir) { if (G.mode !== 'fight' || P1.action || P1.down || P1.slip > 0 || P1.stamina < 3) return; P1.slip = .38; P1.slipDir = dir; P1.stamina -= 2.5; }
+function playerSlip(dir) {
+  if (G.mode !== 'fight' || P1.down) return;
+  if (P1.action && !canCancel(P1.action)) { P1.buffer = { kind: 'slip', dir, at: G.time }; return; }
+  if (doSlip(P1, dir)) P1.action = null;
+}
 addEventListener('keydown', (e) => {
   if (e.target.closest && e.target.closest('input,textarea,select')) { if (e.code === 'F1') { e.preventDefault(); G.editor = false; } return; }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -1719,7 +1744,9 @@ function playerInput() {
   if (gp) { fwd += gp.fwd; side += gp.side; }
   P1.input.fwd = clamp(fwd, -1, 1); P1.input.side = clamp(side, -1, 1);
   const block = keys.has('Space') || keys.has('KeyL') || touch.block || (gp && gp.block);
-  P1.blocking = !!block && !P1.action && !P1.down;
+  // holding block cancels a punch's recovery
+  P1.blocking = !!block && (!P1.action || canCancel(P1.action)) && !P1.down;
+  if (P1.blocking && P1.action) { P1.action = null; P1.buffer = null; }
   P1.blockLow = keys.has('ShiftLeft') || keys.has('ShiftRight') || touch.body || pad.body;
 }
 
@@ -1744,7 +1771,7 @@ function updateFighter(f, o, dt) {
     fwd = k * (tx * fx + tz * fz) / (tl || 1); side = k * (tx * -fz + tz * fx) / (tl || 1);
   }
   const m = Math.hypot(fwd, side); if (m > 1) { fwd /= m; side /= m; }
-  const spd = 1.6 * f.cfg.speed * (f.blocking ? .55 : 1) * (f.stun > 0 ? .45 : 1) * (f.action ? .4 : 1) * (.65 + .35 * f.stamina / 100) * (1 - f.wobble * .35);
+  const spd = 1.6 * f.cfg.speed * (f.blocking ? .55 : 1) * (f.stun > 0 ? .45 : 1) * (f.action ? .7 : 1) * (.65 + .35 * f.stamina / 100) * (1 - f.wobble * .35);
   const rx = -fz, rz = fx; // fighter's right
   f.vel.x = damp(f.vel.x, (fx * fwd + rx * side) * spd, 10, dt);
   f.vel.z = damp(f.vel.z, (fz * fwd + rz * side) * spd, 10, dt);
@@ -1753,9 +1780,11 @@ function updateFighter(f, o, dt) {
   // the action
   if (f.action) {
     const a = f.action; a.t += dt;
-    if (!a.done && a.t >= a.dur * a.hitP) { a.done = true; resolveHit(f, o, a); }
-    if (f.action === a && a.t >= a.dur) { f.action = null; if (f.queue.length) startPunch(f, f.queue.shift()); }
-  }
+    if (!a.done && a.t >= a.hit) { a.done = true; resolveHit(f, o, a); }
+    // cancel window: once the hold is over, whatever's buffered cuts the recovery short
+    if (f.action === a && canCancel(a) && (f.buffer || f.queue.length)) takeBuffered(f);
+    else if (f.action === a && a.t >= a.dur) { f.action = null; takeBuffered(f); }
+  } else if (f.buffer) takeBuffered(f);
   // recovery
   f.staminaMax = 100 - (100 - f.bodyMax) * .5;
   if (!f.action) f.stamina = Math.min(f.staminaMax, f.stamina + (f.blocking ? 5 : 9.5) * dt * (Math.hypot(f.vel.x, f.vel.z) > .6 ? .75 : 1));
@@ -1774,16 +1803,15 @@ function constrain() {
 const _lv = V(), _gq = V();
 function poseFighter(f, dt, time) {
   const R = f.rig, ps = f.ps, a = f.action, P = a ? PUNCH[a.type] : null, r = f.rec;
-  const e = a ? extCurve(a.t / a.dur, a.hitP) : 0, ep = Math.max(0, e);
+  const e = a ? punchCurve(a, a.t) : 0, ep = Math.max(0, e);
   const sp = Math.hypot(f.vel.x, f.vel.z);
   f.phase += dt * (5.5 + sp * 5);
   let crouch = .035 + (f.blocking ? .05 : 0) + f.wobble * .04;
   let twist = -.32, lean = .2 + (f.blocking ? .1 : 0) - f.victory * .25, side = 0, shift = 0;
   if (P) {
     if (P.body) { crouch += .13 * ep; lean += .12 * ep; }
-    if (P.kind === 'upper') crouch += .1 * Math.sin(clamp(a.t / (a.dur * a.hitP), 0, 1) * Math.PI) * (1 - ep * .6);
+    if (P.kind === 'upper') crouch += .1 * Math.sin(clamp(a.t / a.hit, 0, 1) * Math.PI) * (1 - ep * .6);
     if (P.kind === 'straight') lean += .1 * ep;
-    twist += P.twist * e * .85;
   }
   if (f.slip > 0) { const s = Math.sin(clamp(f.slip / .38, 0, 1) * Math.PI); side = -f.slipDir * .34 * s; shift = f.slipDir * .12 * s; crouch += .07 * s; }
   if (f.wobble > 0) { side += Math.sin(time * 2.3) * .12 * f.wobble; shift += Math.sin(time * 1.7) * .06 * f.wobble; }
@@ -1792,8 +1820,10 @@ function poseFighter(f, dt, time) {
   if (stunA > 0) { crouch += .03 * stunA + .025 * stunA * (.5 + .5 * Math.sin(time * 6.5 + f.phase)); side += Math.sin(time * 3.7) * .1 * stunA; }
   for (let i = 0; i < 2; i++) { const ft = f.feetW[i]; if (ft.t < 1) { const k = Math.sin(ft.t * Math.PI); shift -= (i === 0 ? 1 : -1) * .025 * k; crouch += .012 * k; } }
   ps.crouch = damp(ps.crouch, crouch, P ? 30 : 14, dt);
-  ps.htwist = damp(ps.htwist ?? twist, twist, P ? 70 : 10, dt); // hips turn first, the shoulders follow
-  ps.twist = damp(ps.twist, twist, P ? 34 : 9, dt);
+  // the body leads the arm: hips run 50 ms ahead on the punch curve, shoulders 25 ms, the fist on time
+  const twH = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .05) : 0), twC = twist + (P ? P.twist * .85 * punchCurve(a, a.t + .025) : 0);
+  ps.htwist = damp(ps.htwist ?? twH, twH, P ? 90 : 10, dt);
+  ps.twist = damp(ps.twist, twC, P ? 70 : 9, dt);
   ps.lean = damp(ps.lean, lean, P ? 30 : 12, dt);
   ps.side = damp(ps.side, side, 16, dt);
   ps.shift = damp(ps.shift, shift, 16, dt);
@@ -1835,13 +1865,16 @@ function poseFighter(f, dt, time) {
     }
     _b.applyMatrix4(R.chest.matrix);
     _hint.set(s * .45, -1, -.25);
-    if (P && P.hand === s && f.fall < .2) {
-      _c.copy(P.body ? f.aimBody : f.aimHead);
+    // each hand keeps its own extension, so a cancelled punch's arm finishes coming home while the other one fires
+    const H = f.hands[i], active = P && P.hand === s && f.fall < .2;
+    if (active) { H.e = e; H.kind = P.kind; H.body = P.body; } else H.e = damp(H.e, 0, 14, dt);
+    if ((active || Math.abs(H.e) > .004) && f.fall < .2) {
+      _c.copy(H.body ? f.aimBody : f.aimHead);
       _dir.subVectors(_c, J.S).normalize(); _c.addScaledVector(_dir, -.17);
-      const ec = clamp(e, -.2, 1), arc = Math.sin(clamp(e, 0, 1) * Math.PI);
+      const ec = clamp(H.e, -.2, 1.06), he = clamp(H.e, 0, 1), arc = Math.sin(he * Math.PI);
       _h.copy(_b).lerp(_c, ec);
-      if (P.kind === 'hook') { _h.x += s * .36 * arc; _h.z -= .1 * arc; _hint.set(s, .2 * ep, -.35); }
-      else if (P.kind === 'upper') { _h.y -= .3 * arc; _h.z -= .04 * arc; _hint.set(s * .3, -1, .1); }
+      if (H.kind === 'hook') { _h.x += s * .36 * arc; _h.z -= .1 * arc; _hint.set(s, .2 * he, -.35); }
+      else if (H.kind === 'upper') { _h.y -= .3 * arc; _h.z -= .04 * arc; _hint.set(s * .3, -1, .1); }
       else { _h.y += .03 * arc; _hint.set(s * .25, -1, -.15); }
     } else _h.copy(_b);
     ik(J.S, _h, R.sk.UA, R.sk.FA, _hint, J.E, J.W);
