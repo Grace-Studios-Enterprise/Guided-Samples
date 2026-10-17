@@ -41,6 +41,13 @@ An in-game overlay modelled on the community live editors for EA titles, editing
 - **Boots:** lofted from cross-sections measured off each fighter's foot and calf. The upper texture adds perforated vent panels, stitched panel seams, a toe cap and a heel counter. There's a laced tongue panel and a padded collar.
 - **Footwork:** feet stay planted on the canvas and step when the body drifts off them, and the weight shifts onto the planted foot. The rear heel lifts and pivots on rear-hand punches and the lead foot pivots on the lead hook. The hips turn before the shoulders.
 
+## Rig
+- **21 bones** skinned from MakeHuman's own weights: hips, abdomen, chest, neck, head; clavicles; upper arms, forearms, forearm twist bones and wrists; thighs, shins and feet.
+- **Spine:** the abdomen pivots at spine04 and the chest at spine02, sharing the bend equally. The total bend relative to the hips is clamped to 35° forward, 25° back, 40° twist and 30° to the side, and the neck has its own limits. Hit springs are also stopped short of those limits, so no counter can fold a fighter past them.
+- **Shoulders:** the clavicles raise the shoulders slightly in guard. On a punch the punching shoulder drives forward and rolls up toward the target (more on power punches) while the other draws back.
+- **Arms:** the elbow direction is smoothed and limited. Straights keep the elbow down and in, hooks bring it up to horizontal, and it never flares out or flips. Reach eases to a stop with an 8° bend left in the elbow. The fist turns over on the way in (palm down for straights and hooks, palm up for uppercuts); the twist bone takes half of that turn so the wrist doesn't candy-wrap. The gloves are attached to the wrist bones.
+- **Debug:** F2 (or `KL.showBones()`) draws the skeleton over both fighters.
+
 ## Motion capture
 - **Mixamo clips (main motion):** 28 Mixamo animations supplied by the project owner, baked by `tools/bake_mixamo.html` (run headless, it loads each FBX with three.js and samples the skeleton at 30 fps) and packed by `tools/pack_mixamo.py` into `assets/mocap_mixamo.js`. Each frame stores hips position and rotation, chest and head rotation, wrists and elbows relative to the shoulders, and ankles and toe directions, in the fighter's own frame and scaled to arm and leg length, so it retargets onto any body type.
   - Stance and footwork: Idle, plus step clips (Medium/Long Step Forward, Step Backward, Short/Long Left Side Step, Short Right Side Step) blended by the fighter's actual velocity, with playback speed matched to it.

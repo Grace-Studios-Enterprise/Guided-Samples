@@ -536,7 +536,11 @@ const CHEST_DY = .015;
 const FOOT = [V(.17, 0, .25), V(-.15, 0, -.25)]; // stance: lead foot forward, rear foot back (y comes from each skeleton)
 const FOOT_YAW = [-.12, -.65];
 const ONE = V(1, 1, 1), UPV = V(0, 1, 0);
-const BONES = ['hips', 'abdomen', 'chest', 'neck', 'head', 'uarmL', 'uarmR', 'farmL', 'farmR', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR'];
+const BONES = ['hips', 'abdomen', 'chest', 'neck', 'head', 'uarmL', 'uarmR', 'farmL', 'farmR', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR',
+  'clavL', 'clavR', 'twistL', 'twistR', 'wristL', 'wristR'];
+// joint limits: the spine as a whole (abdomen + chest relative to the hips), and the neck
+const DEG = Math.PI / 180, SPINE_LIM = { fwd: 35 * DEG, back: 25 * DEG, twist: 40 * DEG, side: 30 * DEG }, NECK_LIM = { fwd: 40 * DEG, back: 45 * DEG, twist: 70 * DEG, side: 35 * DEG };
+const ELBOW_MIN_BEND = 8 * DEG; // the elbow never locks fully straight
 
 // --- the body: MakeHuman base mesh (CC0), shaped per fighter, smoothed and skinned ------
 // assets/mhbody.js holds the coarse quad mesh, its UVs, MakeHuman's own skin weights folded
@@ -624,7 +628,8 @@ function blendBody(b) {
   const sx = X('SL')[0] > 0 ? 1 : -1, sz = X('TL')[2] > X('AL')[2] ? 1 : -1, y0 = X('sole')[1], s = 1.85 / (X('crown')[1] - y0);
   for (let i = 0; i < P.length; i += 3) { P[i] *= sx * s; P[i + 1] = (P[i + 1] - y0) * s; P[i + 2] *= sz * s; }
   const two = (n) => [X(n + 'L'), X(n + 'R')];
-  return { P, J: { S: two('S'), E: two('E'), W: two('W'), H: two('H'), K: two('K'), A: two('A'), T: two('T'), neck: X('neck'), head: X('head'), spine: X('spine') } };
+  return { P, J: { S: two('S'), E: two('E'), W: two('W'), H: two('H'), K: two('K'), A: two('A'), T: two('T'), neck: X('neck'), head: X('head'), spine: X('spine'),
+    sp4: X('sp4'), sp2: X('sp2'), CL: [X('CLL'), X('CLR')], X: [X('XL'), X('XR')] } };
 }
 const buildOf = (cfg) => ({ ...BODY_TYPES[cfg.bodyType] || BODY_TYPES.athletic, ...cfg.build });
 function mhBody(build) {
@@ -688,20 +693,23 @@ function subMesh(src, tris, vfn, { groupOf = null, nGroups = 1, extra = null } =
 // skeleton measured off the mesh: joints, limb lengths, bind matrices
 function makeSkel(J) {
   const v3 = (a) => V(a[0], a[1], a[2]);
-  const S = J.S.map(v3), E = J.E.map(v3), W = J.W.map(v3), H = J.H.map(v3), K = J.K.map(v3), A = J.A.map(v3), T = J.T.map(v3);
+  const S = J.S.map(v3), E = J.E.map(v3), W = J.W.map(v3), H = J.H.map(v3), K = J.K.map(v3), A = J.A.map(v3), TO = J.T.map(v3);
   const P = V(0, (H[0].y + H[1].y) / 2 + .06, (H[0].z + H[1].z) / 2), C = P.clone().add(V(0, CHEST_DY, 0));
   const head = v3(J.head[0] || J.head), neck = v3(J.neck[0] || J.neck);
   const sk = {
     P, C, SHO: S.map((s) => s.clone().sub(C)), HIP: H.map((h) => h.clone().sub(P)),
     UA: S[0].distanceTo(E[0]), FA: E[0].distanceTo(W[0]), TH: H[0].distanceTo(K[0]), SH: K[0].distanceTo(A[0]), ankleY: A[0].y,
     headPos: V(0, head.y - C.y, head.z - C.z), neckY: neck.y - C.y,
+    SP4: v3(J.sp4), SP2: v3(J.sp2), CJ: J.CL.map((c) => v3(c).sub(C)), TX: [0, 1].map((i) => clamp(v3(J.X[i]).distanceTo(E[i]) / E[i].distanceTo(W[i]), .2, .8)),
     arms: [0, 1].map((i) => ({ S: S[i], E: E[i], W: W[i], perp: V(0, 0, -1) })),
     legs: [0, 1].map((i) => ({ H: H[i], K: K[i], A: A[i], perp: V(0, 0, 1) })),
-    feet: [0, 1].map((i) => ({ A: A[i], dir: T[i].clone().sub(A[i]).normalize() })),
-    raw: { S, E, W, H, K, A, T, head, neck },
+    feet: [0, 1].map((i) => ({ A: A[i], dir: TO[i].clone().sub(A[i]).normalize() })),
+    raw: { S, E, W, H, K, A, T: TO, head, neck },
   };
   const out = BONES.map(() => new THREE.Matrix4());
-  boneLocals(out, new THREE.Matrix4().makeTranslation(P.x, P.y, P.z), new THREE.Matrix4().makeTranslation(C.x, C.y, C.z), new THREE.Matrix4().makeTranslation(0, sk.headPos.y, sk.headPos.z), sk.arms, sk.legs, sk.feet, sk.neckY);
+  const T = (v) => new THREE.Matrix4().makeTranslation(v.x, v.y, v.z);
+  boneLocals(out, { hipsM: T(P), abdM: T(sk.SP4), chestM: T(C), headRel: new THREE.Matrix4().makeTranslation(0, sk.headPos.y, sk.headPos.z), neckY: sk.neckY,
+    arms: sk.arms, legs: sk.legs, feet: sk.feet, clavM: sk.CJ.map((c) => T(c.clone().add(C))), roll: [0, 0], tx: sk.TX });
   sk.bindInv = out.map((m) => m.clone().invert());
   return sk;
 }
@@ -993,6 +1001,7 @@ function mxPose(f, dt, legW) {
     mxSample(c, t, m.s); mxBlend(m.cur, m.cur, m.s, m.kd);
   } else { m.kd = Math.max(0, m.kd - dt / .25); m.kdT = 0; }
   // taunts and the pre-fight prayer: full-body clips played once
+  if (m.tauntOut) { const T = m.tauntOut; T.w -= dt / .2; if (T.w <= 0) m.tauntOut = null; else { mxSample(MXCLIP[T.name], T.ct, m.s); mxBlend(m.cur, m.cur, m.s, T.w * T.w * (3 - 2 * T.w)); } }
   if (m.taunt) { const T = m.taunt, c = MXCLIP[T.name]; T.t += dt; const w = clamp(T.t / .2, 0, 1) * clamp((c.dur - T.t) / .3, 0, 1); mxSample(c, T.start + T.t, m.s); mxBlend(m.cur, m.cur, m.s, w); if (T.t >= c.dur - T.start) m.taunt = null; }
   return m;
 }
@@ -1156,20 +1165,25 @@ function limbMatrix(out, A, B, zRef) {
   if (_bx.lengthSq() < 1e-8) _bx.set(1, 0, 0); _bx.normalize(); _bz.crossVectors(_bx, _by);
   out.makeBasis(_bx, _by, _bz); out.setPosition(A); return out;
 }
-function boneLocals(out, hipsM, chestM, headRel, arms, legs, feet, neckY) {
-  out[0].copy(hipsM); out[2].copy(chestM);
-  out[4].multiplyMatrices(chestM, headRel);
-  hipsM.decompose(_bp, _bq1, _bs); chestM.decompose(_bp, _bq2, _bs);
-  out[1].compose(_bp, _bq3.copy(_bq1).slerp(_bq2, .5), ONE);
-  out[4].decompose(_bs, _bq1, _bs);
-  _bp.set(0, neckY, 0).applyMatrix4(chestM);
+// bone matrices (body space) from the posed joints. Z: hipsM, abdM, chestM, headRel (in chest), neckY, arms, legs, feet,
+// clavM (clavicle matrices), roll (wrist roll per hand; the twist bone takes half of it), tx (twist joint along the forearm)
+const _bt = new THREE.Matrix4(), _br = new THREE.Matrix4();
+function boneLocals(out, Z) {
+  out[0].copy(Z.hipsM); out[1].copy(Z.abdM); out[2].copy(Z.chestM);
+  out[4].multiplyMatrices(Z.chestM, Z.headRel);
+  Z.chestM.decompose(_bp, _bq2, _bs); out[4].decompose(_bs, _bq1, _bs);
+  _bp.set(0, Z.neckY, 0).applyMatrix4(Z.chestM);
   out[3].compose(_bp, _bq3.copy(_bq2).slerp(_bq1, .5), ONE);
   for (let i = 0; i < 2; i++) {
-    const a = arms[i]; _bzr.copy(a.perp).negate();
+    const a = Z.arms[i]; _bzr.copy(a.perp).negate();
+    out[15 + i].copy(Z.clavM[i]);
     limbMatrix(out[5 + i], a.S, a.E, _bzr); limbMatrix(out[7 + i], a.E, a.W, _bzr);
-    const l = legs[i];
+    // forearm twist and wrist: the same frame rolled about the forearm, half way at the twist joint, fully at the wrist
+    out[17 + i].multiplyMatrices(out[7 + i], _br.makeRotationY(Z.roll[i] * .5)).setPosition(_bp.lerpVectors(a.E, a.W, Z.tx[i]));
+    out[19 + i].multiplyMatrices(out[7 + i], _br.makeRotationY(Z.roll[i])).setPosition(a.W);
+    const l = Z.legs[i];
     limbMatrix(out[9 + i], l.H, l.K, l.perp); limbMatrix(out[11 + i], l.K, l.A, l.perp);
-    limbMatrix(out[13 + i], feet[i].A, _bf.copy(feet[i].A).add(feet[i].dir), UPV);
+    limbMatrix(out[13 + i], Z.feet[i].A, _bf.copy(Z.feet[i].A).add(Z.feet[i].dir), UPV);
   }
 }
 const _bf = V();
@@ -1451,6 +1465,8 @@ function makeRig(cfg) {
   const gloves = [0, 1].map((i) => { const g = new THREE.Group(); body.add(g); mk(GLOVE_GEOS[i].geo, gloveMat(GLOVE_GEOS[i]), g); return g; });
   return { root, body, chest, head, hips, mesh, meshes, bones, boneLocal, gloves, sk, skull: headMark, chestMark, mats: { skin, face }, baseFace, u: { body: bodyU, head: headU },
     sway: swayU, swayVel: V(), lastTwist: 0,
+    abdQ: new THREE.Quaternion(), abdP: V(), abdM: new THREE.Matrix4(), chestJ: V(), clavS: [{}, {}], clavQ: [new THREE.Quaternion(), new THREE.Quaternion()],
+    clavM: [new THREE.Matrix4(), new THREE.Matrix4()], hintS: [V(), V()], rollS: [{}, {}], roll: [0, 0],
     arms: [{ S: V(), E: V(), W: V(), perp: V() }, { S: V(), E: V(), W: V(), perp: V() }], legs: [{ H: V(), K: V(), A: V(), perp: V() }, { H: V(), K: V(), A: V(), perp: V() }],
     feet: [{ A: V(), dir: V() }, { A: V(), dir: V() }], headRel: new THREE.Matrix4() };
 }
@@ -1905,9 +1921,10 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyQ') playerSlip(1);
   else if (e.code === 'KeyE') playerSlip(-1);
   else if (e.code === 'KeyC') game.setOpt('cam', G.cam === 'broadcast' ? 'side' : 'broadcast');
+  else if (e.code === 'F2') { e.preventDefault(); setShowBones(!G.showBones); }
   else if (e.code === 'KeyP' || e.code === 'Escape') game.togglePause();
   else if (e.code === 'F1' || e.code === 'Backquote') { e.preventDefault(); G.editor = !G.editor; }
-  else if (e.code === 'Enter') { if (G.mode === 'intro') G.introT = 99; else if (G.mode === 'break' && G.breakT > 1.5) G.breakT = 99; }
+  else if (e.code === 'Enter') { if (G.mode === 'intro') { G.introT = 99; skipRingWalk(); } else if (G.mode === 'break' && G.breakT > 1.5) G.breakT = 99; }
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 // losing keyboard focus (clicking the chat box, switching apps) pauses instead of leaving you punching air
@@ -1971,6 +1988,38 @@ function playerInput() {
 }
 
 /* --------------------------------------------------------------------------- simulation */
+// debug skeleton (F2 or KL.showBones()): joints and bones drawn over the fighters, on top of everything
+let BONE_VIS = null;
+const _dp = V();
+function drawBones(f) {
+  if (!BONE_VIS) {
+    const g = new THREE.BufferGeometry(), n = 64; g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3 * 2 * 2), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3 * 2 * 2), 3));
+    const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
+    const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+    const pts = new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xffff40, size: 6, sizeAttenuation: false, depthTest: false, transparent: true }));
+    lines.renderOrder = pts.renderOrder = 999; lines.frustumCulled = pts.frustumCulled = false; scene.add(lines, pts); BONE_VIS = { lines, pts, used: { line: 0, pt: 0 } };
+  }
+  const R = f.rig, B = BONE_VIS, LP = B.lines.geometry.attributes.position, LC = B.lines.geometry.attributes.color, PP = B.pts.geometry.attributes.position, base = f === P1 ? 0 : 32;
+  const W = (v) => R.body.localToWorld(_dp.copy(v));
+  const J = {}, put = (k, v) => (J[k] = W(v).clone());
+  put('hips', R.hips.position); put('abd', R.abdP); put('chest', R.chestJ); put('neck', _tmp.set(0, R.sk.neckY, 0).applyMatrix4(R.chest.matrix)); put('head', _tmp.set(0, R.sk.headPos.y + .12, R.sk.headPos.z).applyMatrix4(R.chest.matrix));
+  for (let i = 0; i < 2; i++) {
+    const a = R.arms[i], l = R.legs[i], ft = R.feet[i];
+    put('cl' + i, _tmp.copy(R.sk.CJ[i]).applyMatrix4(R.chest.matrix)); put('s' + i, a.S); put('e' + i, a.E); put('x' + i, _tmp.lerpVectors(a.E, a.W, R.sk.TX[i])); put('w' + i, a.W);
+    put('k' + i, _tmp.set(0, .17, 0).applyMatrix4(R.boneLocal[19 + i])); put('h' + i, l.H); put('n' + i, l.K); put('a' + i, l.A); put('t' + i, _tmp.copy(ft.A).addScaledVector(ft.dir, .14));
+  }
+  const segs = [['hips', 'abd', 0], ['abd', 'chest', 0], ['chest', 'neck', 0], ['neck', 'head', 0]];
+  for (let i = 0; i < 2; i++) segs.push(['chest', 'cl' + i, 1 + i], ['cl' + i, 's' + i, 1 + i], ['s' + i, 'e' + i, 1 + i], ['e' + i, 'x' + i, 1 + i], ['x' + i, 'w' + i, 1 + i], ['w' + i, 'k' + i, 1 + i],
+    ['hips', 'h' + i, 1 + i], ['h' + i, 'n' + i, 1 + i], ['n' + i, 'a' + i, 1 + i], ['a' + i, 't' + i, 1 + i]);
+  const cols = [[1, 1, 1], [.2, .9, 1], [1, .55, .15]];
+  segs.forEach(([a, b, c], k) => { const o = (base + k) * 2; LP.setXYZ(o, J[a].x, J[a].y, J[a].z); LP.setXYZ(o + 1, J[b].x, J[b].y, J[b].z); LC.setXYZ(o, ...cols[c]); LC.setXYZ(o + 1, ...cols[c]); });
+  Object.values(J).forEach((v, k) => PP.setXYZ(base + k, v.x, v.y, v.z));
+  B.used.line = Math.max(B.used.line, (base + segs.length) * 2); B.used.pt = Math.max(B.used.pt, base + Object.keys(J).length);
+  B.lines.geometry.setDrawRange(0, B.used.line); B.pts.geometry.setDrawRange(0, B.used.pt);
+  LP.needsUpdate = LC.needsUpdate = PP.needsUpdate = true; B.lines.visible = B.pts.visible = true;
+}
+function setShowBones(on) { G.showBones = !!on; if (BONE_VIS && !on) BONE_VIS.lines.visible = BONE_VIS.pts.visible = false; return G.showBones; }
+function lim2(o, v, k, lo, hi) { if (o[k] < lo) { o[k] = lo; if (v[k] < 0) v[k] = 0; } else if (o[k] > hi) { o[k] = hi; if (v[k] > 0) v[k] = 0; } }
 function updateFighter(f, o, dt) {
   // spring for hit reactions
   const r = f.rec;
@@ -1978,7 +2027,11 @@ function updateFighter(f, o, dt) {
   // whole-body reaction: underdamped so the body rocks, overshoots a little and settles; a stunned fighter recovers slower
   { const X = f.react.x, Vv = f.react.v, soft = f.stun > 0 || f.wobble > .3 ? .5 : 1;
     for (const k in X) { const K = REACT_K[k] * soft; Vv[k] += (-K * X[k] - 2 * REACT_Z[k] * Math.sqrt(K) * Vv[k]) * dt; X[k] += Vv[k] * dt; }
-    X.g = Math.max(-.1, X.g); }
+    X.g = Math.max(-.1, X.g);
+    // the springs can't carry the body past the spine's range, however hard the counter (a stop, not a bounce)
+    const lim = (o, v, k, lo, hi) => { if (o[k] < lo) { o[k] = lo; if (v[k] < 0) v[k] = 0; } else if (o[k] > hi) { o[k] = hi; if (v[k] > 0) v[k] = 0; } };
+    lim(X, Vv, 'p', -SPINE_LIM.back * .7, SPINE_LIM.fwd * .7); lim(X, Vv, 'y', -SPINE_LIM.twist * .7, SPINE_LIM.twist * .7); lim(X, Vv, 'd', -.08, .12); lim(X, Vv, 'z', -.15, .05); }
+  { const rv = { p: r.vp, y: r.vy, r: r.vr }; lim2(r, rv, 'p', -NECK_LIM.back, NECK_LIM.fwd); lim2(r, rv, 'y', -NECK_LIM.twist * .8, NECK_LIM.twist * .8); lim2(r, rv, 'r', -NECK_LIM.side, NECK_LIM.side); r.vp = rv.p; r.vy = rv.y; r.vr = rv.r; }
   if (f.down) { f.fall = Math.min(1, f.fall + dt * 1.5); f.vel.multiplyScalar(Math.exp(-6 * dt)); f.pos.addScaledVector(f.vel, dt); return; }
   if (f.rising) { f.fall -= dt * .9; if (f.fall <= 0) { f.fall = 0; f.rising = false; } return; }
   f.slip = Math.max(0, f.slip - dt); f.counterWin = Math.max(0, f.counterWin - dt); f.stun = Math.max(0, f.stun - dt); f.wobble = Math.max(0, f.wobble - dt * .12);
@@ -2027,6 +2080,41 @@ function constrain() {
 
 /* --------------------------------------------------------------------------- posing */
 const _lv = V(), _gq = V(), _mq = new THREE.Quaternion(), _me = new THREE.Euler();
+// spine chain: the chest's rotation relative to the hips is clamped to the spine's range, then shared between the abdomen
+// (pivoting at spine04) and the chest (pivoting at spine02), so the torso bends along the back instead of at the pelvis
+const _sq = new THREE.Quaternion(), _sr = new THREE.Quaternion(), _se = new THREE.Euler(0, 0, 0, 'YXZ'), _sv = V(), _sm = new THREE.Matrix4();
+function clampRot(q, L) { _se.setFromQuaternion(q, 'YXZ'); _se.x = clamp(_se.x, -L.back, L.fwd); _se.y = clamp(_se.y, -L.twist, L.twist); _se.z = clamp(_se.z, -L.side, L.side); return q.setFromEuler(_se); }
+function spineChain(R) {
+  const sk = R.sk;
+  _sr.copy(R.hips.quaternion).invert().multiply(R.chest.quaternion); clampRot(_sr, SPINE_LIM);
+  R.chest.quaternion.copy(R.hips.quaternion).multiply(_sr);
+  R.abdQ.copy(R.hips.quaternion).multiply(_sq.identity().slerp(_sr, .5));
+  R.abdP.copy(sk.SP4).sub(sk.P).applyQuaternion(R.hips.quaternion).add(R.hips.position);
+  R.chestJ.copy(sk.SP2).sub(sk.SP4).applyQuaternion(R.abdQ).add(R.abdP);
+  R.chest.position.copy(sk.C).sub(sk.SP2).applyQuaternion(R.chest.quaternion).add(R.chestJ);
+  clampRot(R.head.quaternion, NECK_LIM);
+}
+// arm IK target with a soft limit: the hand eases to a stop just short of full reach, so the elbow keeps a small bend
+const _srd = V();
+function softReach(S, T, a, b, out) {
+  const d = _srd.subVectors(T, S), L = d.length() || 1e-6, mx = Math.sqrt(a * a + b * b + 2 * a * b * Math.cos(ELBOW_MIN_BEND)), soft = .04, k = mx - soft;
+  const Ls = L > k ? k + soft * (1 - Math.exp(-(L - k) / soft)) : L;
+  return out.copy(S).addScaledVector(d.divideScalar(L), Ls);
+}
+// elbow direction: smoothed (no snapping between guard and punch), kept below the arm and not flared out, except that a
+// hook may bring it up to horizontal
+function elbowHint(R, i, s, raw, hookAmt, dt) {
+  raw.normalize();
+  const ymax = -.3 + .32 * hookAmt, xmax = .45 + .55 * hookAmt;
+  if (raw.y > ymax) raw.y = ymax; if (s * raw.x > xmax) raw.x = s * xmax; if (s * raw.x < -.35) raw.x = -s * .35;
+  const h = R.hintS[i]; if (!h.lengthSq()) h.copy(raw); h.lerp(raw.normalize(), 1 - Math.exp(-16 * dt)).normalize(); return h;
+}
+// wrist roll that turns the palm toward a direction (in body space), measured about the forearm
+function rollToward(E, W, perp, dir) {
+  _bzr.copy(perp).negate(); limbMatrix(_sm, E, W, _bzr);
+  const y = _bx.setFromMatrixColumn(_sm, 1), z = _by.setFromMatrixColumn(_sm, 2), d = _bz.copy(dir).addScaledVector(y, -dir.dot(y)).normalize();
+  return Math.atan2(_sv.crossVectors(z, d).dot(y), z.dot(d));
+}
 // second-order follow: lags behind a moving target, overshoots a little and settles (zeta < 1); fine steps keep it stable
 function follow(o, k, target, w, zeta, dt) {
   const v = o.v || (o.v = {}); let x = o[k] ?? target, vel = v[k] || 0;
@@ -2059,7 +2147,7 @@ function poseFighter(f, dt, time) {
   const fx0 = Math.sin(f.yaw), fz0 = Math.cos(f.yaw), lz0 = f.vel.x * fx0 + f.vel.z * fz0, lx0 = f.vel.x * fz0 - f.vel.z * fx0;
   if (P && !clipP) shift += ep * (P.kind === 'straight' ? (P.hand > 0 ? .02 : .055) : P.kind === 'hook' ? (P.hand > 0 ? -.045 : .045) : (P.hand > 0 ? .02 : .035));
   if (!mxOn) { shift += clamp(lx0 * .035, -.04, .04); lean += clamp(lz0 * .05, -.06, .06); }
-  follow(ps, 'crouch', crouch, P ? 26 : 14, .55, dt);
+  follow(ps, 'crouch', Math.min(crouch, .22), P ? 26 : 14, .55, dt);
   // the body leads the arm: hips run ahead on the punch curve, then the shoulders, the fist on time
   const twH = twist + (P && !clipP ? P.twist * .85 * punchCurve(a, a.t + .06) : 0), twC = twist + (P && !clipP ? P.twist * .85 * punchCurve(a, a.t + .03) : 0);
   follow(ps, 'htwist', twH, P ? 42 : 11, .5, dt);
@@ -2103,7 +2191,19 @@ function poseFighter(f, dt, time) {
     R.chest.rotation.set(ps.lean + X.p + r.p * .35 + fe * .15 + breath + (MG[3] + MG[6]) * mgW, ps.twist + X.y + r.y * .3 + (MG[4] + MG[7]) * mgW, ps.side + r.r * .3 + (MG[5] + MG[8]) * mgW);
     R.head.rotation.set(-ps.lean * .55 + r.p - fe * .3 + MG[9] * mgW, r.y - ps.twist * .75 + MG[10] * mgW, r.r * .6 - ps.side * .45 + MG[11] * mgW);
   }
+  spineChain(R);
   R.root.updateMatrixWorld(true);
+  // clavicles: shoulders up a touch in guard (chin behind them), and on a punch the punching shoulder drives forward
+  // and rolls up toward the target, more on power shots; the other shoulder draws back slightly
+  for (let i = 0; i < 2; i++) {
+    const s = i === 0 ? 1 : -1, mine = P && P.hand === s && f.fall < .25, cs = R.clavS[i];
+    const el = (f.fall < .25 ? .09 + (f.blocking ? .07 : 0) : 0) + (mine ? (P.kind === 'upper' ? .04 : .13) * ep : 0);
+    const pr = mine ? ep * (P.power ? .42 : .28) * (P.kind === 'upper' ? .6 : 1) : P ? -.07 * ep : 0;
+    follow(cs, 'e', el, 32, .6, dt); follow(cs, 'p', pr, 34, .55, dt);
+    _sq.setFromEuler(_se.set(0, -s * cs.p, s * cs.e, 'YXZ'));
+    const cj = R.sk.CJ[i]; R.clavM[i].compose(cj, _sq, ONE).premultiply(R.chest.matrix);
+    R.clavQ[i].copy(_sq);
+  }
 
   // aim points in this fighter's body space
   const o = other(f);
@@ -2112,7 +2212,7 @@ function poseFighter(f, dt, time) {
 
   for (let i = 0; i < 2; i++) {
     const s = i === 0 ? 1 : -1, J = R.arms[i];
-    J.S.copy(R.sk.SHO[i]).applyMatrix4(R.chest.matrix);
+    J.S.copy(R.sk.SHO[i]).sub(R.sk.CJ[i]).applyQuaternion(R.clavQ[i]).add(R.sk.CJ[i]).applyMatrix4(R.chest.matrix);
     if (MP && !f.victory) {
       // guard hand from the clip: wrist relative to the shoulder, scaled to this fighter's arm
       // the clip's glove drift is damped toward its average so the gloves stay with the head, as a real guard does
@@ -2157,11 +2257,19 @@ function poseFighter(f, dt, time) {
       const ec = clamp(H.e, -.2, 1.06), he = clamp(H.e, 0, 1), arc = Math.sin(he * Math.PI);
       _h.copy(_b).lerp(_c, ec);
       if (H.kind === 'hook') { _h.x += s * .36 * arc; _h.z -= .1 * arc; _hint.set(s, .2 * he, -.35); }
-      else if (H.kind === 'upper') { _h.y -= .3 * arc; _h.z -= .04 * arc; _hint.set(s * .3, -1, .1); }
-      else { _h.y += .03 * arc; _hint.set(s * .25, -1, -.15); }
+      else if (H.kind === 'upper') {
+        // uppercut: the fist finishes under the chin, short of full reach, forearm near vertical with the elbow beneath it
+        _h.lerp(_b, .45 * clamp(H.e, 0, 1)); _h.y -= .3 * arc + .1 * clamp(H.e, 0, 1); _h.z -= .04 * arc; _hint.set(s * .12, -1, .45);
+      }
+      else { _h.y += .03 * arc; _hint.set(s * .08, -1, -.1); }
     } else _h.copy(_b);
-    ik(J.S, _h, R.sk.UA, R.sk.FA, _hint, J.E, J.W);
+    const hookAmt = (active ? H.kind === 'hook' : H.kind === 'hook' && Math.abs(H.e) > .05) ? clamp(H.e, 0, 1) : 0;
+    ik(J.S, softReach(J.S, _h, R.sk.UA, R.sk.FA, _tmp), R.sk.UA, R.sk.FA, elbowHint(R, i, s, _hint, hookAmt, dt), J.E, J.W);
     J.perp.copy(_perp);
+    // the fist turns over on the way in: palm down for straights and hooks, palm up for uppercuts; the guard stays as is
+    { const he = clamp(H.e, 0, 1), dirP = H.kind === 'upper' ? _lv.set(0, 0, -1) : _lv.set(0, -1, 0);
+      const tgt = he > .02 && f.fall < .25 ? clamp(rollToward(J.E, J.W, J.perp, dirP), -1.5, 1.5) * he : 0;
+      follow(R.rollS[i], 'r', tgt, 30, .7, dt); R.roll[i] = R.rollS[i].r; }
   }
   // legs: feet stay planted on the canvas and step when the body drifts off them (the foot that has drifted furthest
   // goes first, the other follows); the rear heel lifts and pivots on rear-hand punches, the lead foot on the lead hook
@@ -2227,9 +2335,12 @@ function poseFighter(f, dt, time) {
   }
   // drive the skinned body
   R.hips.updateMatrix(); R.chest.updateMatrix(); R.head.updateMatrix();
-  boneLocals(R.boneLocal, R.hips.matrix, R.chest.matrix, R.head.matrix, R.arms, R.legs, R.feet, R.sk.neckY);
+  R.abdM.compose(R.abdP, R.abdQ, ONE);
+  boneLocals(R.boneLocal, { hipsM: R.hips.matrix, abdM: R.abdM, chestM: R.chest.matrix, headRel: R.head.matrix, neckY: R.sk.neckY,
+    arms: R.arms, legs: R.legs, feet: R.feet, clavM: R.clavM, roll: R.roll, tx: R.sk.TX });
   for (let i = 0; i < R.bones.length; i++) R.bones[i].matrixWorld.multiplyMatrices(R.body.matrixWorld, R.boneLocal[i]);
-  for (let i = 0; i < 2; i++) { R.boneLocal[7 + i].decompose(_lv, R.gloves[i].quaternion, _gq); R.gloves[i].position.copy(R.arms[i].W); }
+  for (let i = 0; i < 2; i++) { R.boneLocal[19 + i].decompose(_lv, R.gloves[i].quaternion, _gq); R.gloves[i].position.copy(R.arms[i].W); } // gloves ride the wrist bones
+  if (G.showBones) drawBones(f);
   R.root.updateMatrixWorld(true);
   f.headWorld.setFromMatrixPosition(R.skull.matrixWorld);
   f.chestWorld.setFromMatrixPosition(R.chestMark.matrixWorld);
@@ -2339,7 +2450,17 @@ function finish(res) {
   emit('fight_over', { type: res.type, winner: res.winner ? who(res.winner) : 0, round: G.round });
 }
 function clockText() { const left = Math.max(0, 180 - G.roundT * (180 / G.roundLen)); const m = Math.floor(left / 60), s = Math.floor(left % 60); return `${m}:${String(s).padStart(2, '0')}`; }
+// every time a round starts or the fight resumes, corner rituals end and both fighters settle into guard over 0.2 s
+function toGuard(f, instant = false) {
+  const m = f.mx; if (!m) return;
+  if (m.taunt && !instant) m.tauntOut = { name: m.taunt.name, ct: m.taunt.start + m.taunt.t, w: 1 };
+  m.taunt = null; if (instant) m.tauntOut = null;
+  // leftover reactions and punch layers (from the menu sparring or the last exchange) wind down inside the same 0.2 s
+  if (instant) { m.adds = []; m.punch = []; } else { for (const r of m.adds) r.t = Math.max(r.t, r.c.dur - .2 / .2 * r.c.dur * .2); m.punch.forEach((p) => (p.out = true)); }
+}
+function skipRingWalk() { for (const f of [P1, P2]) toGuard(f, true); G.prayerSkipped = true; }
 function beginRound() {
+  for (const f of [P1, P2]) toGuard(f);
   G.mode = 'fight'; G.roundT = 0;
   for (const f of [P1, P2]) { f.kdRound = 0; f.roundStart = { ...f.stats }; f.autoTarget = null; }
   resetFighter(P1, 0, -1.05, false); resetFighter(P2, 0, 1.05, false);
@@ -2375,7 +2496,7 @@ function updateKnockdown(dt) {
   if (up) {
     v.down = false; v.rising = true;
     v.head = Math.max(8, Math.min(v.headMax, 58 - v.kdTotal * 12)); v.body = Math.max(v.body, Math.min(v.bodyMax, 40)); v.wobble = 1; v.stun = .6;
-    k.attacker.autoTarget = null; G.kd = null; G.cine = null;
+    k.attacker.autoTarget = null; G.kd = null; G.cine = null; for (const f of [P1, P2]) toGuard(f);
     msg(v.isPlayer ? 'Back on your feet' : `${v.cfg.last} beats the count`, 'small'); sfx.roar(.7);
     emit('get_up', { fighter: who(v) });
     return;
@@ -2437,8 +2558,8 @@ function sim(rdt) {
     if (G.mode === 'fight' && !G.kd && G.roundT >= G.roundLen) endRound();
   } else if (G.mode === 'intro') {
     // corner rituals: the red corner taunts, the blue corner finishes a prayer and stands up as the intro ends
-    if (MX && G.introT === 0) { mxState(P2).taunt = { name: 'Praying', t: 0, start: Math.max(0, MXCLIP.Praying.dur - 5.4) }; }
-    if (MX && G.introT < 1.6 && G.introT + rdt >= 1.6) mxState(P1).taunt = { name: 'Taunt', t: 0, start: 0 };
+    if (MX && G.introT === 0) { G.prayerSkipped = false; mxState(P2).taunt = { name: 'Praying', t: 0, start: Math.max(0, MXCLIP.Praying.dur - 5.4) }; }
+    if (MX && !G.prayerSkipped && G.introT < 1.6 && G.introT + rdt >= 1.6) mxState(P1).taunt = { name: 'Taunt', t: 0, start: 0 };
     G.introT += rdt; P1.input.fwd = P2.input.fwd = 0; P1.input.side = P2.input.side = 0;
     if (G.introT > 5.5) beginRound();
   } else if (G.mode === 'break') {
@@ -2517,7 +2638,8 @@ const game = {
     G.mode = 'intro'; G.introT = 0; sfx.roar(.8); G.excite = .9;
     emit('fight_start', { rounds: G.rounds, difficulty: G.difficulty });
   },
-  skipIntro() { if (G.mode === 'intro') G.introT = 99; },
+  skipIntro() { if (G.mode === 'intro') { G.introT = 99; skipRingWalk(); } },
+  showBones(on = !G.showBones) { return setShowBones(on); },
   nextRound() { if (G.mode === 'break') resumeFromBreak(); },
   menu() { G.autoPaused = false; G.mode = 'menu'; G.result = null; G.kd = null; G.cine = null; G.slow = 0; resetFighter(P1, 0, -1.0, true); resetFighter(P2, 0, 1.0, true); },
   togglePause() { if (G.mode === 'fight') G.mode = 'paused'; else if (G.mode === 'paused') { G.mode = 'fight'; G.autoPaused = false; keys.clear(); document.activeElement?.blur?.(); canvas.focus({ preventScroll: true }); } },
@@ -2676,7 +2798,7 @@ AddEventHandler('punch_landed', (e) => { if (e.counter) log('counter #' + (++cou
 };
 window.LE = LE;
 
-game._debug = { P1, P2, G, camera, PUNCH, startPunch, sim: (dt) => { sim(dt); const g = G.poseDt; G.poseDt = 0; poseFighter(P1, g, G.time); poseFighter(P2, g, G.time); } };
+game._debug = { P1, P2, G, camera, PUNCH, startPunch, setShowBones, sim: (dt) => { sim(dt); const g = G.poseDt; G.poseDt = 0; poseFighter(P1, g, G.time); poseFighter(P2, g, G.time); } };
 
 /* =========================================================================
    HUD (React)

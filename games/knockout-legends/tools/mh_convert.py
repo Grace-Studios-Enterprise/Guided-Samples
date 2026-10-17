@@ -31,16 +31,20 @@ RECIPES = {
 skel = json.load(open(f'{D}/rigs/default.mhskel'))
 weights = json.load(open(f'{D}/rigs/default_weights.mhw'))['weights']
 # our 15 bones
-OURS = ['hips', 'abdomen', 'chest', 'neck', 'head', 'uarmL', 'uarmR', 'farmL', 'farmR', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR']
+OURS = ['hips', 'abdomen', 'chest', 'neck', 'head', 'uarmL', 'uarmR', 'farmL', 'farmR', 'thighL', 'thighR', 'shinL', 'shinR', 'footL', 'footR',
+        'clavL', 'clavR', 'twistL', 'twistR', 'wristL', 'wristR']
 def map_bone(b):
     side = 'L' if b.endswith('.L') else 'R' if b.endswith('.R') else ''
     n = b.split('.')[0]
     if n in ('root', 'pelvis', 'spine05'): return 0
     if n in ('spine04', 'spine03'): return 1
-    if n in ('spine02', 'spine01', 'clavicle', 'breast', 'shoulder01'): return 2
+    if n in ('spine02', 'spine01', 'breast'): return 2
+    if n in ('clavicle', 'shoulder01'): return 15 if side == 'L' else 16
     if n.startswith('neck'): return 3
     if n.startswith('upperarm'): return 5 if side == 'L' else 6
-    if n.startswith('lowerarm') or n in ('wrist',) or n.startswith('metacarpal') or n.startswith('finger'): return 7 if side == 'L' else 8
+    if n == 'lowerarm01': return 7 if side == 'L' else 8
+    if n == 'lowerarm02': return 17 if side == 'L' else 18
+    if n == 'wrist' or n.startswith('metacarpal') or n.startswith('finger'): return 19 if side == 'L' else 20
     if n.startswith('upperleg'): return 9 if side == 'L' else 10
     if n.startswith('lowerleg'): return 11 if side == 'L' else 12
     if n == 'foot' or n.startswith('toe'): return 13 if side == 'L' else 14
@@ -90,6 +94,9 @@ for side in 'LR':
     EXTRA += [(f'S{side}', jidx(f'upperarm01.{side}')), (f'E{side}', jidx(f'lowerarm01.{side}')), (f'W{side}', jidx(f'wrist.{side}')),
               (f'H{side}', jidx(f'upperleg01.{side}')), (f'K{side}', jidx(f'lowerleg01.{side}')), (f'A{side}', jidx(f'foot.{side}')), (f'T{side}', jidx(f'foot.{side}', 'tail'))]
 EXTRA += [('neck', jidx('neck01')), ('head', jidx('head')), ('spine', jidx('spine03'))]
+# pivots for the spine chain (abdomen at spine04, chest at spine02), the clavicles, and the forearm twist joints
+EXTRA += [('sp4', jidx('spine04')), ('sp2', jidx('spine02'))]
+for side in 'LR': EXTRA += [(f'CL{side}', jidx(f'clavicle.{side}')), (f'X{side}', jidx(f'lowerarm02.{side}'))]
 def gather(arr): return np.concatenate([arr[np.array(src)], np.array([arr[np.array(ix)].mean(0) for _, ix in EXTRA])])
 out['extras'] = [n for n, _ in EXTRA]
 out['base'] = B(gather(base).ravel().tolist(), 'f')
