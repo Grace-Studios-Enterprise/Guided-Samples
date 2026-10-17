@@ -48,6 +48,12 @@ An in-game overlay modelled on the community live editors for EA titles, editing
 - **Arms:** the elbow direction is smoothed and limited. Straights keep the elbow down and in, hooks bring it up to horizontal, and it never flares out or flips. Reach eases to a stop with an 8° bend left in the elbow. The fist turns over on the way in (palm down for straights and hooks, palm up for uppercuts); the twist bone takes half of that turn so the wrist doesn't candy-wrap. The gloves are attached to the wrist bones.
 - **Debug:** F2 (or `KL.showBones()`) draws the skeleton over both fighters.
 
+## Reference mode (raw mocap)
+Pause the game and tap **Reference mode: raw mocap**. All 31 Mixamo clips play on Mixamo's X Bot exactly as recorded: three.js `AnimationMixer`, original keyframes, nothing aimed, leaned, sprung or limited. X Bot stands next to our fighter, who throws the same punches timed to land on the clip's impact frames (hit and block clips trigger our reactions or block instead). There are controls for play/pause, 25% speed, single-frame steps (forward and back, kept in lockstep on both sides), restart, side or front view, and the full clip list.
+- `tools/fbx_to_glb.html` converts the FBX files (downloaded without skin) into `assets/mixamo_clips.glb.js`: one GLB holding the Mixamo skeleton and all 31 animations, with keyframes passed through untouched (FBXLoader → GLTFExporter). The FBX files themselves aren't in the repo.
+- X Bot (`assets/xbot.glb.js`, from the three.js examples) has world-aligned bones, while the clips use Mixamo's FBX bone axes. Rather than retargeting, X Bot's skinned mesh is re-bound to the clips' own skeleton (both are T-posed at rest), so the clips drive the bones they were recorded on.
+- Both assets load only when reference mode is opened.
+
 ## Motion capture
 - **Mixamo clips (main motion):** 28 Mixamo animations supplied by the project owner, baked by `tools/bake_mixamo.html` (run headless, it loads each FBX with three.js and samples the skeleton at 30 fps) and packed by `tools/pack_mixamo.py` into `assets/mocap_mixamo.js`. Each frame stores hips position and rotation, chest and head rotation, wrists and elbows relative to the shoulders, and ankles and toe directions, in the fighter's own frame and scaled to arm and leg length, so it retargets onto any body type.
   - Stance and footwork: Idle, plus step clips (Medium/Long Step Forward, Step Backward, Short/Long Left Side Step, Short Right Side Step) blended by the fighter's actual velocity, with playback speed matched to it.
@@ -59,6 +65,7 @@ An in-game overlay modelled on the community live editors for EA titles, editing
 - To rebake: get the BVH conversion from github.com/una-dinosauria/cmu-mocap, then run `python3 tools/bake_guard.py tools assets/mocap_guard.js '[["…/13_17.bvh",6.0,2.4,0], …]'`. Each entry is file, start s, duration s, mirror.
 
 ## Credits
+- Reference character: X Bot by Mixamo (Adobe), from the three.js examples.
 - Motion: Mixamo animations (mixamo.com, Adobe; used under Mixamo's terms, which allow use in games). CMU Graphics Lab Motion Capture Database (mocap.cs.cmu.edu), free to use; BVH conversion by B. Hahne.
 - Bodies: MakeHuman base mesh, rig weights and shape targets, CC0 1.0 ([makehumancommunity/makehuman](https://github.com/makehumancommunity/makehuman)). See `assets/MakeHuman_LICENSE_CC0.md`.
 - Head scan: "Infinite, 3D Head Scan" by Lee Perry-Smith (Infinite-Realities), licensed CC BY 3.0. It's based on a work at triplegangers.com, and the license text is in `assets/LeePerrySmith_License.txt`.

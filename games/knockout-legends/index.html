@@ -132,6 +132,16 @@ table.stats td:not(:first-child),table.stats th:not(:first-child){text-align:cen
 .pad button.on{background:var(--gold);color:var(--ink)}
 .pad .wide{grid-column:span 3;height:44px}
 
+.ref{position:fixed;left:0;right:0;bottom:0;pointer-events:auto;background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:10px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 10px) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:8px;max-height:62vh}
+.ref .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ref button{min-height:48px;min-width:48px;padding:0 14px;background:transparent;color:var(--bone);border:1px solid var(--line);font-family:var(--font-ui);font-weight:700;font-size:15px;letter-spacing:.06em}
+.ref button[aria-pressed="true"]{background:var(--bone);color:var(--ink)}
+.ref .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:6px;overflow-y:auto;max-height:30vh;padding-right:2px}
+.ref .clips button{min-height:44px;font-size:13px;letter-spacing:.02em;text-align:left;padding:0 10px}
+.ref .info{font-family:var(--font-ui);font-size:14px;color:var(--mute);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ref .info b{color:var(--bone)}
+.reflabels{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);left:16px;right:16px;display:flex;justify-content:space-between;pointer-events:none;font-family:var(--font-ui);font-weight:700;letter-spacing:.12em;font-size:12px;text-transform:uppercase;color:var(--bone)}
+.reflabels span{background:var(--panel);padding:6px 10px;border:1px solid var(--line)}
 .pausebtn{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 14px);pointer-events:auto;background:var(--panel);border:1px solid var(--line);padding:6px 12px;font-family:var(--font-ui);font-weight:700;letter-spacing:.14em;font-size:12px;text-transform:uppercase}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 52px);transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);padding:8px 14px;font-family:var(--font-ui);font-size:14px;max-width:calc(100% - 32px)}
 .touchmode .pausebtn{top:calc(env(safe-area-inset-top,0px) + 96px);bottom:auto}
@@ -2055,7 +2065,7 @@ function updateFighter(f, o, dt) {
   if (f.action) {
     const a = f.action; a.t += dt;
     if (!a.done && a.t < a.w + a.s * .5) targetOf(o, PUNCH[a.type].body, a.aim); // committed after mid-strike
-    if (!a.done && a.t >= a.hit) { a.done = true; resolveHit(f, o, a); }
+    if (!a.done && a.t >= a.hit) { a.done = true; if (G.mode !== 'reference') resolveHit(f, o, a); }
     // cancel window: once the hold is over, whatever's buffered cuts the recovery short
     if (f.action === a && canCancel(a) && (f.buffer || f.queue.length)) takeBuffered(f);
     else if (f.action === a && a.t >= a.dur) {
@@ -2362,6 +2372,7 @@ function autoSweat() { if (G.mode === 'menu') return .35; return clamp((G.round 
 const camPos = V(4, 2.2, 4), camLook = V(0, 1.2, 0), _cp = V(), _cl = V();
 let orbitA = .6, sideSign = 1;
 function updateCamera(rdt) {
+  if (G.mode !== 'reference' && camera.view && camera.view.enabled) { camera.clearViewOffset(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
   const mid = _tmp.addVectors(P1.pos, P2.pos).multiplyScalar(.5);
   let fov = 42, lambda = 5;
   if (G.cine) {
@@ -2385,6 +2396,19 @@ function updateCamera(rdt) {
     _cp.set(w.pos.x + Math.cos(orbitA) * 2.4, 1.45, w.pos.z + Math.sin(orbitA) * 2.4);
     _cl.set(w.pos.x, 1.5, w.pos.z);
     fov = 40; lambda = 2;
+  } else if (G.mode === 'reference') {
+    // our fighter at z = -1 (hidden target ahead of him), X Bot at z = +0.75, both facing +z; side view or three-quarter front
+    // camera inside the ropes; the view is sized by width (so both figures fit in portrait too) and its centre is shifted
+    // up into the area above the control panel
+    if (REF.model) REF.model.position.set(0, 0, .75);
+    const W = innerWidth, H = innerHeight, ph = Math.min(H * .7, document.querySelector('.ref')?.offsetHeight || 0), aV = W / (H + ph);
+    // fit 2.9 m across and 2.3 m of height into the area above the panel, whichever needs the wider lens
+    const dist = 3.05, needW = Math.atan(1.45 / dist), needH = Math.atan(1.15 / dist / ((H - ph) / (H + ph)));
+    camera.aspect = aV; camera.setViewOffset(W, H + ph, 0, ph, W, H);
+    fov = clamp(2 * Math.max(Math.atan(Math.tan(needW) / aV), needH) * 180 / Math.PI, 30, 100);
+    if (REF.cam === 'side') { _cp.set(-dist, 1.25, -.15); _cl.set(0, 1.0, -.15); }
+    else { _cp.set(-2.15, 1.45, 2.15); _cl.set(0, 1.0, -.15); }
+    lambda = 6;
   } else if (G.mode === 'menu' || G.mode === 'intro' || G.mode === 'over' || G.mode === 'break') {
     orbitA += rdt * (G.mode === 'break' ? .05 : .11);
     const R = G.mode === 'over' ? 3.4 : 4.6;
@@ -2403,6 +2427,7 @@ function updateCamera(rdt) {
     fov = 44; lambda = 6;
   }
   if (G.debugCam) { _cp.copy(G.debugCam.pos); _cl.copy(G.debugCam.look); lambda = 1e3; fov = G.debugCam.fov || fov; }
+  if (G.camSnap) { camPos.copy(_cp); camLook.copy(_cl); camera.fov = fov; G.camSnap = false; } // reference mode cuts straight to its angles
   camPos.x = damp(camPos.x, _cp.x, lambda, rdt); camPos.y = damp(camPos.y, _cp.y, lambda, rdt); camPos.z = damp(camPos.z, _cp.z, lambda, rdt);
   camLook.x = damp(camLook.x, _cl.x, lambda * 1.4, rdt); camLook.y = damp(camLook.y, _cl.y, lambda * 1.4, rdt); camLook.z = damp(camLook.z, _cl.z, lambda * 1.4, rdt);
   camera.position.copy(camPos);
@@ -2411,7 +2436,7 @@ function updateCamera(rdt) {
   const cinematic = !!(G.cine || G.kd) || G.mode === 'menu' || G.mode === 'intro' || G.mode === 'over' || G.mode === 'break';
   bokeh.enabled = QUALITY[G.quality].dof && cinematic;
   if (bokeh.enabled) bokeh.uniforms.focus.value = camera.position.distanceTo(camLook);
-  if (camera.aspect < 1) fov = Math.min(80, fov * (1 + (1 - camera.aspect) * .9)); // portrait phones see more of the ring
+  if (camera.aspect < 1 && G.mode !== 'reference') fov = Math.min(80, fov * (1 + (1 - camera.aspect) * .9)); // portrait phones see more of the ring
   camera.fov = damp(camera.fov, fov, 3, rdt); camera.updateProjectionMatrix();
   // broadcast feed for the jumbotron: always the side angle
   const dx = P2.pos.x - P1.pos.x, dz = P2.pos.z - P1.pos.z, dl = Math.hypot(dx, dz) || 1;
@@ -2538,7 +2563,98 @@ function trackFps(real, now) {
     G.toast = { text: `Frame rate dropped, so graphics switched to ${QUALITY[next].label}.`, at: now };
   }
 }
+/* --------------------------------------------------------------------------- reference mode
+   The original Mixamo clips played unmodified on Mixamo's X Bot (AnimationMixer, recorded keyframes, nothing added),
+   beside our fighter throwing the same punch. Loaded on first use; the normal game never touches any of this. */
+const REF_HITS = { // impact times (s) read off the clips, and the game punch thrown to land at the same moment
+  Lead_Jab: [[.47, 'jab']], Jab_Cross: [[.43, 'jab'], [.7, 'cross']], Hook: [[.67, 'lhook']], Body_Jab_Cross: [[.43, 'jab_b'], [.67, 'cross_b']],
+  Punch_Combo: [[.63, 'jab'], [.87, 'cross'], [1.1, 'lupper'], [1.37, 'cross']],
+  Combo_Punch: [[.37, 'jab'], [.63, 'jab'], [.97, 'cross'], [1.23, 'cross'], [1.67, 'jab_b'], [1.9, 'cross_b'], [2.17, 'lupper'], [2.43, 'cross']],
+};
+const REF_REACT = { Light_Hit_To_Head: ['straight', true, .6], Medium_Hit_To_Head: ['straight', true, 1.1], Head_Hit: ['straight', true, 1.7], Big_Side_Hit: ['hook', true, 1.4],
+  Stomach_Hit: ['straight', false, 1], Kidney_Hit: ['hook', false, .9], Big_Kidney_Hit: ['hook', false, 1.4] };
+const REF = { listOpen: true, ready: false, loading: false, err: null, model: null, mixer: null, clips: [], clip: null, action: null, t: 0, playing: true, slow: false, step: 0, cam: 'side', sched: [], saved: null };
+async function refLoad() {
+  if (REF.ready || REF.loading) return; REF.loading = true;
+  try {
+    const glb = async (p) => new GLTFLoader().parseAsync(Uint8Array.from(atob((await import(p)).default), (c) => c.charCodeAt(0)).buffer, '');
+    const [bot, anim] = await Promise.all([glb('./assets/xbot.glb.js'), glb('./assets/mixamo_clips.glb.js')]);
+    // The clips play on the very skeleton they were recorded on (from the FBX files). X Bot's skin is re-bound to that
+    // skeleton: both stand in the same T-pose at rest, so its mesh simply rides the recorded bones. Nothing is retargeted.
+    const holder = REF.model = new THREE.Group(), rig = anim.scene; rig.scale.setScalar(.01); holder.add(rig); // FBX centimetres
+    const meshes = []; bot.scene.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
+    holder.updateMatrixWorld(true);
+    const byName = {}; rig.traverse((o) => (byName[o.name] = o));
+    for (const m of meshes) {
+      const bones = m.skeleton.bones.map((b) => { let x = b; while (x && !byName[x.name]) x = x.parent; return byName[x ? x.name : 'mixamorigHips']; });
+      m.removeFromParent(); m.position.set(0, 0, 0); m.quaternion.identity(); m.scale.setScalar(1); holder.add(m); holder.updateMatrixWorld(true);
+      m.bind(new THREE.Skeleton(bones), m.matrixWorld); m.castShadow = m.receiveShadow = true; m.frustumCulled = false;
+    }
+    REF.clips = anim.animations.slice().sort((a, b) => a.name.localeCompare(b.name));
+    REF.mixer = new THREE.AnimationMixer(rig); scene.add(holder); REF.ready = true;
+    refPick(REF.clip ? REF.clip.name : 'Lead_Jab');
+  } catch (err) { REF.err = String(err.message || err); console.warn('Reference mode failed to load', err); }
+  REF.loading = false;
+}
+function refPick(name) {
+  const c = REF.clips.find((x) => x.name === name); if (!c) return;
+  REF.clip = c; if (REF.action) REF.action.stop();
+  REF.action = REF.mixer.clipAction(c); REF.action.reset(); REF.action.setLoop(THREE.LoopOnce); REF.action.clampWhenFinished = true; REF.action.play();
+  refRestart();
+}
+function refRestart() {
+  REF.t = 0; if (REF.mixer) REF.mixer.setTime(0);
+  P1.action = null; P1.queue.length = 0; P1.buffer = null; P1.blocking = false;
+  const hand = P1.hands; hand[0].e = hand[1].e = 0;
+  REF.sched = (REF_HITS[REF.clip?.name] || []).map(([t, type]) => { const P = PUNCH[type]; return { at: Math.max(0, t - (P.w + P.s) * PUNCH_PACE / P1.cfg.speed), type, done: false }; });
+  const r = REF_REACT[REF.clip?.name]; if (r) REF.sched.push({ at: .05, react: r, done: false });
+}
+function refEnter() {
+  if (G.mode !== 'paused') return;
+  REF.saved = { p1: P1.pos.clone(), p2: P2.pos.clone(), y1: P1.yaw, y2: P2.yaw };
+  G.mode = 'reference'; G.hitStop = 0; G.slow = 0; G.cine = null; G.camSnap = true;
+  for (const m of [P2.rig.root, ...P2.rig.meshes]) m.visible = false;
+  if (REF.model) REF.model.visible = true;
+  if (REF.ready) refPick(REF.clip.name); else refLoad();
+}
+function refExit() {
+  if (G.mode !== 'reference') return;
+  for (const m of [P2.rig.root, ...P2.rig.meshes]) m.visible = true;
+  if (REF.model) REF.model.visible = false;
+  const S = REF.saved; P1.pos.copy(S.p1); P2.pos.copy(S.p2); P1.yaw = S.y1; P2.yaw = S.y2; P1.action = null; P1.vel.set(0, 0, 0);
+  G.mode = 'paused'; G.camSnap = true;
+}
+// one reference tick: the clip clock drives both the X Bot (mixer.setTime, so stepping is frame exact) and our fighter
+function refTick(rdt) {
+  if (!REF.ready || !REF.clip) return;
+  let d = REF.playing ? rdt * (REF.slow ? .25 : 1) : 0;
+  if (REF.step) { d = REF.step / 30; REF.step = 0; }
+  if (!d) return;
+  const end = REF.clip.duration;
+  if (REF.t >= end + .5 && d > 0) refRestart();      // hold the last frame half a second, then loop
+  const t0 = REF.t; REF.t = Math.max(0, REF.t + d);
+  if (d < 0) { refRestart(); REF.t = Math.max(0, t0 + d); refCatchUp(REF.t); return; }
+  REF.mixer.setTime(Math.min(REF.t, end));
+  refFighter(d);
+}
+// stepping backwards replays our fighter from the start up to the new time, so both sides stay in lockstep
+function refCatchUp(t) { REF.mixer.setTime(Math.min(t, REF.clip.duration)); let x = 0; const h = 1 / 120; while (x < t - 1e-6) { const s = Math.min(h, t - x); REF.t = x + s; refFighter(s, x); x += s; } REF.t = t; }
+function refFighter(d, tNow = REF.t - d) {
+  const tEnd = tNow + d;
+  for (const e of REF.sched) if (!e.done && e.at <= tEnd) {
+    e.done = true;
+    if (e.react) { const [kind, head, k] = e.react; mxReact(P1, kind, head, 1, k); P1.react.v.p += head ? -2 * k : 3 * k; P1.rec.vp += head ? -6 * k : 2 * k; }
+    else { P1.action = null; beginPunch(P1, e.type); }
+  }
+  const blk = /Block/.test(REF.clip.name); P1.blocking = blk && tEnd > .1 && tEnd < REF.clip.duration - .2; P1.blockLow = REF.clip.name === 'Right_Block';
+  P1.pos.set(0, 0, -1); P2.pos.set(0, 0, -.05); P1.vel.set(0, 0, 0); P2.vel.set(0, 0, 0); P1.stamina = P2.stamina = 100;
+  P1.input.fwd = P1.input.side = P2.input.fwd = P2.input.side = 0; P2.action = null; P2.blocking = false;
+  updateFighter(P1, P2, d); updateFighter(P2, P1, d);
+  P1.pos.set(0, 0, -1); P2.pos.set(0, 0, -.05); P1.yaw = 0; P2.yaw = Math.PI;
+  G.time += d; G.poseDt += d;
+}
 function sim(rdt) {
+  if (G.mode === 'reference') { refTick(rdt); return; }
   // slow motion on knockdowns
   if (G.slow > 0) { G.slow -= rdt; G.timeScale = damp(G.timeScale, .16, 12, rdt); if (G.slow <= 0 && G.cine && (!G.kd || !G.kd.tko)) G.cine = null; }
   else G.timeScale = damp(G.timeScale, 1, 6, rdt);
@@ -2628,8 +2744,12 @@ const game = {
       toast: G.toast && now - G.toast.at < 6000 ? G.toast.text : null,
       opts: { difficulty: G.difficulty, rounds: G.rounds, quality: G.quality, cam: G.cam, builds: [P1.cfg.bodyType, P2.cfg.bodyType] },
       tape: [FIGHTERS.vance, FIGHTERS.volkov],
+      ref: G.mode === 'reference' ? { clip: REF.clip?.name || null, t: Math.min(REF.t, REF.clip?.duration || 0), dur: REF.clip?.duration || 0, frame: Math.round(Math.min(REF.t, REF.clip?.duration || 0) * 30), frames: Math.round((REF.clip?.duration || 0) * 30),
+        playing: REF.playing, slow: REF.slow, cam: REF.cam, listOpen: REF.listOpen, portrait: innerWidth < innerHeight, list: REF.clips.map((c) => c.name), err: REF.err, mapped: !!(REF_HITS[REF.clip?.name] || REF_REACT[REF.clip?.name]) } : null,
     };
   },
+  ref: { enter: () => refEnter(), exit: () => refExit(), pick: (n) => { if (REF.ready) { refPick(n); REF.listOpen = false; } }, toggle: () => (REF.playing = !REF.playing), slow: () => (REF.slow = !REF.slow),
+    step: (k) => { REF.playing = false; REF.step = k; }, restart: () => REF.ready && refRestart(), cam: () => { REF.cam = REF.cam === 'side' ? 'front' : 'side'; G.camSnap = true; }, list: () => (REF.listOpen = !REF.listOpen), state: REF },
   start() {
     sfx.init();
     document.activeElement?.blur?.(); canvas.focus({ preventScroll: true });
@@ -2918,7 +3038,28 @@ function Pause({ s }) {
     <div className="h2">Paused</div>
     ${s.autoPaused && html`<div className="p">The game lost keyboard focus, so it paused itself. Click Resume to get back in the ring.</div>`}
     <div className="row"><button className="btn" onClick=${() => game.togglePause()}>Resume</button><button className="btn ghost" onClick=${() => game.menu()}>Quit to menu</button></div>
+    <div className="row"><button className="btn ghost" id="refbtn" style=${{ minHeight: '48px' }} onClick=${() => game.ref.enter()}>Reference mode: raw mocap</button></div>
   </div></div>`;
+}
+function RefPanel({ s }) {
+  const r = s.ref, nice = (n) => n.replace(/_/g, ' ');
+  return html`<${React.Fragment}>
+    <div className="reflabels"><span>Our fighter</span><span>Mixamo X Bot · raw clip</span></div>
+    <div className="ref" role="region" aria-label="Reference mode">
+      <div className="info"><span><b>${r.clip ? nice(r.clip) : r.err ? 'Failed to load' : 'Loading clips…'}</b>${r.clip ? ` · ${r.t.toFixed(2)} / ${r.dur.toFixed(2)} s · frame ${r.frame} / ${r.frames}` : ''}</span><span>${r.err || (r.portrait ? 'Turn your phone sideways to see both side by side' : r.mapped ? 'Our fighter throws the same punches' : 'No game punch for this clip')}</span></div>
+      <div className="bar">
+        <button aria-label="Previous frame" onClick=${() => game.ref.step(-1)}>◀︎ Frame</button>
+        <button aria-label=${r.playing ? 'Pause' : 'Play'} aria-pressed=${String(!r.playing)} onClick=${() => game.ref.toggle()}>${r.playing ? 'Pause' : 'Play'}</button>
+        <button aria-label="Next frame" onClick=${() => game.ref.step(1)}>Frame ▶︎</button>
+        <button aria-pressed=${String(r.slow)} onClick=${() => game.ref.slow()}>25% speed</button>
+        <button onClick=${() => game.ref.restart()}>Restart</button>
+        <button onClick=${() => game.ref.cam()}>${r.cam === 'side' ? 'Front view' : 'Side view'}</button>
+        <button onClick=${() => game.ref.exit()}>Exit</button>
+        <button aria-expanded=${String(r.listOpen)} onClick=${() => game.ref.list()}>${r.listOpen ? 'Hide clips' : `All ${r.list.length} clips`}</button>
+      </div>
+      ${r.listOpen && html`<div className="clips">${r.list.map((n) => html`<button key=${n} aria-pressed=${String(n === r.clip)} onClick=${() => game.ref.pick(n)}>${nice(n)}</button>`)}</div>`}
+    </div>
+  <//>`;
 }
 function Result({ s }) {
   if (s.overT < 2.4) return null;
@@ -3024,6 +3165,7 @@ function App() {
     ${s.kd && html`<${Count} s=${s}/>`}
     ${s.mode === 'break' && html`<${Corner} s=${s}/>`}
     ${s.mode === 'paused' && html`<${Pause} s=${s}/>`}
+    ${s.mode === 'reference' && html`<${RefPanel} s=${s}/>`}
     ${s.toast && html`<div className="toast" role="status">${s.toast}</div>`}
     ${s.glLost && html`<div className="sheet"><div className="card" style=${{ width: 'min(420px,100%)' }}><div className="h2">The graphics card reset</div><div className="p">Your browser dropped the 3D view, usually from running low on GPU memory. Pick Performance graphics and reload the page.</div><div className="row"><button className="btn" onClick=${() => { game.setOpt('quality', 'perf'); location.reload(); }}>Switch to Performance</button></div></div></div>`}
     ${s.mode === 'over' && s.result && html`<${Result} s=${s}/>`}

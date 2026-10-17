@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script></head><body>
+<script type="module">
+// Convert Mixamo FBX animations (downloaded without skin) into one GLB: the Mixamo skeleton plus one animation per file,
+// keyframes exactly as in the FBX (three.js FBXLoader -> GLTFExporter, no resampling or edits). Run headless, see README.
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+let root = null; const clips = [];
+for (const name of window.CLIPS) {
+  const g = new FBXLoader().parse(await (await fetch('assets/' + name + '.fbx')).arrayBuffer(), '');
+  if (!root) root = g;
+  const c = g.animations[0]; c.name = name; clips.push(c);
+}
+root.name = 'MixamoSkeleton';
+const glb = await new GLTFExporter().parseAsync(root, { binary: true, animations: clips, onlyVisible: false });
+const u = new Uint8Array(glb); let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192));
+window.__glb = { b64: btoa(s), bytes: u.length, clips: clips.map((c) => [c.name, +c.duration.toFixed(3), c.tracks.length, c.tracks[0].times.length]) };
+</script></body></html>
